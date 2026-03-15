@@ -8,7 +8,7 @@ Localized, closed-loop agentic system: **Brain** (macOS) + **Remote** (iOS), wit
 
 | Actions | Missions | Context | Log |
 |--------|----------|---------|-----|
-| [![Actions](Docs/screenshots/ios-actions.png)](Docs/screenshots/ios-actions.png) | [![Missions](Docs/screenshots/ios-missions.png)](Docs/screenshots/ios-missions.png) | [![Context](Docs/screenshots/ios-context.png)](Docs/screenshots/ios-context.png) | [![Log](Docs/screenshots/ios-log.png)](Docs/screenshots/ios-log.png) |
+| [![Actions](https://raw.githubusercontent.com/KVTaniguchi/agentkvt/main/Docs/screenshots/ios-actions.png)](https://github.com/KVTaniguchi/agentkvt/blob/main/Docs/screenshots/ios-actions.png) | [![Missions](https://raw.githubusercontent.com/KVTaniguchi/agentkvt/main/Docs/screenshots/ios-missions.png)](https://github.com/KVTaniguchi/agentkvt/blob/main/Docs/screenshots/ios-missions.png) | [![Context](https://raw.githubusercontent.com/KVTaniguchi/agentkvt/main/Docs/screenshots/ios-context.png)](https://github.com/KVTaniguchi/agentkvt/blob/main/Docs/screenshots/ios-context.png) | [![Log](https://raw.githubusercontent.com/KVTaniguchi/agentkvt/main/Docs/screenshots/ios-log.png)](https://github.com/KVTaniguchi/agentkvt/blob/main/Docs/screenshots/ios-log.png) |
 
 **Actions** — Buttons created by the Mac agent (e.g. “Review: [Company] - Senior iOS Lead”). **Missions** — Define name, prompt, schedule, and allowed tools (e.g. Find a job, weekly). **Context** — Key/value facts the agent uses (goals, location). **Log** — Audit trail of what the agent did.
 
@@ -16,11 +16,11 @@ Localized, closed-loop agentic system: **Brain** (macOS) + **Remote** (iOS), wit
 
 The Mac app has no GUI. When you SSH into the Mac Studio (or run locally), you see only terminal output:
 
-![Mac terminal](Docs/screenshots/mac-terminal.png)
+![Mac terminal](https://raw.githubusercontent.com/KVTaniguchi/agentkvt/main/Docs/screenshots/mac-terminal.png)
 
 ### Data flow
 
-![Data flow](Docs/screenshots/data-flow.png)
+![Data flow](https://raw.githubusercontent.com/KVTaniguchi/agentkvt/main/Docs/screenshots/data-flow.png)
 
 iOS → shared SwiftData store → Mac scheduler → MissionRunner → AgentLoop + tools → ActionItem / AgentLog → back to iOS. See [Docs/DATA_FLOW.md](Docs/DATA_FLOW.md).
 
