@@ -1,3 +1,13 @@
+<div align="center">
+
+# 🚧 IN PROGRESS 🚧
+
+**This project is under active development. APIs, schema, and behavior may change.**
+
+</div>
+
+---
+
 # AgentKVT
 
 Localized, closed-loop agentic system: **Brain** (macOS) + **Remote** (iOS), with a shared SwiftData bridge. Define missions and life context on your iPhone; the Mac runner executes them on schedule and pushes action items back to your phone.
@@ -43,6 +53,7 @@ iOS → shared SwiftData store → Mac scheduler → MissionRunner → AgentLoop
 ## Planning
 
 - [FOUNDATIONAL_PLAN.MD](FOUNDATIONAL_PLAN.MD) — Architecture, schema, missions, tools, diagram.
+- [Docs/SUPERAGENT_IMPLEMENTATION_PHASES.md](Docs/SUPERAGENT_IMPLEMENTATION_PHASES.md) — Phased implementation plan (ManagerCore → Mac Brain → tools → mission engine → iOS → E2E).
 - [Docs/E2E_VERIFICATION.md](Docs/E2E_VERIFICATION.md) — E2E scenarios (Career, Finance), AgentLog audit, checklist.
 
 Out of scope: DIYProjectManager retooling; see README for planning history.
