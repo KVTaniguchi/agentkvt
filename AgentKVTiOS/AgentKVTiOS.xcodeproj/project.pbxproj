@@ -3,30 +3,20 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 56;
+	objectVersion = 60;
 	objects = {
 
 /* Begin PBXBuildFile section */
-		A1000001 /* AgentKVTiOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000001; };
-		A1000002 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000002; };
-		A1000003 /* MissionListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000003; };
-		A1000004 /* LifeContextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000004; };
-		A1000006 /* AgentLogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000005; };
-		A1000005 /* ManagerCore in Frameworks */ = {isa = PBXBuildFile; productRef = A3000001; };
-		B1000001 /* ManagerCore in Frameworks */ = {isa = PBXBuildFile; productRef = A3000001; };
-		B1000002 /* ManagerCoreIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000002; };
+		A1000001 /* AgentKVTiOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000001 /* AgentKVTiOSApp.swift */; };
+		A1000002 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000002 /* DashboardView.swift */; };
+		A1000003 /* MissionListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000003 /* MissionListView.swift */; };
+		A1000004 /* LifeContextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000004 /* LifeContextView.swift */; };
+		A1000005 /* ManagerCore in Frameworks */ = {isa = PBXBuildFile; productRef = A3000001 /* ManagerCore */; };
+		A1000006 /* AgentLogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000005 /* AgentLogView.swift */; };
+		A1000007 /* GoalDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000006 /* GoalDetailView.swift */; };
+		B1000001 /* ManagerCore in Frameworks */ = {isa = PBXBuildFile; productRef = A3000001 /* ManagerCore */; };
+		B1000002 /* ManagerCoreIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000002 /* ManagerCoreIntegrationTests.swift */; };
 /* End PBXBuildFile section */
-
-/* Begin PBXFileReference section */
-		A2000000 /* AgentKVTiOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AgentKVTiOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		A2000001 /* AgentKVTiOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKVTiOSApp.swift; sourceTree = "<group>"; };
-		A2000002 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
-		A2000003 /* MissionListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MissionListView.swift; sourceTree = "<group>"; };
-		A2000004 /* LifeContextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LifeContextView.swift; sourceTree = "<group>"; };
-		A2000005 /* AgentLogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLogView.swift; sourceTree = "<group>"; };
-		B2000001 /* AgentKVTiOSTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AgentKVTiOSTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		B2000002 /* ManagerCoreIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManagerCoreIntegrationTests.swift; sourceTree = "<group>"; };
-/* End PBXFileReference section */
 
 /* Begin PBXContainerItemProxy section */
 		B8000001 /* PBXContainerItemProxy */ = {
@@ -37,6 +27,19 @@
 			remoteInfo = AgentKVTiOS;
 		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		71C1B0482F67666D008F07DA /* AgentKVTiOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AgentKVTiOS.entitlements; sourceTree = "<group>"; };
+		A2000000 /* AgentKVTiOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AgentKVTiOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A2000001 /* AgentKVTiOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKVTiOSApp.swift; sourceTree = "<group>"; };
+		A2000002 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
+		A2000003 /* MissionListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MissionListView.swift; sourceTree = "<group>"; };
+		A2000004 /* LifeContextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LifeContextView.swift; sourceTree = "<group>"; };
+		A2000005 /* AgentLogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLogView.swift; sourceTree = "<group>"; };
+		A2000006 /* GoalDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoalDetailView.swift; sourceTree = "<group>"; };
+		B2000001 /* AgentKVTiOSTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AgentKVTiOSTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		B2000002 /* ManagerCoreIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManagerCoreIntegrationTests.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		A4000001 /* Frameworks */ = {
@@ -61,27 +64,20 @@
 		A5000000 = {
 			isa = PBXGroup;
 			children = (
-				A5000001 /* AgentKVTiOS */,
+				71C1B0482F67666D008F07DA /* AgentKVTiOS.entitlements */,
+				A5000001 /* . */,
 				B5000001 /* AgentKVTiOSTests */,
 				A5000003 /* Products */,
 			);
 			sourceTree = "<group>";
 		};
-		B5000001 /* AgentKVTiOSTests */ = {
-			isa = PBXGroup;
-			children = (
-				B2000002 /* ManagerCoreIntegrationTests.swift */,
-			);
-			path = AgentKVTiOSTests;
-			sourceTree = "<group>";
-		};
-		A5000001 /* AgentKVTiOS */ = {
+		A5000001 /* . */ = {
 			isa = PBXGroup;
 			children = (
 				A2000001 /* AgentKVTiOSApp.swift */,
 				A5000002 /* Views */,
 			);
-			path = ".";
+			path = .;
 			sourceTree = "<group>";
 		};
 		A5000002 /* Views */ = {
@@ -91,6 +87,7 @@
 				A2000003 /* MissionListView.swift */,
 				A2000004 /* LifeContextView.swift */,
 				A2000005 /* AgentLogView.swift */,
+				A2000006 /* GoalDetailView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -104,12 +101,20 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		B5000001 /* AgentKVTiOSTests */ = {
+			isa = PBXGroup;
+			children = (
+				B2000002 /* ManagerCoreIntegrationTests.swift */,
+			);
+			path = AgentKVTiOSTests;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
 		A6000001 /* AgentKVTiOS */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = A7000003;
+			buildConfigurationList = A7000003 /* Build configuration list for PBXNativeTarget "AgentKVTiOS" */;
 			buildPhases = (
 				A6000002 /* Sources */,
 				A4000001 /* Frameworks */,
@@ -158,7 +163,7 @@
 				LastSwiftUpdateCheck = 1500;
 				LastUpgradeCheck = 1500;
 			};
-			buildConfigurationList = A7000001;
+			buildConfigurationList = A7000001 /* Build configuration list for PBXProject "AgentKVTiOS" */;
 			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -168,7 +173,7 @@
 			);
 			mainGroup = A5000000;
 			packageReferences = (
-				A9000001 /* ManagerCore */,
+				A9000001 /* XCLocalSwiftPackageReference "../ManagerCore" */,
 			);
 			productRefGroup = A5000003 /* Products */;
 			projectDirPath = "";
@@ -207,6 +212,7 @@
 				A1000003 /* MissionListView.swift in Sources */,
 				A1000004 /* LifeContextView.swift in Sources */,
 				A1000006 /* AgentLogView.swift in Sources */,
+				A1000007 /* GoalDetailView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -280,9 +286,10 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = AgentKVTiOS.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 3B3FT42G96;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -305,9 +312,10 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = AgentKVTiOS.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 3B3FT42G96;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -406,7 +414,7 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		A9000001 /* ManagerCore */ = {
+		A9000001 /* XCLocalSwiftPackageReference "../ManagerCore" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../ManagerCore;
 		};
@@ -415,11 +423,10 @@
 /* Begin XCSwiftPackageProductDependency section */
 		A3000001 /* ManagerCore */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = A9000001 /* ManagerCore */;
+			package = A9000001 /* XCLocalSwiftPackageReference "../ManagerCore" */;
 			productName = ManagerCore;
 		};
 /* End XCSwiftPackageProductDependency section */
-
 	};
 	rootObject = A8000001 /* Project object */;
 }
