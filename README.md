@@ -1,6 +1,30 @@
-# AgentKVT Project
+# AgentKVT
 
-Localized, closed-loop agentic system: **Brain** (macOS) + **Remote** (iOS), with a shared SwiftData bridge.
+Localized, closed-loop agentic system: **Brain** (macOS) + **Remote** (iOS), with a shared SwiftData bridge. Define missions and life context on your iPhone; the Mac runner executes them on schedule and pushes action items back to your phone.
+
+## Screenshots
+
+### iOS app (Remote)
+
+| Actions | Missions | Context | Log |
+|--------|----------|---------|-----|
+| [![Actions](Docs/screenshots/ios-actions.png)](Docs/screenshots/ios-actions.png) | [![Missions](Docs/screenshots/ios-missions.png)](Docs/screenshots/ios-missions.png) | [![Context](Docs/screenshots/ios-context.png)](Docs/screenshots/ios-context.png) | [![Log](Docs/screenshots/ios-log.png)](Docs/screenshots/ios-log.png) |
+
+**Actions** — Buttons created by the Mac agent (e.g. “Review: [Company] - Senior iOS Lead”). **Missions** — Define name, prompt, schedule, and allowed tools (e.g. Find a job, weekly). **Context** — Key/value facts the agent uses (goals, location). **Log** — Audit trail of what the agent did.
+
+### Mac runner (Brain)
+
+The Mac app has no GUI. When you SSH into the Mac Studio (or run locally), you see only terminal output:
+
+![Mac terminal](Docs/screenshots/mac-terminal.png)
+
+### Data flow
+
+![Data flow](Docs/screenshots/data-flow.png)
+
+iOS → shared SwiftData store → Mac scheduler → MissionRunner → AgentLoop + tools → ActionItem / AgentLog → back to iOS. See [Docs/DATA_FLOW.md](Docs/DATA_FLOW.md).
+
+---
 
 ## Repo layout
 
