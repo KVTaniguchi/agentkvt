@@ -12,6 +12,10 @@
 
 Localized, closed-loop agentic system: **Brain** (macOS) + **Remote** (iOS), with a shared SwiftData bridge. Define missions and life context on your iPhone; the Mac runner executes them on schedule and pushes action items back to your phone.
 
+**Suggested GitHub topics** (set under repo **About** → **Topics** for discoverability):
+
+`ai-agents` · `agent-platform` · `swift` · `swiftui` · `swiftdata` · `macos` · `ios` · `ollama` · `llm` · `mcp` · `local-ai` · `autonomous-agents` · `personal-agent` · `cloudkit`
+
 ## Screenshots
 
 ### iOS app (Remote)
