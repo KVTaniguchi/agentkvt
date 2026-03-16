@@ -6,7 +6,10 @@ import ManagerCore
 struct DashboardView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \ActionItem.timestamp, order: .reverse) private var actionItems: [ActionItem]
+    @Query(sort: \InboundFile.timestamp, order: .reverse) private var inboundFiles: [InboundFile]
     @State private var selectedTab = 0
+    @State private var isImporterPresented = false
+    @State private var importError: String?
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -22,6 +25,48 @@ struct DashboardView: View {
             AgentLogView()
                 .tabItem { Label("Log", systemImage: "doc.text.magnifyingglass") }
                 .tag(3)
+            InboundFilesView(files: inboundFiles)
+                .tabItem { Label("Files", systemImage: "doc") }
+                .tag(4)
+        }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    isImporterPresented = true
+                } label: {
+                    Label("Upload File", systemImage: "square.and.arrow.up")
+                }
+            }
+        }
+        .fileImporter(
+            isPresented: $isImporterPresented,
+            allowedContentTypes: [.pdf, .plainText, .commaSeparatedText],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else { return }
+                do {
+                    let data = try Data(contentsOf: url)
+                    let inbound = InboundFile(
+                        fileName: url.lastPathComponent,
+                        fileData: data
+                    )
+                    modelContext.insert(inbound)
+                    try modelContext.save()
+                } catch {
+                    importError = "Failed to import file: \(error.localizedDescription)"
+                }
+            case .failure(let error):
+                importError = "File import failed: \(error.localizedDescription)"
+            }
+        }
+        .alert("File Import Error", isPresented: .constant(importError != nil)) {
+            Button("OK") { importError = nil }
+        } message: {
+            if let importError {
+                Text(importError)
+            }
         }
     }
 }
@@ -66,6 +111,37 @@ struct ActionItemRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .buttonStyle(.plain)
+    }
+}
+
+struct InboundFilesView: View {
+    let files: [InboundFile]
+
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(files, id: \.id) { file in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(file.fileName)
+                                .font(.headline)
+                            Text(file.timestamp, style: .date)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Text(file.isProcessed ? "Processed" : "Pending")
+                            .font(.caption2)
+                            .padding(6)
+                            .background(file.isProcessed ? Color.green.opacity(0.15) : Color.yellow.opacity(0.15))
+                            .foregroundStyle(file.isProcessed ? .green : .orange)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                    }
+                }
+            }
+            .navigationTitle("Inbound Files")
+            .emptyState(files.isEmpty, message: "Upload PDFs, TXTs, or CSVs to share with your Mac agent.")
+        }
     }
 }
 

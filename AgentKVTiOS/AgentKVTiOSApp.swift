@@ -9,7 +9,8 @@ struct AgentKVTiOSApp: App {
             LifeContext.self,
             MissionDefinition.self,
             ActionItem.self,
-            AgentLog.self
+            AgentLog.self,
+            InboundFile.self
         ])
         #if targetEnvironment(simulator)
         // Simulator: use app group container so SwiftData has a valid container (avoids loadIssueModelContainer).

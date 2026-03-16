@@ -39,13 +39,23 @@ struct ManagerCoreModelTests {
         #expect(ctx.value == "Senior iOS in Philly")
     }
 
+    @Test("InboundFile can be created with default values")
+    func inboundFileCreation() throws {
+        let data = "hello".data(using: .utf8)!
+        let file = InboundFile(fileName: "test.txt", fileData: data)
+        #expect(file.fileName == "test.txt")
+        #expect(file.fileData == data)
+        #expect(file.isProcessed == false)
+    }
+
     @Test("SwiftData schema accepts all model types in one container")
     func schemaAndContainer() throws {
         let schema = Schema([
             LifeContext.self,
             MissionDefinition.self,
             ActionItem.self,
-            AgentLog.self
+            AgentLog.self,
+            InboundFile.self
         ])
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
         let container = try ModelContainer(for: schema, configurations: [config])
