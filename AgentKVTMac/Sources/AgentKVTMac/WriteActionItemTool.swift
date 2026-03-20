@@ -32,6 +32,7 @@ public func makeWriteActionItemTool(modelContext: ModelContext) -> ToolRegistry.
                 systemIntent: systemIntent.trimmingCharacters(in: .whitespacesAndNewlines),
                 payloadData: payloadData
             )
+            item.missionId = MissionExecutionContext.current?.missionId
             modelContext.insert(item)
             try modelContext.save()
             return "Created ActionItem: \(item.title) (\(item.systemIntent))"

@@ -64,16 +64,6 @@
       debugDocumentVersioning = "YES"
       debugServiceExtension = "internal"
       allowLocationSimulation = "YES">
-      <BuildableProductRunnable
-         runnableDebuggingMode = "0">
-         <BuildableReference
-            BuildableIdentifier = "primary"
-            BlueprintIdentifier = "A6000001"
-            BuildableName = "AgentKVTiOS.app"
-            BlueprintName = "AgentKVTiOS"
-            ReferencedContainer = "container:AgentKVTiOS.xcodeproj">
-         </BuildableReference>
-      </BuildableProductRunnable>
       <BuildableReference
          BuildableIdentifier = "primary"
          BlueprintIdentifier = "A6000001"

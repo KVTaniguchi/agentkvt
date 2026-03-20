@@ -4,6 +4,7 @@ import SwiftData
 
 /// Shared CloudKit container used by both iOS and Mac app for SwiftData sync.
 public let cloudKitContainerIdentifier = "iCloud.AgentKVT"
+public let sharedAppGroupIdentifier = "group.com.agentkvt.shared"
 
 /// Runs the AgentKVT Mac runner (scheduler or single test). Use from the CLI executable or from the Mac app target.
 /// When run from an app that has the iCloud.AgentKVT entitlement, SwiftData will use the shared CloudKit container.
@@ -16,19 +17,32 @@ public func runAgentKVTMacRunner() async {
         InboundFile.self,
     ])
     var container: ModelContainer?
-    let persistentConfig = ModelConfiguration(
+    let sharedPersistentConfig = ModelConfiguration(
         "default",
+        schema: schema,
+        isStoredInMemoryOnly: false,
+        allowsSave: true,
+        groupContainer: .identifier(sharedAppGroupIdentifier),
+        cloudKitDatabase: .private(cloudKitContainerIdentifier)
+    )
+    let cloudKitOnlyConfig = ModelConfiguration(
+        "default-cloudkit",
         schema: schema,
         isStoredInMemoryOnly: false,
         allowsSave: true,
         groupContainer: .none,
         cloudKitDatabase: .private(cloudKitContainerIdentifier)
     )
-    if let c = try? ModelContainer(for: schema, configurations: [persistentConfig]) {
+    if let c = try? ModelContainer(for: schema, configurations: [sharedPersistentConfig]) {
         container = c
+        print("SwiftData storage: app group + CloudKit")
+    } else if let c = try? ModelContainer(for: schema, configurations: [cloudKitOnlyConfig]) {
+        container = c
+        print("SwiftData storage: CloudKit only")
     } else {
         let inMemoryConfig = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
         container = try? ModelContainer(for: schema, configurations: [inMemoryConfig])
+        print("SwiftData storage: in-memory fallback")
     }
     guard let container else {
         print("Failed to create ModelContainer")
@@ -43,6 +57,7 @@ public func runAgentKVTMacRunner() async {
     if let email = ProcessInfo.processInfo.environment["NOTIFICATION_EMAIL"], !email.isEmpty {
         registry.register(makeSendNotificationEmailTool(destinationEmail: email))
     }
+    registry.register(makeGetLifeContextTool(modelContext: context))
     if let pat = ProcessInfo.processInfo.environment["GITHUB_AGENT_PAT"],
        let reposEnv = ProcessInfo.processInfo.environment["GITHUB_AGENT_REPOS"], !pat.isEmpty {
         let repos = reposEnv.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
@@ -59,13 +74,22 @@ public func runAgentKVTMacRunner() async {
     let emailIngestor = EmailIngestor(directory: inboxDir)
     registry.register(makeIncomingEmailTriggerTool(ingestor: emailIngestor))
 
+    let dropzoneDir: URL
+    if let path = ProcessInfo.processInfo.environment["AGENTKVT_INBOUND_DIR"], !path.isEmpty {
+        dropzoneDir = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+    } else {
+        dropzoneDir = DropzoneService.defaultDirectory
+    }
+    registry.register(makeListDropzoneFilesTool(directory: dropzoneDir))
+    registry.register(makeReadDropzoneFileTool(directory: dropzoneDir))
+
     let client = OllamaClient(
         baseURL: URL(string: ProcessInfo.processInfo.environment["OLLAMA_BASE_URL"] ?? "http://localhost:11434")!,
         model: ProcessInfo.processInfo.environment["OLLAMA_MODEL"] ?? "llama3.2"
     )
 
     if ProcessInfo.processInfo.environment["RUN_SCHEDULER"] == "1" {
-        await runScheduler(context: context, client: client, registry: registry, emailIngestor: emailIngestor)
+        await runScheduler(context: context, client: client, registry: registry, emailIngestor: emailIngestor, dropzoneDir: dropzoneDir)
     } else {
         await runSingleTest(registry: registry, client: client)
     }
@@ -85,16 +109,10 @@ private func runSingleTest(registry: ToolRegistry, client: OllamaClient) async {
     }
 }
 
-private func runScheduler(context: ModelContext, client: OllamaClient, registry: ToolRegistry, emailIngestor: EmailIngestor) async {
+private func runScheduler(context: ModelContext, client: OllamaClient, registry: ToolRegistry, emailIngestor: EmailIngestor, dropzoneDir: URL) async {
     let scheduler = MissionScheduler()
     let runner = MissionRunner(modelContext: context, client: client, registry: registry)
     let intervalSeconds = Int(ProcessInfo.processInfo.environment["SCHEDULER_INTERVAL_SECONDS"] ?? "300") ?? 300
-    let dropzoneDir: URL
-    if let path = ProcessInfo.processInfo.environment["AGENTKVT_INBOUND_DIR"], !path.isEmpty {
-        dropzoneDir = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
-    } else {
-        dropzoneDir = DropzoneService.defaultDirectory
-    }
     let dropzone = DropzoneService(directory: dropzoneDir)
     let cloudInbound = CloudInboundService(modelContext: context, directory: dropzoneDir)
     dropzone.ensureDirectory()
@@ -108,10 +126,12 @@ private func runScheduler(context: ModelContext, client: OllamaClient, registry:
             let descriptor = FetchDescriptor<MissionDefinition>()
             let missions = try context.fetch(descriptor)
             let due = scheduler.dueMissions(from: missions)
-            let inboundContext = dropzone.getContent()
             for mission in due {
                 do {
-                    try await runner.run(mission, additionalContext: inboundContext.isEmpty ? nil : inboundContext)
+                    mission.lastRunAt = Date()
+                    mission.updatedAt = Date()
+                    try context.save()
+                    try await runner.run(mission)
                     print("Ran mission: \(mission.missionName)")
                 } catch {
                     print("Mission \(mission.missionName) failed: \(error)")

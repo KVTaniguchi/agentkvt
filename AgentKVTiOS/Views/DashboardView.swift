@@ -74,14 +74,26 @@ struct DashboardView: View {
 struct ActionItemsList: View {
     let items: [ActionItem]
     @Environment(\.modelContext) private var modelContext
+    @Query private var missions: [MissionDefinition]
+
+    private var missionsById: [UUID: MissionDefinition] {
+        Dictionary(uniqueKeysWithValues: missions.map { ($0.id, $0) })
+    }
 
     var body: some View {
         NavigationStack {
             List {
                 ForEach(items.filter { !$0.isHandled }, id: \.id) { item in
-                    ActionItemRow(item: item) {
-                        item.isHandled = true
-                        try? modelContext.save()
+                    NavigationLink {
+                        ActionItemDetailView(
+                            item: item,
+                            mission: item.missionId.flatMap { missionsById[$0] }
+                        ) {
+                            item.isHandled = true
+                            try? modelContext.save()
+                        }
+                    } label: {
+                        ActionItemRow(item: item, missionName: item.missionId.flatMap { missionsById[$0]?.missionName })
                     }
                 }
             }
@@ -93,34 +105,137 @@ struct ActionItemsList: View {
 
 struct ActionItemRow: View {
     let item: ActionItem
-    let onTap: () -> Void
+    let missionName: String?
 
     var body: some View {
-        Button(action: onTap) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(item.title)
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                Text(item.systemIntent)
+        VStack(alignment: .leading, spacing: 4) {
+            Text(item.title)
+                .font(.headline)
+                .foregroundStyle(.primary)
+            if let missionName {
+                Label(missionName, systemImage: "sparkles.rectangle.stack")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text(item.timestamp, style: .relative)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.blue)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            Text(item.systemIntent)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(item.timestamp, style: .relative)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
         }
-        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+struct ActionItemDetailView: View {
+    let item: ActionItem
+    let mission: MissionDefinition?
+    let onMarkHandled: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    private var payloadText: String? {
+        guard let payloadData = item.payloadData, !payloadData.isEmpty else { return nil }
+        if let object = try? JSONSerialization.jsonObject(with: payloadData),
+           let prettyData = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted]),
+           let pretty = String(data: prettyData, encoding: .utf8) {
+            return pretty
+        }
+        return String(data: payloadData, encoding: .utf8)
+    }
+
+    private var missionStatus: String {
+        guard let mission else { return "Unknown mission" }
+        return mission.isEnabled ? "Enabled" : "Disabled"
+    }
+
+    var body: some View {
+        List {
+            Section("Action") {
+                LabeledContent("Title", value: item.title)
+                LabeledContent("Intent", value: item.systemIntent)
+                LabeledContent("Created") {
+                    Text(item.timestamp, style: .date)
+                }
+                LabeledContent("Handled") {
+                    Text(item.isHandled ? "Yes" : "No")
+                }
+            }
+
+            Section("Mission") {
+                if let mission {
+                    LabeledContent("Name", value: mission.missionName)
+                    LabeledContent("Schedule", value: mission.triggerSchedule)
+                    LabeledContent("Status", value: missionStatus)
+                    if let lastRunAt = mission.lastRunAt {
+                        LabeledContent("Last Run") {
+                            Text(lastRunAt, style: .relative)
+                        }
+                    }
+                    if !mission.allowedMCPTools.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Allowed Tools")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text(mission.allowedMCPTools.joined(separator: ", "))
+                                .font(.body)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                } else {
+                    Text("This action is not currently linked to a loaded mission record.")
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if let payloadText {
+                Section("Payload") {
+                    ScrollView(.horizontal) {
+                        Text(payloadText)
+                            .font(.system(.body, design: .monospaced))
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+        }
+        .navigationTitle("Action Detail")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                if !item.isHandled {
+                    Button("Mark Done") {
+                        onMarkHandled()
+                        dismiss()
+                    }
+                }
+            }
+        }
     }
 }
 
 struct InboundFilesView: View {
     let files: [InboundFile]
 
+    private let staleInterval: TimeInterval = 5 * 60 // 5 minutes
+
+    private func status(for file: InboundFile) -> (label: String, color: Color, note: String?) {
+        if file.isProcessed {
+            return ("Processed", .green, nil)
+        }
+        let age = Date().timeIntervalSince(file.timestamp)
+        if age > staleInterval {
+            return ("Pending", .orange, "Waiting for Mac to sync…")
+        }
+        return ("Pending", .orange, nil)
+    }
+
     var body: some View {
         NavigationStack {
             List {
                 ForEach(files, id: \.id) { file in
+                    let s = status(for: file)
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(file.fileName)
@@ -128,13 +243,18 @@ struct InboundFilesView: View {
                             Text(file.timestamp, style: .date)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                            if let note = s.note {
+                                Text(note)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                         Spacer()
-                        Text(file.isProcessed ? "Processed" : "Pending")
+                        Text(s.label)
                             .font(.caption2)
                             .padding(6)
-                            .background(file.isProcessed ? Color.green.opacity(0.15) : Color.yellow.opacity(0.15))
-                            .foregroundStyle(file.isProcessed ? .green : .orange)
+                            .background(s.color.opacity(0.15))
+                            .foregroundStyle(s.color)
                             .clipShape(RoundedRectangle(cornerRadius: 6))
                     }
                 }

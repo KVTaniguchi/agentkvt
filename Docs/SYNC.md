@@ -1,29 +1,55 @@
-# Sync Decision: Bridge Between Mac and iOS
+# Sync: Bridge Between Mac and iOS
 
 The **Bridge** is shared state between the Brain (macOS) and the Remote (iOS). The macOS app is the writer/processor; the iOS app is the observer/controller.
 
-## Options
+## Requirement for syncing to work
 
-1. **CloudKit**  
-   Use SwiftData’s CloudKit integration so that the same schema syncs across devices. Pros: works across networks, no local setup. Cons: requires Apple Developer account, data in iCloud, possible latency.
+For syncing to actually work, the two apps must share data in a **shared SwiftData store**. That means a **shared CloudKit container**: both the iOS app and the Mac app use the same CloudKit container identifier so that SwiftData + CloudKit syncs the same schema (ManagerCore) between devices. Without a shared container, each app has its own local store and no data flows between them.
 
-2. **Local network / Tailscale**  
-   Run a shared persistence layer (e.g. a local sync service or shared DB) on the Mac and have iOS connect over the local network or Tailscale. Pros: data stays on your network, low latency. Cons: more setup, iOS and Mac must be on the same network (or reachable via Tailscale).
+## CloudKit approach (recommended)
 
-## Recommendation
+- Use SwiftData's CloudKit integration with one **shared CloudKit container** for both apps.
+- **In Xcode:** Enable the **iCloud** capability (CloudKit) on both the iOS and Mac targets, and select the **same** CloudKit container (e.g. `iCloud.com.yourteam.AgentKVT`) for both. Create the container in the Apple Developer portal if needed.
+- **In code:** Both apps create a `ModelContainer` with the same `Schema` (ManagerCore) and the same `cloudKitContainerIdentifier` in `ModelConfiguration`. The Mac writes missions, ActionItems, and AgentLog; the iOS app reads and displays them. Sync happens via iCloud.
 
-- **For development and single-user “same LAN” use:** Prefer **local network or Tailscale** so the Mac is the source of truth and iOS connects to it. Implement by either:
-  - Using a sync service that exposes the same SwiftData schema (e.g. custom sync endpoint + NSPersistentCloudKitContainer or equivalent), or
-  - Using CloudKit with a private container so both apps share the same container and schema.
+## Alternative: local network / Tailscale
 
-- **For simplicity and to avoid custom server code:** Use **SwiftData with CloudKit**. Configure the same CloudKit container and schema on both the Mac and iOS apps; the Mac writes (missions, ActionItems, AgentLog) and the iOS app observes and displays.
+- Run a shared persistence layer on the Mac and have iOS connect over the local network or Tailscale. Requires custom sync service or shared DB; both apps still need the same schema (ManagerCore). More setup; data stays on your network.
 
-## Implementation notes
+## Enabling the Mac app to use the shared CloudKit container
 
-- Both apps must use **ManagerCore** and the same `Schema([LifeContext.self, MissionDefinition.self, ActionItem.self, AgentLog.self])`.
-- ModelContainer configuration should enable CloudKit if that option is chosen (see Apple’s SwiftData + CloudKit documentation).
-- If using local sync, the Mac app must run a service that the iOS app can reach (e.g. over HTTPS on the LAN or via Tailscale); schema and entity names must match ManagerCore.
+The Mac side is currently a **Swift Package executable** (`swift run AgentKVTMacRunner`). Executables built with SPM do not get code-signed with entitlements, so they cannot use iCloud/CloudKit. To share the same container as iOS, the Mac must run as an **Xcode-built macOS app** that has the iCloud capability.
+
+### Option A: Add a macOS app target in Xcode
+
+1. **Create a new macOS app target** (or a new Xcode project for Mac) that builds an `.app` bundle.
+2. **Add the iCloud capability** to that target:
+   - Select the Mac app target → **Signing & Capabilities** → **+ Capability** → **iCloud**.
+   - Under **Services**, check **CloudKit** (same as iOS).
+   - Under **Containers**, add or select the **same** container as iOS: `iCloud.AgentKVT`. Use the same container for both targets; do not create a second container for Mac.
+3. **Attach the entitlements file**: Use `AgentKVTMac/AgentKVTMac.entitlements` (same container and CloudKit service as iOS). In the target’s **Build Settings**, set **Code Signing Entitlements** to that file.
+4. **Wire in the runner**: Have the Mac app depend on the AgentKVTMac package (or embed its code) and run the same scheduler/runner logic from the app’s main entry point (e.g. `@main` struct that calls into AgentKVTMacRunner). Ensure the runner uses `ModelConfiguration(..., cloudKitContainerIdentifier: "iCloud.AgentKVT")` when creating the `ModelContainer` so SwiftData uses the shared CloudKit container.
+5. **Run the Mac app** from Xcode (or as a signed `.app`) instead of `swift run AgentKVTMacRunner`. For headless/scheduler use, you can run the built app from Terminal or launchd with the same env vars (e.g. `RUN_SCHEDULER=1`).
+
+### Option B: Use the existing entitlements file only
+
+The repo includes `AgentKVTMac/AgentKVTMac.entitlements` with the same iCloud container (`iCloud.AgentKVT`) and CloudKit service as the iOS app. When you create the Mac app target in Xcode, assign this file to the target’s **Code Signing Entitlements** and add the iCloud capability as above; Xcode will keep the capability and entitlements in sync.
+
+### Summary
+
+| Step | iOS (AgentKVTiOS) | Mac (new app target) |
+|------|-------------------|------------------------|
+| Capability | iCloud → CloudKit ✓ | iCloud → CloudKit ✓ |
+| Container | `iCloud.AgentKVT` | **Same:** `iCloud.AgentKVT` |
+| ModelConfiguration | `cloudKitContainerIdentifier: "iCloud.AgentKVT"` | Same in runner code when run as app |
+
+## Implementation checklist (CloudKit)
+
+- [ ] Create one CloudKit container in Apple Developer (e.g. `iCloud.AgentKVT` — already used by iOS).
+- [ ] Enable iCloud capability + CloudKit on **AgentKVTiOS** and on a **macOS app target** that runs the AgentKVTMac logic; assign the **same** container (`iCloud.AgentKVT`) to both.
+- [ ] Both apps use **ManagerCore** and the same `Schema([LifeContext.self, MissionDefinition.self, ActionItem.self, AgentLog.self])`.
+- [ ] Configure `ModelConfiguration` with the same `cloudKitContainerIdentifier: "iCloud.AgentKVT"` (and optional `allowsSave: true` where needed). See Apple's SwiftData + CloudKit documentation for the exact API.
 
 ## Status
 
-**Decision:** Deferred. Implement initial version with **local-only SwiftData** (no sync) so both apps can run and the mission engine can write ActionItems. Add CloudKit or local-network sync in a follow-up once the rest of the pipeline is stable.
+**Current:** Local-only SwiftData (no sync); each app has its own store. **To enable sync:** Implement the shared CloudKit container as above so both apps use the same container and schema.

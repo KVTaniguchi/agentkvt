@@ -17,6 +17,7 @@ struct ManagerCoreModelTests {
         #expect(mission.triggerSchedule == "weekly|sunday")
         #expect(mission.allowedMCPTools.count == 2)
         #expect(mission.isEnabled == true)
+        #expect(mission.lastRunAt == nil)
     }
 
     @Test("ActionItem can be created and has expected properties")

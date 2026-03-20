@@ -16,8 +16,22 @@ public struct MissionScheduler {
     public func dueMissions(from missions: [MissionDefinition]) -> [MissionDefinition] {
         let date = now()
         return missions.filter { mission in
-            mission.isEnabled && isDue(mission.triggerSchedule, at: date)
+            mission.isEnabled && isDue(mission, at: date)
         }
+    }
+
+    /// Returns true if the mission should run in the current scheduling window.
+    public func isDue(_ mission: MissionDefinition, at date: Date) -> Bool {
+        guard let scheduledAt = scheduledWindowStart(for: mission.triggerSchedule, at: date) else {
+            return false
+        }
+        if date < scheduledAt {
+            return false
+        }
+        guard let lastRunAt = mission.lastRunAt else {
+            return true
+        }
+        return lastRunAt < scheduledAt
     }
 
     /// Parse triggerSchedule and check if it's due at the given date.
@@ -51,6 +65,43 @@ public struct MissionScheduler {
             return comp.weekday == idx + 1
         default:
             return false
+        }
+    }
+
+    private func scheduledWindowStart(for schedule: String, at date: Date) -> Date? {
+        let parts = schedule.split(separator: "|", maxSplits: 1).map(String.init)
+        guard let kind = parts.first?.lowercased() else { return nil }
+        switch kind {
+        case "webhook":
+            return nil
+        case "daily":
+            guard parts.count == 2 else { return nil }
+            let hourMin = parts[1].split(separator: ":")
+            guard hourMin.count == 2,
+                  let hour = Int(hourMin[0]),
+                  let minute = Int(hourMin[1]),
+                  (0..<24).contains(hour),
+                  (0..<60).contains(minute) else {
+                return nil
+            }
+            var components = calendar.dateComponents([.year, .month, .day], from: date)
+            components.hour = hour
+            components.minute = minute
+            components.second = 0
+            return calendar.date(from: components)
+        case "weekly":
+            guard parts.count == 2 else { return nil }
+            let weekdayStr = parts[1].lowercased()
+            let weekdays = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
+            guard let weekday = weekdays.firstIndex(of: weekdayStr).map({ $0 + 1 }) else {
+                return nil
+            }
+            let startOfDay = calendar.startOfDay(for: date)
+            let currentWeekday = calendar.component(.weekday, from: startOfDay)
+            let dayOffset = weekday - currentWeekday
+            return calendar.date(byAdding: .day, value: dayOffset, to: startOfDay)
+        default:
+            return nil
         }
     }
 }

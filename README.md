@@ -56,6 +56,9 @@ iOS → shared SwiftData store → Mac scheduler → MissionRunner → AgentLoop
 
 ## Planning
 
+- [Docs/SOVEREIGN_PLANNER_VISION.md](Docs/SOVEREIGN_PLANNER_VISION.md) - Product vision and north-star direction for AgentKVT as "The Sovereign Planner".
+- [Docs/EXECUTION_ROADMAP.md](Docs/EXECUTION_ROADMAP.md) - MVP definition, current-state assessment, milestones, and near-term execution order.
+- [Docs/CORE_LOOP_AUDIT.md](Docs/CORE_LOOP_AUDIT.md) - Audit of the current mission-authoring to ActionItem-return path, including concrete gaps and next fixes.
 - [FOUNDATIONAL_PLAN.MD](FOUNDATIONAL_PLAN.MD) — Architecture, schema, missions, tools, diagram.
 - [Docs/SUPERAGENT_IMPLEMENTATION_PHASES.md](Docs/SUPERAGENT_IMPLEMENTATION_PHASES.md) — Phased implementation plan (ManagerCore → Mac Brain → tools → mission engine → iOS → E2E).
 - [Docs/E2E_VERIFICATION.md](Docs/E2E_VERIFICATION.md) — E2E scenarios (Career, Finance), AgentLog audit, checklist.

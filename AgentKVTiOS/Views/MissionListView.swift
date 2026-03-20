@@ -72,7 +72,37 @@ struct MissionEditView: View {
     @State private var systemPrompt: String = ""
     @State private var triggerSchedule: String = "daily|08:00"
     @State private var selectedToolIds: Set<String> = []
+    @State private var validationMessage: String?
     @Environment(\.dismiss) private var dismiss
+
+    private var trimmedName: String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var trimmedPrompt: String {
+        systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var normalizedSchedule: String {
+        triggerSchedule.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    private var isScheduleValid: Bool {
+        if normalizedSchedule == "webhook" {
+            return true
+        }
+        if normalizedSchedule.range(of: #"^daily\|([01]?\d|2[0-3]):[0-5]\d$"#, options: .regularExpression) != nil {
+            return true
+        }
+        if normalizedSchedule.range(of: #"^weekly\|(sunday|monday|tuesday|wednesday|thursday|friday|saturday)$"#, options: .regularExpression) != nil {
+            return true
+        }
+        return false
+    }
+
+    private var isFormValid: Bool {
+        !trimmedName.isEmpty && !trimmedPrompt.isEmpty && !selectedToolIds.isEmpty && isScheduleValid
+    }
 
     var body: some View {
         NavigationStack {
@@ -84,6 +114,9 @@ struct MissionEditView: View {
                 }
                 Section("Schedule") {
                     TextField("Trigger (e.g. daily|08:00, weekly|monday)", text: $triggerSchedule)
+                    Text("Supported: daily|HH:mm, weekly|weekday, or webhook")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
                 Section("Allowed tools") {
                     ForEach(toolIds, id: \.self) { id in
@@ -93,16 +126,27 @@ struct MissionEditView: View {
                         ))
                     }
                 }
+                if let validationMessage {
+                    Section("Validation") {
+                        Text(validationMessage)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+                }
             }
             .navigationTitle(mission == nil ? "New Mission" : "Edit Mission")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        onSave(name, systemPrompt, triggerSchedule, Array(selectedToolIds).sorted())
+                        guard isFormValid else {
+                            validationMessage = validationError()
+                            return
+                        }
+                        onSave(trimmedName, trimmedPrompt, normalizedSchedule, Array(selectedToolIds).sorted())
                         dismiss()
                     }
-                    .disabled(name.isEmpty)
+                    .disabled(!isFormValid)
                 }
             }
             .onAppear {
@@ -113,6 +157,26 @@ struct MissionEditView: View {
                     selectedToolIds = Set(m.allowedMCPTools)
                 }
             }
+            .onChange(of: name) { _, _ in validationMessage = nil }
+            .onChange(of: systemPrompt) { _, _ in validationMessage = nil }
+            .onChange(of: triggerSchedule) { _, _ in validationMessage = nil }
+            .onChange(of: selectedToolIds) { _, _ in validationMessage = nil }
         }
+    }
+
+    private func validationError() -> String {
+        if trimmedName.isEmpty {
+            return "Mission name is required."
+        }
+        if trimmedPrompt.isEmpty {
+            return "System prompt is required."
+        }
+        if selectedToolIds.isEmpty {
+            return "Select at least one allowed tool."
+        }
+        if !isScheduleValid {
+            return "Schedule must be daily|HH:mm, weekly|weekday, or webhook."
+        }
+        return "Mission is invalid."
     }
 }

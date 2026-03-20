@@ -74,11 +74,17 @@ struct JobScoutPipelineTest {
         let reviewItem = items.first!
         #expect(reviewItem.title.contains("Review"), "Expected ActionItem title to contain 'Review', got '\(reviewItem.title)'")
         #expect(reviewItem.relevanceScore >= 0.8, "Expected relevanceScore >= 0.8 (default is 1.0)")
+        #expect(reviewItem.missionId == mission.id, "Expected ActionItem to retain the originating mission id")
 
         let logDesc = FetchDescriptor<AgentLog>(predicate: #Predicate<AgentLog> { $0.phase == "outcome" })
         let logs = try context.fetch(logDesc)
         #expect(logs.count >= 1, "Expected at least one AgentLog with phase 'outcome'")
         #expect(logs.contains { $0.content.contains("high-match") || $0.content.contains("Acme") })
+
+        let toolLogDesc = FetchDescriptor<AgentLog>(predicate: #Predicate<AgentLog> { $0.phase == "tool_call" || $0.phase == "tool_result" })
+        let toolLogs = try context.fetch(toolLogDesc)
+        #expect(toolLogs.contains { $0.toolName == "write_action_item" && $0.phase == "tool_call" })
+        #expect(toolLogs.contains { $0.toolName == "write_action_item" && $0.phase == "tool_result" })
     }
 }
 
@@ -115,7 +121,7 @@ struct ImpulsiveExpenseGuardTest {
         ])
 
         let runner = MissionRunner(modelContext: context, client: mockClient, registry: registry)
-        try await runner.run(mission, additionalContext: dropzoneContext)
+        try await runner.run(mission)
 
         let itemDesc = FetchDescriptor<ActionItem>()
         let items = try context.fetch(itemDesc)

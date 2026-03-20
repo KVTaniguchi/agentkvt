@@ -16,20 +16,69 @@ public final class MissionRunner {
     }
 
     /// Run one mission and log the outcome.
-    /// - Parameter additionalContext: Optional context (e.g. from Dropzone) to prepend to the mission prompt.
-    public func run(_ mission: MissionDefinition, additionalContext: String? = nil) async throws {
+    public func run(_ mission: MissionDefinition) async throws {
         let allowedTools = mission.allowedMCPTools
         let loop = AgentLoop(client: client, registry: registry, allowedToolIds: allowedTools)
         let systemPrompt = mission.systemPrompt
-        var userMessage = "Execute your mission. Use the available tools to create action items or other outputs as defined in your instructions."
-        if let ctx = additionalContext, !ctx.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            userMessage = "Additional context from inbound files:\n\n\(ctx)\n\n---\n\n" + userMessage
-        }
+        let userMessage = "Execute your mission. Use the available tools to create action items or other outputs as defined in your instructions."
+        let startLog = AgentLog(
+            missionId: mission.id,
+            missionName: mission.missionName,
+            phase: "start",
+            content: "Starting mission with \(allowedTools.count) allowed tool(s): \(allowedTools.joined(separator: ", "))"
+        )
+        modelContext.insert(startLog)
+        try modelContext.save()
         let result: String
         do {
-            result = try await loop.run(systemPrompt: systemPrompt, userMessage: userMessage)
+            let context = MissionExecutionContext.Context(missionId: mission.id, missionName: mission.missionName)
+            result = try await MissionExecutionContext.$current.withValue(context) {
+                try await loop.run(systemPrompt: systemPrompt, userMessage: userMessage) { [modelContext] event in
+                    let log = switch event {
+                    case .assistantResponse(let content, let toolCalls):
+                        AgentLog(
+                            missionId: mission.id,
+                            missionName: mission.missionName,
+                            phase: "assistant",
+                            content: content ?? "Assistant requested \(toolCalls.count) tool call(s)."
+                        )
+                    case .toolCallRequested(let name, let arguments):
+                        AgentLog(
+                            missionId: mission.id,
+                            missionName: mission.missionName,
+                            phase: "tool_call",
+                            content: arguments,
+                            toolName: name
+                        )
+                    case .toolCallCompleted(let name, let result):
+                        AgentLog(
+                            missionId: mission.id,
+                            missionName: mission.missionName,
+                            phase: "tool_result",
+                            content: result,
+                            toolName: name
+                        )
+                    case .finalResponse(let content):
+                        AgentLog(
+                            missionId: mission.id,
+                            missionName: mission.missionName,
+                            phase: "assistant_final",
+                            content: content
+                        )
+                    case .maxRoundsReached:
+                        AgentLog(
+                            missionId: mission.id,
+                            missionName: mission.missionName,
+                            phase: "warning",
+                            content: "Agent loop reached max rounds before producing a final response."
+                        )
+                    }
+                    modelContext.insert(log)
+                    try? modelContext.save()
+                }
+            }
         } catch {
-            let log = AgentLog(missionId: mission.id, missionName: mission.missionName, phase: "outcome", content: "Error: \(error)")
+            let log = AgentLog(missionId: mission.id, missionName: mission.missionName, phase: "error", content: "Error: \(error)")
             modelContext.insert(log)
             try modelContext.save()
             throw error
