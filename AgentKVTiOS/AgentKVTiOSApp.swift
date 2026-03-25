@@ -4,13 +4,22 @@ import ManagerCore
 
 @main
 struct AgentKVTiOSApp: App {
+    @StateObject private var familyProfileStore = FamilyProfileStore()
+
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
             LifeContext.self,
             MissionDefinition.self,
             ActionItem.self,
             AgentLog.self,
-            InboundFile.self
+            InboundFile.self,
+            ChatThread.self,
+            ChatMessage.self,
+            IncomingEmailSummary.self,
+            WorkUnit.self,
+            EphemeralPin.self,
+            ResourceHealth.self,
+            FamilyMember.self,
         ])
         #if targetEnvironment(simulator)
         // Simulator: use app group container so SwiftData has a valid container (avoids loadIssueModelContainer).
@@ -54,7 +63,8 @@ struct AgentKVTiOSApp: App {
 
     var body: some Scene {
         WindowGroup {
-            DashboardView()
+            RootView()
+                .environmentObject(familyProfileStore)
         }
         .modelContainer(sharedModelContainer)
     }

@@ -4,7 +4,7 @@ This document captures the current product vision for AgentKVT so implementation
 
 ## Vision
 
-AgentKVT is intended to become a localized, private, and proactive life manager that serves as a zero-token-cost alternative to frontier API-driven agents. The product moves away from the chat-box paradigm toward a deterministic interface built on Apple's native stack, with structured user actions, strong local state management, and predictable execution.
+AgentKVT is intended to become a localized, private, and proactive life manager that serves as a zero-token-cost alternative to frontier API-driven agents. The product centers deterministic, Apple-native workflows while also offering a dedicated chat interface on Tab 4 for conversational guidance, follow-up, and ad-hoc interaction.
 
 ## Product Direction
 
@@ -12,7 +12,7 @@ The long-term direction is to make AgentKVT feel less like a chatbot and more li
 
 - It should run locally on Apple Silicon hardware and scale its reasoning model to available memory.
 - It should use Apple-native technologies such as SwiftData, CoreML, and NLP to reduce prompt bloat and keep state grounded in local data structures.
-- It should present users with deterministic `ActionItem` choices instead of an open-ended chat UI.
+- It should present users with deterministic `ActionItem` choices as the primary control loop, and include a dedicated chat interface on Tab 4 for conversational interaction.
 - It should ingest sensitive personal data locally, sanitize it before model use, and keep the overall system privacy-first.
 
 ## Core Pillars
@@ -27,7 +27,7 @@ The system should rely on local Apple-friendly primitives for state, memory, and
 
 ### 3. Deterministic Control
 
-The iOS app should function as a structured remote, not a chat client. The macOS brain generates reviewable `ActionItem`s, and the user interacts through explicit, high-intent controls.
+The iOS app should function as a structured remote with deterministic controls first, plus a dedicated chat surface on Tab 4. The macOS brain generates reviewable `ActionItem`s, and the user can also use chat for clarifications, exploration, and guided follow-up.
 
 ### 4. Privacy-First Ingestion
 
@@ -88,7 +88,7 @@ Target 70B+ models for deep document analysis, complex coding assistance, and la
 When making roadmap or implementation decisions, we should bias toward:
 
 - local execution over cloud dependence
-- deterministic UI over open-ended chat interaction
+- deterministic UI as the primary workflow, with Tab 4 chat as a complementary interface
 - structured memory over prompt-only context
 - auditable action generation over opaque autonomy
 - privacy-preserving ingestion over convenience shortcuts

@@ -5,7 +5,9 @@ import ManagerCore
 /// Mission authoring: create/edit MissionDefinition (name, prompt, schedule, allowed tools).
 struct MissionListView: View {
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var profileStore: FamilyProfileStore
     @Query(sort: \MissionDefinition.updatedAt, order: .reverse) private var missions: [MissionDefinition]
+    @Query(sort: \FamilyMember.createdAt, order: .forward) private var familyMembers: [FamilyMember]
     @State private var showAddMission = false
 
     private static let knownToolIds = ["write_action_item", "web_search_and_fetch", "headless_browser_scout", "send_notification_email", "github_agent", "fetch_bee_ai_context", "incoming_email_trigger"]
@@ -15,16 +17,27 @@ struct MissionListView: View {
             List {
                 ForEach(missions, id: \.id) { mission in
                     NavigationLink {
-                        MissionEditView(mission: mission, toolIds: Self.knownToolIds) { name, prompt, schedule, tools in
+                        MissionEditView(
+                            mission: mission,
+                            toolIds: Self.knownToolIds,
+                            familyMembers: familyMembers,
+                            defaultOwnerProfileId: profileStore.currentProfileId
+                        ) { name, prompt, schedule, tools, ownerProfileId in
                             mission.missionName = name
                             mission.systemPrompt = prompt
                             mission.triggerSchedule = schedule
                             mission.allowedMCPTools = tools
+                            mission.ownerProfileId = ownerProfileId
                             mission.updatedAt = Date()
                             try? modelContext.save()
                         }
                     } label: {
-                        MissionRow(mission: mission)
+                        MissionRow(
+                            mission: mission,
+                            ownerName: mission.ownerProfileId.flatMap { id in
+                                familyMembers.first(where: { $0.id == id })?.displayName
+                            }
+                        )
                     }
                 }
             }
@@ -35,8 +48,19 @@ struct MissionListView: View {
                 }
             }
             .sheet(isPresented: $showAddMission) {
-                MissionEditView(mission: nil, toolIds: Self.knownToolIds) { name, prompt, schedule, tools in
-                    let m = MissionDefinition(missionName: name, systemPrompt: prompt, triggerSchedule: schedule, allowedMCPTools: tools)
+                MissionEditView(
+                    mission: nil,
+                    toolIds: Self.knownToolIds,
+                    familyMembers: familyMembers,
+                    defaultOwnerProfileId: profileStore.currentProfileId
+                ) { name, prompt, schedule, tools, ownerProfileId in
+                    let m = MissionDefinition(
+                        missionName: name,
+                        systemPrompt: prompt,
+                        triggerSchedule: schedule,
+                        allowedMCPTools: tools,
+                        ownerProfileId: ownerProfileId
+                    )
                     modelContext.insert(m)
                     try? modelContext.save()
                     showAddMission = false
@@ -48,6 +72,7 @@ struct MissionListView: View {
 
 struct MissionRow: View {
     let mission: MissionDefinition
+    let ownerName: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -56,6 +81,11 @@ struct MissionRow: View {
             Text(mission.triggerSchedule)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            if let ownerName {
+                Text("Owner: \(ownerName)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
             Text(mission.isEnabled ? "On" : "Off")
                 .font(.caption2)
                 .foregroundStyle(mission.isEnabled ? .green : .secondary)
@@ -66,12 +96,15 @@ struct MissionRow: View {
 struct MissionEditView: View {
     let mission: MissionDefinition?
     let toolIds: [String]
-    let onSave: (String, String, String, [String]) -> Void
+    let familyMembers: [FamilyMember]
+    let defaultOwnerProfileId: UUID?
+    let onSave: (String, String, String, [String], UUID?) -> Void
 
     @State private var name: String = ""
     @State private var systemPrompt: String = ""
     @State private var triggerSchedule: String = "daily|08:00"
     @State private var selectedToolIds: Set<String> = []
+    @State private var ownerProfileId: UUID?
     @State private var validationMessage: String?
     @Environment(\.dismiss) private var dismiss
 
@@ -118,6 +151,17 @@ struct MissionEditView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                Section("Owner Profile") {
+                    Picker("Owner", selection: Binding<UUID?>(
+                        get: { ownerProfileId },
+                        set: { ownerProfileId = $0 }
+                    )) {
+                        Text("Unassigned").tag(UUID?.none)
+                        ForEach(familyMembers, id: \.id) { member in
+                            Text(member.displayName).tag(Optional(member.id))
+                        }
+                    }
+                }
                 Section("Allowed tools") {
                     ForEach(toolIds, id: \.self) { id in
                         Toggle(id, isOn: Binding(
@@ -143,7 +187,7 @@ struct MissionEditView: View {
                             validationMessage = validationError()
                             return
                         }
-                        onSave(trimmedName, trimmedPrompt, normalizedSchedule, Array(selectedToolIds).sorted())
+                        onSave(trimmedName, trimmedPrompt, normalizedSchedule, Array(selectedToolIds).sorted(), ownerProfileId)
                         dismiss()
                     }
                     .disabled(!isFormValid)
@@ -155,6 +199,9 @@ struct MissionEditView: View {
                     systemPrompt = m.systemPrompt
                     triggerSchedule = m.triggerSchedule
                     selectedToolIds = Set(m.allowedMCPTools)
+                    ownerProfileId = m.ownerProfileId
+                } else {
+                    ownerProfileId = defaultOwnerProfileId
                 }
             }
             .onChange(of: name) { _, _ in validationMessage = nil }

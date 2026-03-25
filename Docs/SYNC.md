@@ -6,6 +6,16 @@ The **Bridge** is shared state between the Brain (macOS) and the Remote (iOS). T
 
 For syncing to actually work, the two apps must share data in a **shared SwiftData store**. That means a **shared CloudKit container**: both the iOS app and the Mac app use the same CloudKit container identifier so that SwiftData + CloudKit syncs the same schema (ManagerCore) between devices. Without a shared container, each app has its own local store and no data flows between them.
 
+## Family identity model (current direction)
+
+This project now assumes a **single shared family Apple ID** for the AgentKVT system (Mac brain + iOS clients), with **in-app per-person profiles**:
+
+- iCloud auth is handled by iOS/macOS Settings using the family Apple ID.
+- AgentKVT does **not** collect Apple ID passwords in-app.
+- Each person creates a `FamilyMember` profile in the app.
+- User attribution is stored in shared records (for example `ChatMessage.authorProfileId`, `InboundFile.uploadedByProfileId`).
+- Per-device active profile selection is local (`UserDefaults`), while `FamilyMember` rows sync through CloudKit.
+
 ## CloudKit approach (recommended)
 
 - Use SwiftData's CloudKit integration with one **shared CloudKit container** for both apps.
@@ -47,9 +57,12 @@ The repo includes `AgentKVTMac/AgentKVTMac.entitlements` with the same iCloud co
 
 - [ ] Create one CloudKit container in Apple Developer (e.g. `iCloud.AgentKVT` — already used by iOS).
 - [ ] Enable iCloud capability + CloudKit on **AgentKVTiOS** and on a **macOS app target** that runs the AgentKVTMac logic; assign the **same** container (`iCloud.AgentKVT`) to both.
-- [ ] Both apps use **ManagerCore** and the same `Schema([LifeContext.self, MissionDefinition.self, ActionItem.self, AgentLog.self])`.
+- [ ] Both apps use **ManagerCore** and the same schema list, including family/stigmergy models:
+  - `LifeContext`, `MissionDefinition`, `ActionItem`, `AgentLog`, `InboundFile`
+  - `ChatThread`, `ChatMessage`, `IncomingEmailSummary`
+  - `WorkUnit`, `EphemeralPin`, `ResourceHealth`, `FamilyMember`
 - [ ] Configure `ModelConfiguration` with the same `cloudKitContainerIdentifier: "iCloud.AgentKVT"` (and optional `allowsSave: true` where needed). See Apple's SwiftData + CloudKit documentation for the exact API.
 
 ## Status
 
-**Current:** Local-only SwiftData (no sync); each app has its own store. **To enable sync:** Implement the shared CloudKit container as above so both apps use the same container and schema.
+**Current direction:** CloudKit-backed shared store with one family Apple ID for AgentKVT devices, plus in-app family profiles (`FamilyMember`) for per-person attribution.

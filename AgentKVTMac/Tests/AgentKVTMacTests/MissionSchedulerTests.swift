@@ -5,6 +5,15 @@ import Testing
 
 struct MissionSchedulerTests {
 
+    @Test("workunit_board schedule is never due by time")
+    func workunitBoardNeverDue() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/New_York")!
+        let monday = calendar.date(from: DateComponents(year: 2025, month: 3, day: 17, hour: 9, minute: 0))!
+        let scheduler = MissionScheduler(calendar: calendar, now: { monday })
+        #expect(scheduler.isDue(WorkUnit.boardMissionTriggerSchedule, at: monday) == false)
+    }
+
     @Test("webhook schedule is never due by time")
     func webhookNeverDue() {
         var calendar = Calendar(identifier: .gregorian)

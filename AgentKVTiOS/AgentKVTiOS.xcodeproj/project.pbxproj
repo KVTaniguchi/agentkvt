@@ -13,6 +13,10 @@
 		A1000004 /* LifeContextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000004 /* LifeContextView.swift */; };
 		A1000005 /* ManagerCore in Frameworks */ = {isa = PBXBuildFile; productRef = A3000001 /* ManagerCore */; };
 		A1000006 /* AgentLogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000005 /* AgentLogView.swift */; };
+		A1000007 /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000006 /* ChatView.swift */; };
+		A1000008 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000007 /* RootView.swift */; };
+		A1000009 /* FamilyProfileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000008 /* FamilyProfileStore.swift */; };
+		A1000010 /* FamilyOnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000009 /* FamilyOnboardingView.swift */; };
 		B1000001 /* ManagerCore in Frameworks */ = {isa = PBXBuildFile; productRef = A3000001 /* ManagerCore */; };
 		B1000002 /* ManagerCoreIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000002 /* ManagerCoreIntegrationTests.swift */; };
 		C1000001 /* AgentKVTMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2000001 /* AgentKVTMacApp.swift */; };
@@ -38,6 +42,10 @@
 		A2000003 /* MissionListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MissionListView.swift; sourceTree = "<group>"; };
 		A2000004 /* LifeContextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LifeContextView.swift; sourceTree = "<group>"; };
 		A2000005 /* AgentLogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLogView.swift; sourceTree = "<group>"; };
+		A2000006 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
+		A2000007 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		A2000008 /* FamilyProfileStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FamilyProfileStore.swift; sourceTree = "<group>"; };
+		A2000009 /* FamilyOnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FamilyOnboardingView.swift; sourceTree = "<group>"; };
 		B2000001 /* AgentKVTiOSTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AgentKVTiOSTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B2000002 /* ManagerCoreIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManagerCoreIntegrationTests.swift; sourceTree = "<group>"; };
 		C2000000 /* AgentKVTMacApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AgentKVTMacApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -97,10 +105,14 @@
 		A5000002 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				A2000007 /* RootView.swift */,
+				A2000008 /* FamilyProfileStore.swift */,
+				A2000009 /* FamilyOnboardingView.swift */,
 				A2000002 /* DashboardView.swift */,
 				A2000003 /* MissionListView.swift */,
 				A2000004 /* LifeContextView.swift */,
 				A2000005 /* AgentLogView.swift */,
+				A2000006 /* ChatView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -269,10 +281,14 @@
 			buildActionMask = 2147483647;
 			files = (
 				A1000001 /* AgentKVTiOSApp.swift in Sources */,
+				A1000008 /* RootView.swift in Sources */,
+				A1000009 /* FamilyProfileStore.swift in Sources */,
+				A1000010 /* FamilyOnboardingView.swift in Sources */,
 				A1000002 /* DashboardView.swift in Sources */,
 				A1000003 /* MissionListView.swift in Sources */,
 				A1000004 /* LifeContextView.swift in Sources */,
 				A1000006 /* AgentLogView.swift in Sources */,
+				A1000007 /* ChatView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -527,6 +543,7 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.agentkvt.mac;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
 				SDKROOT = macosx;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -552,6 +569,7 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.agentkvt.mac;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
 				SDKROOT = macosx;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;

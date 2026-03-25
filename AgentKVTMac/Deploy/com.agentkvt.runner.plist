@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+
+<!--
+  AgentKVT Mac Runner — launchd User Agent
+  =========================================
+  Install:
+    cp com.agentkvt.runner.plist ~/Library/LaunchAgents/
+    launchctl load -w ~/Library/LaunchAgents/com.agentkvt.runner.plist
+
+  Uninstall:
+    launchctl unload ~/Library/LaunchAgents/com.agentkvt.runner.plist
+    rm ~/Library/LaunchAgents/com.agentkvt.runner.plist
+
+  Check status:
+    launchctl list | grep agentkvt
+    launchctl print gui/$(id -u)/com.agentkvt.runner
+
+  Watch logs:
+    tail -f /tmp/agentkvt-runner.log
+    tail -f /tmp/agentkvt-runner.err
+
+  Verify power assertions are held:
+    pmset -g assertions      # should show "PreventSystemSleep" from caffeinate AND AgentKVT
+
+  ── Architecture Notes ──────────────────────────────────────────────────────────────────
+  Defense-in-depth: three independent layers prevent sleep/suspension.
+
+  Layer 1 (OS scheduler — App Nap):
+    The runner calls ProcessInfo.beginActivity(.userInitiated | .idleSystemSleepDisabled)
+    internally. This prevents macOS from throttling a "background" CLI process.
+
+  Layer 2 (kernel power manager — IOKit):
+    The runner holds two IOPMAssertions: "PreventSystemSleep" and "NoIdleSleepAssertion".
+    These survive App Nap and are visible in `pmset -g assertions`. Equivalent to the
+    runner itself running `caffeinate -s -i`.
+
+  Layer 3 (external process — this plist):
+    We wrap the runner inside caffeinate(8). Even if Layer 2 assertions fail (e.g., a
+    sandbox or entitlement issue on a managed device), caffeinate holds independent
+    assertions as a separate process. KeepAlive restarts both caffeinate AND the runner
+    if either crashes.
+
+  ── MacBook-Specific Advice ─────────────────────────────────────────────────────────────
+  • Connect AC power. kIOPMAssertionTypePreventSystemSleep is overridden by the OS on
+    battery when the lid is closed and thermal pressure is high (macOS 12+).
+  • "Prevent sleeping when the display is off" in System Settings → Battery → Options is
+    NOT required — our IOKit assertions handle it programmatically.
+  • For zero-downtime across reboots/logouts, promote to a LaunchDaemon:
+      sudo cp com.agentkvt.runner.plist /Library/LaunchDaemons/
+      (requires root; replace ~ paths with absolute paths; remove UserName key)
+  ────────────────────────────────────────────────────────────────────────────────────────
+-->
+
+<plist version="1.0">
+<dict>
+
+    <!-- Identity -->
+    <key>Label</key>
+    <string>com.agentkvt.runner</string>
+
+    <!--
+      Wrap the runner inside caffeinate(8) for Layer 3 sleep prevention.
+        -s  Prevent system sleep (lid-close sleep on AC power)
+        -i  Prevent idle sleep (no-input timer)
+        -w  Tie assertion lifetime to the runner's PID (released on runner exit)
+      IMPORTANT: Replace /path/to/AgentKVTMacRunner with the real built binary path.
+      Typical release path: ~/Library/Developer/Xcode/DerivedData/.../AgentKVTMacRunner
+      Or build with: swift build -c release && cp .build/release/AgentKVTMacRunner ~/bin/
+    -->
+    <!--
+      caffeinate -s -i <executable>: caffeinate execs the runner as its child and holds
+      "PreventSystemSleep" + "NoIdleSleepAssertion" for exactly as long as the runner
+      runs. When launchd restarts the job (KeepAlive), caffeinate and its assertions
+      also restart. Replace /Users/YOURUSERNAME/bin/AgentKVTMacRunner with your path.
+      Build release binary: swift build -c release
+      Copy:  cp .build/release/AgentKVTMacRunner ~/bin/AgentKVTMacRunner
+    -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/caffeinate</string>
+        <string>-s</string>
+        <string>-i</string>
+        <string>/Users/YOURUSERNAME/bin/AgentKVTMacRunner</string>
+    </array>
+
+    <!-- Environment passed to the runner process -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <!-- Enable the full event-driven scheduler (vs. single-test mode) -->
+        <key>RUN_SCHEDULER</key>
+        <string>1</string>
+        <!-- Override model and endpoint if needed -->
+        <!-- <key>OLLAMA_MODEL</key><string>llama3.1:70b</string> -->
+        <!-- <key>OLLAMA_BASE_URL</key><string>http://localhost:11434</string> -->
+        <!-- <key>NOTIFICATION_EMAIL</key><string>you@example.com</string> -->
+        <!-- <key>AGENTKVT_INBOX_DIR</key><string>/Users/YOURUSERNAME/.agentkvt/inbox</string> -->
+        <!-- <key>AGENTKVT_INBOUND_DIR</key><string>/Users/YOURUSERNAME/.agentkvt/inbound</string> -->
+        <!-- <key>WEBHOOK_PORT</key><string>8765</string> -->
+    </dict>
+
+    <!-- Auto-start on login, auto-restart on crash or clean exit -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!--
+      KeepAlive: restart automatically if the process exits for any reason.
+      This handles: Ollama crash causing the runner to throw and exit, unexpected
+      Swift runtime panics, SIGKILL from the OOM killer, etc.
+    -->
+    <key>KeepAlive</key>
+    <true/>
+
+    <!--
+      ThrottleInterval: minimum seconds between restarts. 15s gives the system
+      time to recover from a transient condition (e.g., Ollama not yet running at
+      login) without hammering launchd with rapid restart loops.
+    -->
+    <key>ThrottleInterval</key>
+    <integer>15</integer>
+
+    <!-- Logs — rotate with: newsyslog or just truncate periodically -->
+    <key>StandardOutPath</key>
+    <string>/tmp/agentkvt-runner.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/agentkvt-runner.err</string>
+
+    <!--
+      ProcessType: "Background" allows the OS to deprioritize the process.
+      "Standard" (default, achieved by omitting this key) is appropriate for
+      a daemon that holds power assertions — we don't want the OS second-guessing
+      our IOKit assertions because the process is typed as Background.
+    -->
+
+    <!--
+      SoftResourceLimits: prevent the LLM inference loop from hammering swap.
+      Tune these to your machine's RAM. On a 128 GB M4 Max, these are generous.
+    -->
+    <key>SoftResourceLimits</key>
+    <dict>
+        <!-- 96 GB virtual memory ceiling — leaves 32 GB for the OS and other apps -->
+        <key>NumberOfFiles</key>
+        <integer>4096</integer>
+    </dict>
+
+</dict>
+</plist>

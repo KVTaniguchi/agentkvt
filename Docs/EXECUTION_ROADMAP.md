@@ -13,7 +13,7 @@ Use this alongside [SOVEREIGN_PLANNER_VISION.md](SOVEREIGN_PLANNER_VISION.md), [
 Build a private, local-first planning system where:
 
 - the macOS Brain runs missions and generates structured outputs
-- the iOS Remote presents those outputs as deterministic user actions
+- the iOS Remote presents those outputs as deterministic user actions, with chat available for guided follow-up
 - SwiftData acts as the shared memory and audit layer
 - model usage remains local, constrained, and inspectable
 
@@ -88,7 +88,7 @@ Based on the current code and docs, AgentKVT appears to already have a meaningfu
 | Area | Current read | Notes |
 |---|---|---|
 | Shared data model | Present | Core entities and package structure exist. |
-| iOS deterministic remote | Present | UI exists for actions, missions, context, and logs. |
+| iOS deterministic remote + chat | Present | UI exists for actions, missions, context, logs, and a dedicated chat tab. |
 | macOS brain | Present | Runner, scheduler, and mission pipeline appear implemented. |
 | Tool allowlisting | Present | Tool registry and mission tool restrictions are documented and tested. |
 | Local LLM usage | Present | Ollama integration exists. |
@@ -164,7 +164,7 @@ Success looks like:
 
 - one mission delivers repeated value over multiple real runs
 - prompts, tools, and output schema are tuned for predictable behavior
-- the user can review and act without needing a chat fallback
+- the user can review and act through structured actions, with chat available for clarifications when needed
 
 ## Milestone 5: Expand toward the sovereign planner vision
 
@@ -193,7 +193,7 @@ If we want the highest-value next work, the backlog should probably be:
 
 To avoid drift, these decisions should remain the default unless we intentionally change course:
 
-- no general-purpose chat UI as the primary interaction model
+- deterministic actions remain the primary interaction model, with chat as a complementary interface
 - mission outputs should become structured `ActionItem`s
 - tools should stay sandboxed and explicitly allowlisted
 - personal data should be sanitized locally before broad model exposure

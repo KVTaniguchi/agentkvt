@@ -99,6 +99,19 @@ public final class OllamaClient {
             public struct Property: Codable, Sendable {
                 public let type: String
                 public let description: String?
+                public let enumValues: [String]?
+
+                public init(type: String, description: String?, enumValues: [String]? = nil) {
+                    self.type = type
+                    self.description = description
+                    self.enumValues = enumValues
+                }
+
+                private enum CodingKeys: String, CodingKey {
+                    case type
+                    case description
+                    case enumValues = "enum"
+                }
             }
         }
     }

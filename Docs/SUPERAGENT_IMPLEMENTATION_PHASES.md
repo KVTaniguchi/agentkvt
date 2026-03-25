@@ -32,7 +32,7 @@ flowchart TB
 ```
 
 - **Brain (macOS):** Headless MCP host + autonomous mission runner; inference via Ollama/LM Studio.
-- **Remote (iOS):** SwiftUI dashboard only; dynamic buttons from Mac; no chat UI.
+- **Remote (iOS):** SwiftUI remote with dashboard + dedicated chat + family profile onboarding/selection.
 - **Bridge:** Shared state via SwiftData (local network/Tailscale or CloudKit); Mac writes, iOS observes.
 
 ---
@@ -48,6 +48,8 @@ flowchart TB
   - **MissionDefinition** — `missionName`, `systemPrompt`, `triggerSchedule`, `allowedMCPTools` (tool ID array).
   - **ActionItem** — `title`, `systemIntent`, `payloadData`, `relevanceScore`, `timestamp` (drives iOS buttons).
   - **AgentLog** — append-only log of agent reasoning, tool calls, outcomes (audit).
+  - **FamilyMember** — in-app identity rows for family attribution on shared devices/account.
+  - **WorkUnit / EphemeralPin / ResourceHealth** — stigmergy board models for state-driven coordination, TTL decay, and negative routing signals.
 - SwiftData model definitions and, if needed, lightweight migration strategy.
 - **Sync decision:** CloudKit vs local network (e.g. Tailscale) and minimal config so both apps can attach to the same store. *Current status:* Deferred; initial implementation uses **local-only SwiftData** (no sync). See [SYNC.md](SYNC.md).
 
@@ -129,16 +131,22 @@ flowchart TB
 
 ---
 
-## Phase 5: iOS Remote — dashboard and mission authoring
+## Phase 5: iOS Remote — dashboard, chat, identity, and mission authoring
 
-**Goal:** User sees agent output and can define/edit missions; no chat.
+**Goal:** User sees agent output, can use chat for conversational follow-up, and can define/edit missions.
 
 **Deliverables:**
 
 - **SwiftUI app** with SwiftData model container using ManagerCore schema (and same sync as Mac).
+- **Family profile onboarding/selection:**
+  - Device uses the shared family Apple ID for iCloud sync.
+  - In-app users create/select `FamilyMember` profiles.
+  - Active profile on each device is stored locally; profile rows sync through CloudKit.
 - **Dashboard:**
   - Observe `ActionItem`; render dynamic **AppIntentButtons** (title, intent, payload).
-  - No chat interface.
+  - Show attributed content (for example uploader/sender profile where available).
+- **Dedicated chat interface:**
+  - `ChatThread`/`ChatMessage` with profile attribution for user messages.
 - **Mission authoring UI:**
   - Create/edit `MissionDefinition`: mission name, system prompt, trigger schedule, allowed MCP tools (multi-select from registered tool IDs).
 - **LifeContext UI (optional but recommended):**
@@ -172,7 +180,7 @@ flowchart TB
 
 - `ManagerCore/` — Swift package (SwiftData models + optional sync helpers).
 - `AgentKVTMac/` — macOS app (MCP host, mission runner, scheduler, tool implementations). Runner: `AgentKVTMacRunner`; one-off test or `RUN_SCHEDULER=1` for CRON-style runs.
-- `AgentKVTiOS/` — iOS app (SwiftUI dashboard, mission/LifeContext UI).
+- `AgentKVTiOS/` — iOS app (SwiftUI dashboard, profile onboarding/selection, dedicated chat, mission/LifeContext UI).
 - `Docs/` — SYNC.md, LLM_THROTTLING.md, TOOL_IDS.md, DATA_FLOW.md, E2E_VERIFICATION.md, DROPZONE.md, EMAIL_INGESTOR.md.
 
 ---

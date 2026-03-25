@@ -13,7 +13,11 @@ public func makeWriteActionItemTool(modelContext: ModelContext) -> ToolRegistry.
             type: "object",
             properties: [
                 "title": .init(type: "string", description: "Short button label, e.g. 'Review New Job Leads'"),
-                "systemIntent": .init(type: "string", description: "Intent identifier for the button"),
+                "systemIntent": .init(
+                    type: "string",
+                    description: "Intent identifier for the button",
+                    enumValues: SystemIntent.allCases.map(\.rawValue)
+                ),
                 "payloadJson": .init(type: "string", description: "Optional JSON string payload; omit or empty if not needed")
             ],
             required: ["title", "systemIntent"]
@@ -23,13 +27,18 @@ public func makeWriteActionItemTool(modelContext: ModelContext) -> ToolRegistry.
                   let systemIntent = args["systemIntent"] as? String, !systemIntent.isEmpty else {
                 return "Error: title and systemIntent are required non-empty strings."
             }
+            let normalizedSystemIntent = SystemIntent.normalizedRawValue(from: systemIntent)
+            guard SystemIntent(rawValue: normalizedSystemIntent) != nil else {
+                let allowed = SystemIntent.allCases.map(\.rawValue).joined(separator: ", ")
+                return "Error: systemIntent must be one of [\(allowed)]."
+            }
             let payloadData: Data? = (args["payloadJson"] as? String).flatMap { s in
                 guard !s.isEmpty, let d = s.data(using: .utf8) else { return nil }
                 return d
             }
             let item = ActionItem(
                 title: title.trimmingCharacters(in: .whitespacesAndNewlines),
-                systemIntent: systemIntent.trimmingCharacters(in: .whitespacesAndNewlines),
+                systemIntent: normalizedSystemIntent,
                 payloadData: payloadData
             )
             item.missionId = MissionExecutionContext.current?.missionId

@@ -9,19 +9,22 @@ public final class InboundFile {
     public var fileData: Data
     public var timestamp: Date
     public var isProcessed: Bool
+    public var uploadedByProfileId: UUID?
 
     public init(
         id: UUID = UUID(),
         fileName: String,
         fileData: Data,
         timestamp: Date = Date(),
-        isProcessed: Bool = false
+        isProcessed: Bool = false,
+        uploadedByProfileId: UUID? = nil
     ) {
         self.id = id
         self.fileName = fileName
         self.fileData = fileData
         self.timestamp = timestamp
         self.isProcessed = isProcessed
+        self.uploadedByProfileId = uploadedByProfileId
     }
 }
 

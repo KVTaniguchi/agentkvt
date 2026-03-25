@@ -5,11 +5,22 @@ import ManagerCore
 /// Dashboard: observe ActionItem and render dynamic AppIntentButtons. No chat.
 struct DashboardView: View {
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var profileStore: FamilyProfileStore
+    @Query(sort: \FamilyMember.createdAt, order: .forward) private var familyMembers: [FamilyMember]
     @Query(sort: \ActionItem.timestamp, order: .reverse) private var actionItems: [ActionItem]
     @Query(sort: \InboundFile.timestamp, order: .reverse) private var inboundFiles: [InboundFile]
     @State private var selectedTab = 0
     @State private var isImporterPresented = false
     @State private var importError: String?
+    @State private var showAddFamilyMember = false
+
+    private var currentProfileLabel: String {
+        guard let id = profileStore.currentProfileId,
+              let m = familyMembers.first(where: { $0.id == id }) else {
+            return "Profile"
+        }
+        return m.symbol.isEmpty ? m.displayName : "\(m.symbol) \(m.displayName)"
+    }
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -25,11 +36,33 @@ struct DashboardView: View {
             AgentLogView()
                 .tabItem { Label("Log", systemImage: "doc.text.magnifyingglass") }
                 .tag(3)
-            InboundFilesView(files: inboundFiles)
-                .tabItem { Label("Files", systemImage: "doc") }
+            ChatView()
+                .tabItem { Label("Chat", systemImage: "message") }
                 .tag(4)
+            InboundFilesView(files: inboundFiles, familyMembers: familyMembers)
+                .tabItem { Label("Files", systemImage: "doc") }
+                .tag(5)
         }
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Menu {
+                    ForEach(familyMembers, id: \.id) { m in
+                        Button {
+                            profileStore.selectProfile(m.id)
+                        } label: {
+                            if m.id == profileStore.currentProfileId {
+                                Label(m.displayName, systemImage: "checkmark")
+                            } else {
+                                Text(m.displayName)
+                            }
+                        }
+                    }
+                    Divider()
+                    Button("Add family member…") { showAddFamilyMember = true }
+                } label: {
+                    Label(currentProfileLabel, systemImage: "person.crop.circle")
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     isImporterPresented = true
@@ -37,6 +70,9 @@ struct DashboardView: View {
                     Label("Upload File", systemImage: "square.and.arrow.up")
                 }
             }
+        }
+        .sheet(isPresented: $showAddFamilyMember) {
+            AddFamilyMemberSheet()
         }
         .fileImporter(
             isPresented: $isImporterPresented,
@@ -50,7 +86,8 @@ struct DashboardView: View {
                     let data = try Data(contentsOf: url)
                     let inbound = InboundFile(
                         fileName: url.lastPathComponent,
-                        fileData: data
+                        fileData: data,
+                        uploadedByProfileId: profileStore.currentProfileId
                     )
                     modelContext.insert(inbound)
                     try modelContext.save()
@@ -107,24 +144,32 @@ struct ActionItemRow: View {
     let item: ActionItem
     let missionName: String?
 
+    private var route: IntentRoute { IntentRoute.route(for: item) }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(item.title)
-                .font(.headline)
-                .foregroundStyle(.primary)
-            if let missionName {
-                Label(missionName, systemImage: "sparkles.rectangle.stack")
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: route.iconName)
+                .foregroundStyle(.tint)
+                .frame(width: 22)
+                .padding(.top, 2)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(item.title)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                if let missionName {
+                    Label(missionName, systemImage: "sparkles.rectangle.stack")
+                        .font(.caption)
+                        .foregroundStyle(.blue)
+                }
+                Text(item.systemIntent)
                     .font(.caption)
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(.secondary)
+                Text(item.timestamp, style: .relative)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
             }
-            Text(item.systemIntent)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text(item.timestamp, style: .relative)
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -152,6 +197,16 @@ struct ActionItemDetailView: View {
 
     var body: some View {
         List {
+            if !item.isHandled {
+                Section {
+                    DynamicIntentButton(item: item) {
+                        onMarkHandled()
+                        dismiss()
+                    }
+                    .listRowInsets(.init(top: 12, leading: 16, bottom: 12, trailing: 16))
+                }
+            }
+
             Section("Action") {
                 LabeledContent("Title", value: item.title)
                 LabeledContent("Intent", value: item.systemIntent)
@@ -217,8 +272,15 @@ struct ActionItemDetailView: View {
 
 struct InboundFilesView: View {
     let files: [InboundFile]
+    let familyMembers: [FamilyMember]
 
     private let staleInterval: TimeInterval = 5 * 60 // 5 minutes
+
+    private func uploaderName(for file: InboundFile) -> String? {
+        guard let id = file.uploadedByProfileId,
+              let m = familyMembers.first(where: { $0.id == id }) else { return nil }
+        return m.displayName
+    }
 
     private func status(for file: InboundFile) -> (label: String, color: Color, note: String?) {
         if file.isProcessed {
@@ -243,6 +305,11 @@ struct InboundFilesView: View {
                             Text(file.timestamp, style: .date)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                            if let who = uploaderName(for: file) {
+                                Text("From \(who)")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
                             if let note = s.note {
                                 Text(note)
                                     .font(.caption2)

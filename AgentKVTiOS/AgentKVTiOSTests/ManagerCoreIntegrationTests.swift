@@ -22,7 +22,7 @@ struct ManagerCoreIntegrationTests {
 
     @Test("ActionItem unhandled items are shown in Actions tab")
     func actionItemUnhandled() {
-        let item = ActionItem(title: "Review job", systemIntent: "open_url")
+        let item = ActionItem(title: "Review job", systemIntent: SystemIntent.urlOpen.rawValue)
         #expect(item.isHandled == false)
         item.isHandled = true
         #expect(item.isHandled == true)

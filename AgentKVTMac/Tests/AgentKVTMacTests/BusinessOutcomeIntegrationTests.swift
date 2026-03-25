@@ -11,7 +11,13 @@ private func makeTestContainer() throws -> (ModelContext, ModelContainer) {
         LifeContext.self,
         MissionDefinition.self,
         ActionItem.self,
-        AgentLog.self
+        AgentLog.self,
+        ChatThread.self,
+        ChatMessage.self,
+        WorkUnit.self,
+        EphemeralPin.self,
+        ResourceHealth.self,
+        FamilyMember.self,
     ])
     let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
     let container = try ModelContainer(for: schema, configurations: [config])
@@ -60,7 +66,7 @@ struct JobScoutPipelineTest {
 
         let mockClient = MockOllamaClient(responses: [
             .assistantWithToolCalls([
-                .writeActionItem(title: "Review: Acme Corp - Senior iOS Lead", systemIntent: "open_url", payloadJson: "{\"url\":\"https://jobs.example.com/1\"}")
+                .writeActionItem(title: "Review: Acme Corp - Senior iOS Lead", systemIntent: "url.open", payloadJson: "{\"url\":\"https://jobs.example.com/1\"}")
             ]),
             .assistantFinal(content: "Found one high-match iOS role (Acme Corp). One low-match Android role was skipped.")
         ])
@@ -92,14 +98,14 @@ struct JobScoutPipelineTest {
 
 struct ImpulsiveExpenseGuardTest {
 
-    @Test("Budget Sentinel flags $45 impulsive charge but not $200 utility; systemIntent is review_purchase")
+    @Test("Budget Sentinel flags $45 impulsive charge but not $200 utility; systemIntent is reminder.add")
     func budgetSentinelFlagsImpulsiveOnly() async throws {
         let (context, _) = try makeTestContainer()
         let registry = makeTestRegistry(modelContext: context)
 
         let mission = MissionDefinition(
             missionName: "Budget Sentinel",
-            systemPrompt: "Flag impulsive expenses between $20 and $50. Do not flag utility bills or expenses over $100. Create one action per flagged transaction with systemIntent review_purchase.",
+            systemPrompt: "Flag impulsive expenses between $20 and $50. Do not flag utility bills or expenses over $100. Create one action per flagged transaction with systemIntent reminder.add.",
             triggerSchedule: "daily|09:00",
             allowedMCPTools: ["write_action_item"]
         )
@@ -107,15 +113,9 @@ struct ImpulsiveExpenseGuardTest {
         context.insert(mission)
         try context.save()
 
-        let dropzoneContext = """
-        Transactions:
-        - $45 Coffee & Pastry (cafe)
-        - $200 Utility Bill (electric)
-        """
-
         let mockClient = MockOllamaClient(responses: [
             .assistantWithToolCalls([
-                .writeActionItem(title: "Review: $45 Coffee & Pastry", systemIntent: "review_purchase")
+                .writeActionItem(title: "Review: $45 Coffee & Pastry", systemIntent: "reminder.add")
             ]),
             .assistantFinal(content: "Flagged one impulsive charge ($45). $200 utility bill not in range.")
         ])
@@ -125,8 +125,8 @@ struct ImpulsiveExpenseGuardTest {
 
         let itemDesc = FetchDescriptor<ActionItem>()
         let items = try context.fetch(itemDesc)
-        let purchaseReview = items.filter { $0.systemIntent == "review_purchase" }
-        #expect(purchaseReview.count == 1, "Expected exactly one ActionItem with systemIntent review_purchase")
+        let purchaseReview = items.filter { $0.systemIntent == "reminder.add" }
+        #expect(purchaseReview.count == 1, "Expected exactly one ActionItem with systemIntent reminder.add")
         #expect(purchaseReview[0].title.contains("45") || purchaseReview[0].title.contains("Coffee"))
 
         let forUtility = items.filter { $0.title.contains("200") || $0.title.contains("Utility") }
@@ -160,7 +160,7 @@ struct HomeschoolLessonDeliveryTest {
         let mockClient = MockOllamaClient(responses: [
             .assistantWithToolCalls([
                 .sendNotificationEmail(subject: "Today's Lesson: Harry Potter Chemistry", body: "See attached lesson plan."),
-                .writeActionItem(title: "Launch Today's Lesson", systemIntent: "open_lesson")
+                .writeActionItem(title: "Launch Today's Lesson", systemIntent: "calendar.create")
             ]),
             .assistantFinal(content: "Lesson created and notification sent.")
         ])

@@ -16,7 +16,10 @@ let package = Package(
     targets: [
         .target(
             name: "AgentKVTMac",
-            dependencies: ["ManagerCore"]
+            dependencies: ["ManagerCore"],
+            linkerSettings: [
+                .linkedFramework("IOKit"),
+            ]
         ),
         .executableTarget(
             name: "AgentKVTMacRunner",

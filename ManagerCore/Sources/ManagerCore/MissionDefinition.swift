@@ -10,6 +10,8 @@ public final class MissionDefinition {
     public var systemPrompt: String
     public var triggerSchedule: String // Encoded: "daily|08:00", "weekly|monday", "webhook", etc.
     public var allowedMCPTools: [String] // Tool IDs this mission is authorized to use
+    /// Optional per-person owner attribution for family-profile aware mission execution.
+    public var ownerProfileId: UUID?
     public var isEnabled: Bool
     public var lastRunAt: Date?
     public var createdAt: Date
@@ -21,6 +23,7 @@ public final class MissionDefinition {
         systemPrompt: String,
         triggerSchedule: String,
         allowedMCPTools: [String],
+        ownerProfileId: UUID? = nil,
         isEnabled: Bool = true,
         lastRunAt: Date? = nil,
         createdAt: Date = Date(),
@@ -31,6 +34,7 @@ public final class MissionDefinition {
         self.systemPrompt = systemPrompt
         self.triggerSchedule = triggerSchedule
         self.allowedMCPTools = allowedMCPTools
+        self.ownerProfileId = ownerProfileId
         self.isEnabled = isEnabled
         self.lastRunAt = lastRunAt
         self.createdAt = createdAt

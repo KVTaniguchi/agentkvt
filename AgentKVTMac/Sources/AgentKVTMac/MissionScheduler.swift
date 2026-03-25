@@ -3,6 +3,8 @@ import ManagerCore
 
 /// CRON-style scheduler: determines which missions are due at a given time based on triggerSchedule.
 /// Schedule format: "daily|HH:mm", "weekly|weekday", "webhook" (webhook = only when triggered externally).
+/// `workunit_board` is **not** CRON-driven: `MissionExecutionQueue` runs those missions on each clock tick
+/// when at least one `WorkUnit` is `pending` or `in_progress`.
 public struct MissionScheduler {
     private let calendar: Calendar
     private let now: () -> Date

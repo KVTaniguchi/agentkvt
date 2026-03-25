@@ -15,6 +15,13 @@ public func runAgentKVTMacRunner() async {
         ActionItem.self,
         AgentLog.self,
         InboundFile.self,
+        ChatThread.self,
+        ChatMessage.self,
+        IncomingEmailSummary.self,
+        WorkUnit.self,
+        EphemeralPin.self,
+        ResourceHealth.self,
+        FamilyMember.self,
     ])
     var container: ModelContainer?
     let sharedPersistentConfig = ModelConfiguration(
@@ -83,17 +90,36 @@ public func runAgentKVTMacRunner() async {
     registry.register(makeListDropzoneFilesTool(directory: dropzoneDir))
     registry.register(makeReadDropzoneFileTool(directory: dropzoneDir))
 
+    // iOS edge-processing bridge: read pre-summarized emails that arrived via CloudKit.
+    registry.register(makeFetchEmailSummariesTool(modelContext: context))
+    registry.register(makeMarkEmailSummaryProcessedTool(modelContext: context))
+
+    registry.register(makeFetchWorkUnitsTool(modelContext: context))
+    registry.register(makeUpdateWorkUnitTool(modelContext: context))
+    registry.register(makePinEphemeralNoteTool(modelContext: context))
+    registry.register(makeListResourceHealthTool(modelContext: context))
+    registry.register(makeReportResourceFailureTool(modelContext: context))
+    registry.register(makeClearResourceHealthTool(modelContext: context))
+
     let client = OllamaClient(
         baseURL: URL(string: ProcessInfo.processInfo.environment["OLLAMA_BASE_URL"] ?? "http://localhost:11434")!,
         model: ProcessInfo.processInfo.environment["OLLAMA_MODEL"] ?? "llama3.2"
     )
 
     if ProcessInfo.processInfo.environment["RUN_SCHEDULER"] == "1" {
-        await runScheduler(context: context, client: client, registry: registry, emailIngestor: emailIngestor, dropzoneDir: dropzoneDir)
+        await runScheduler(
+            context: context,
+            client: client,
+            registry: registry,
+            emailIngestor: emailIngestor,
+            dropzoneDir: dropzoneDir
+        )
     } else {
         await runSingleTest(registry: registry, client: client)
     }
 }
+
+// MARK: - Single test run (dev / smoke test)
 
 private func runSingleTest(registry: ToolRegistry, client: OllamaClient) async {
     let allowedTools = ["write_action_item"]
@@ -109,37 +135,84 @@ private func runSingleTest(registry: ToolRegistry, client: OllamaClient) async {
     }
 }
 
-private func runScheduler(context: ModelContext, client: OllamaClient, registry: ToolRegistry, emailIngestor: EmailIngestor, dropzoneDir: URL) async {
-    let scheduler = MissionScheduler()
-    let runner = MissionRunner(modelContext: context, client: client, registry: registry)
-    let intervalSeconds = Int(ProcessInfo.processInfo.environment["SCHEDULER_INTERVAL_SECONDS"] ?? "300") ?? 300
-    let dropzone = DropzoneService(directory: dropzoneDir)
-    let cloudInbound = CloudInboundService(modelContext: context, directory: dropzoneDir)
-    dropzone.ensureDirectory()
-    dropzone.startWatching()
+// MARK: - Scheduler (production event-driven mode)
+
+private func runScheduler(
+    context: ModelContext,
+    client: OllamaClient,
+    registry: ToolRegistry,
+    emailIngestor: EmailIngestor,
+    dropzoneDir: URL
+) async {
+    // ── Build the strict serial execution queue ──────────────────────────────────
+    // All triggers funnel here. The actor's `run()` loop processes them one at a
+    // time: while the LLM is awaiting a response, new triggers buffer in AgentQueue
+    // (priority-sorted, bounded at 64 items) and are drained after inference completes.
+    let executionQueue = MissionExecutionQueue(
+        modelContext: context,
+        client: client,
+        registry: registry,
+        emailIngestor: emailIngestor,
+        dropzoneDir: dropzoneDir
+    )
+
+    // Ensure directories exist before starting watchers.
+    DropzoneService(directory: dropzoneDir).ensureDirectory()
     emailIngestor.ensureDirectory()
-    emailIngestor.startWatching()
-    print("Scheduler started; checking every \(intervalSeconds)s. Dropzone: \(dropzoneDir.path). Inbox: \(emailIngestor.directory.path)")
-    while true {
-        do {
-            cloudInbound.syncInboundFiles()
-            let descriptor = FetchDescriptor<MissionDefinition>()
-            let missions = try context.fetch(descriptor)
-            let due = scheduler.dueMissions(from: missions)
-            for mission in due {
-                do {
-                    mission.lastRunAt = Date()
-                    mission.updatedAt = Date()
-                    try context.save()
-                    try await runner.run(mission)
-                    print("Ran mission: \(mission.missionName)")
-                } catch {
-                    print("Mission \(mission.missionName) failed: \(error)")
-                }
-            }
-        } catch {
-            print("Fetch missions error: \(error)")
-        }
-        try? await Task.sleep(nanoseconds: UInt64(intervalSeconds) * 1_000_000_000)
+
+    // ── FSEvents: inbox (.eml files) ─────────────────────────────────────────────
+    let inboxWatcher = DirectoryWatcher(directory: emailIngestor.directory) { url in
+        guard url.pathExtension.lowercased() == "eml" else { return }
+        executionQueue.enqueue(.emailFile(url), priority: .normal)
     }
+
+    // ── FSEvents: inbound dropzone ───────────────────────────────────────────────
+    let inboundWatcher = DirectoryWatcher(directory: dropzoneDir) { url in
+        executionQueue.enqueue(.inboundFile(url), priority: .normal)
+    }
+
+    do {
+        try inboxWatcher.start()
+        try inboundWatcher.start()
+    } catch {
+        print("DirectoryWatcher failed to start: \(error). Continuing without file-system events.")
+    }
+
+    // ── Webhook listener (highest priority — explicit external intent) ────────────
+    let webhookPort = UInt16(ProcessInfo.processInfo.environment["WEBHOOK_PORT"] ?? "8765") ?? 8765
+    let webhookListener = WebhookListener(port: webhookPort) { payload in
+        executionQueue.enqueue(.webhook(payload), priority: .high)
+    }
+    webhookListener.start()
+
+    // ── CloudKit observer (reactive iOS→Mac bridge) ──────────────────────────────
+    // Fires when CloudKit delivers IncomingEmailSummary records inserted by the
+    // iPhone's EdgeSummarizationService. No ModelContext access here — the fetch
+    // happens inside MissionExecutionQueue.dispatch(.cloudKitSync) on the actor's
+    // serial executor.
+    let cloudKitObserver = CloudKitObserver {
+        executionQueue.enqueue(.cloudKitSync, priority: .normal)
+    }
+    cloudKitObserver.start()
+
+    // ── 60-second clock (lowest priority — background heartbeat) ─────────────────
+    // Checks due CRON missions and pending chat messages. Arrives last in line when
+    // a webhook or CloudKit sync is already queued.
+    let clockTimer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
+    clockTimer.schedule(deadline: .now(), repeating: .seconds(60))
+    clockTimer.setEventHandler {
+        executionQueue.enqueue(.clockTick, priority: .low)
+    }
+    clockTimer.resume()
+
+    print("""
+        [Scheduler] Event-driven scheduler started.
+          Inbox:    \(emailIngestor.directory.path)
+          Inbound:  \(dropzoneDir.path)
+          Webhook:  port \(webhookPort)
+          CloudKit: listening for NSPersistentStoreRemoteChangeNotification
+        """)
+
+    // ── Run forever — drain loop blocks (async suspends) until the process exits ──
+    await executionQueue.run()
 }

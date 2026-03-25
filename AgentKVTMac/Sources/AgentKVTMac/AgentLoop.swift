@@ -22,11 +22,17 @@ public final class AgentLoop {
 
     /// Run until the model returns a message with no tool_calls (or max rounds).
     public func run(systemPrompt: String, userMessage: String, maxRounds: Int = 10, onEvent: ((Event) async -> Void)? = nil) async throws -> String {
-        let tools = registry.ollamaToolDefs(allowedIds: allowedToolIds)
-        var messages: [OllamaClient.Message] = [
+        let messages: [OllamaClient.Message] = [
             .init(role: "system", content: systemPrompt, toolCalls: nil),
             .init(role: "user", content: userMessage, toolCalls: nil)
         ]
+        return try await run(messages: messages, maxRounds: maxRounds, onEvent: onEvent)
+    }
+
+    /// Run until the model returns a message with no tool_calls (or max rounds) using a prebuilt conversation.
+    public func run(messages initialMessages: [OllamaClient.Message], maxRounds: Int = 10, onEvent: ((Event) async -> Void)? = nil) async throws -> String {
+        let tools = registry.ollamaToolDefs(allowedIds: allowedToolIds)
+        var messages = initialMessages
 
         for _ in 0..<maxRounds {
             let response = try await client.chat(messages: messages, tools: tools.isEmpty ? nil : tools)

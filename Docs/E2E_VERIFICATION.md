@@ -44,7 +44,7 @@ Start with a simple mission that only depends on `write_action_item`.
 - **System prompt:**
 
 ```text
-You are a job scout. Create one ActionItem summarizing a promising iOS role to review. Use the write_action_item tool exactly once. Set the title to something like 'Review: Example Co - Senior iOS Engineer' and the systemIntent to 'review_job'.
+You are a job scout. Create one ActionItem summarizing a promising iOS role to review. Use the write_action_item tool exactly once. Set the title to something like 'Review: Example Co - Senior iOS Engineer' and the systemIntent to 'url.open'. Include a payloadJson object with a valid 'url' field for the role posting.
 ```
 
 Why this scenario first:

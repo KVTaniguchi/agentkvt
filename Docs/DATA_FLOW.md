@@ -1,6 +1,13 @@
 # AgentKVT Data Flow: iOS → Mac Agents → Back to iOS
 
-This document describes how data moves from the moment a user defines a mission in the iOS app through the Mac runner and agents, and back to the iOS app as actions and logs.
+This document describes how data moves from the moment a user defines a mission in the iOS app through the Mac runner and agents, and back to the iOS app as actions, logs, and chat replies.
+
+## Current architecture notes (2026 direction)
+
+- AgentKVT uses a **shared family Apple ID** for iCloud sync across participating devices.
+- Individual people are represented by in-app profiles (`FamilyMember`) inside the shared data model.
+- Multi-agent orchestration is **stigmergic**: agents coordinate by reading/writing shared state (`WorkUnit`, `EphemeralPin`, `ResourceHealth`) rather than direct agent-to-agent messaging.
+- The Mac execution engine remains serial (`MissionExecutionQueue`) and trigger-driven.
 
 ---
 
@@ -16,7 +23,7 @@ flowchart TB
     end
 
     subgraph Store["📦 Shared SwiftData Store"]
-        S[(MissionDefinition<br/>LifeContext<br/>ActionItem<br/>AgentLog)]
+        S[(MissionDefinition<br/>LifeContext<br/>ActionItem<br/>AgentLog<br/>ChatThread<br/>ChatMessage<br/>FamilyMember<br/>WorkUnit<br/>EphemeralPin<br/>ResourceHealth)]
     end
 
     subgraph Mac["🖥️ Mac Studio (Headless)"]
@@ -65,7 +72,19 @@ flowchart TB
 
 ## 2. Step-by-Step Flow (with examples)
 
-### Step 1: User defines a mission in the iOS app
+### Step 1: User signs into family iCloud and selects profile
+
+**Where:** Device Settings + iOS app onboarding.
+
+**What happens:**
+
+- Device is signed into iCloud with the shared family Apple ID.
+- In app, person creates/selects a `FamilyMember` profile.
+- App stores the active profile locally on that device and writes profile-attributed rows to shared SwiftData.
+
+---
+
+### Step 2: User defines a mission in the iOS app
 
 **Where:** iOS app → **Missions** tab → Add / Edit Mission.
 
@@ -84,7 +103,7 @@ flowchart TB
 
 ---
 
-### Step 2: Mac runner starts (no UI)
+### Step 3: Mac runner starts (no UI)
 
 **Where:** Mac Studio — you run `AgentKVTMacRunner` (e.g. via SSH, launchd, or Terminal). No windows; it’s a CLI process.
 
@@ -106,7 +125,7 @@ flowchart TB
 
 ---
 
-### Step 3: MissionRunner runs one mission
+### Step 4: MissionRunner runs one mission
 
 **What it does:**
 
@@ -120,7 +139,7 @@ So the “process” for each mission is: **one LLM conversation**, with the mis
 
 ---
 
-### Step 4: AgentLoop — what the agents are actually doing
+### Step 5: AgentLoop — what the agents are actually doing
 
 **Process:**
 
@@ -144,23 +163,27 @@ So the “processes” the agents run are **LLM reasoning + tool executions**. N
 
 ---
 
-### Step 5: Tools (what actually runs on the Mac)
+### Step 6: Tools (what actually runs on the Mac)
 
 | Tool ID | What it does | Writes to store? | Example |
 |--------|----------------|------------------|---------|
-| **write_action_item** | Creates one **ActionItem** (title, systemIntent, optional payload). | Yes → **ActionItem** | “Review New Job Leads”, intent `open_url` |
+| **write_action_item** | Creates one **ActionItem** (title, systemIntent, optional payload). | Yes → **ActionItem** | “Review New Job Leads”, intent `url.open` |
 | **web_search_and_fetch** | Calls Ollama's web_search and web_fetch APIs; returns clean Markdown (ads/footers/scripts stripped). Requires **OLLAMA_API_KEY**. | No (returns content to LLM) | "iOS roles in Philly" → scraped job pages as Markdown |
 | **headless_browser_scout** | Loads a URL in headless WebKit; optional click/fill actions; returns page text. For JS-heavy sites (LinkedIn, banks). | No (returns content to LLM) | Load LinkedIn jobs, click "Next", return listing text |
 | **send_notification_email** | Sends an email to the **fixed** user address (from env). Subject/body from LLM. | No (writes to outbox or uses `mail`) | “Weekly job search summary”, body with 3 next steps |
 | **fetch_bee_ai_context** | Calls BEE AI API; summarizes transcriptions/insights. | Yes → **AgentLog** (and optionally **LifeContext** key) | Stores under key `bee_ai_recent` for future missions |
 | **incoming_email_trigger** | Returns the next pending email from the Agent Inbox (sanitized). | No (consumes from ingestor) | “Intent: Meeting request … General content: …” |
 | **github_agent** | (If configured) Performs GitHub operations (e.g. list PRs, create issue). | No (or via other tools) | Used in “PR triage” style missions |
+| **fetch_work_units** | Reads stigmergy board work by state/category. | No (returns content to LLM) | Get pending travel work units |
+| **update_work_unit** | Updates state/payload/phase on a work unit. | Yes → **WorkUnit** | Mark `in_progress` then `done` |
+| **pin_ephemeral_note** | Writes short-lived pin with TTL. | Yes → **EphemeralPin** | “Check weather” expires in 10 min |
+| **report_resource_failure** / **list_resource_health** | Tracks cooldown/backoff for failing resources. | Yes → **ResourceHealth** | Back off API for 300 seconds |
 
 So the **only** tool that directly creates things the user sees as “actions to take” in the iOS app is **write_action_item** → **ActionItem**.
 
 ---
 
-### Step 6: Back to the iOS app — user sees actions and log
+### Step 7: Back to the iOS app — user sees actions, log, and chat
 
 **Shared store** now contains:
 
@@ -171,8 +194,9 @@ So the **only** tool that directly creates things the user sees as “actions to
 
 - **Actions** tab: Lists `ActionItem`s (typically `isHandled == false`). Each row is a tappable “button” (title, systemIntent, relative time). When the user taps, the app can mark it handled and/or perform the intent (e.g. open URL, compose email).
 - **Log** tab: Lists **AgentLog** entries (phase, mission name, content, timestamp) so the user can see what the agent did.
+- **Chat** tab: Shows `ChatThread` / `ChatMessage` conversations. User messages are queued in shared state, and the Mac runner processes pending messages and writes assistant replies.
 
-So the “data flow back” is: **Mac agents call tools → tools write ActionItem / AgentLog into the shared SwiftData store → iOS app reads that store and shows Actions + Log.**
+So the “data flow back” is: **Mac agents call tools and process queued chat messages → ActionItem / AgentLog / ChatMessage rows are written into shared SwiftData → iOS app reads that store and shows Actions + Log + Chat.**
 
 ---
 
@@ -186,4 +210,4 @@ So the “data flow back” is: **Mac agents call tools → tools write ActionIt
 6. **write_action_item:** Inserts three **ActionItem** rows into the shared store; AgentLog entries are written for tool calls and outcome.
 7. **iOS:** User opens the app; **Actions** tab shows the three new items. User taps “Apply to Acme Corp” → app can open the job link or mark done; **Log** tab shows what the agent did.
 
-That’s the full loop: **define mission on iOS → Mac runs it on schedule with Ollama + tools → tools write ActionItems (and logs) → user sees and acts on them on iOS.**
+That’s the full loop: **family profile + mission on iOS → Mac runs it with tool constraints over shared board state → tools write ActionItems/logs/state updates → user sees and acts on them on iOS.**

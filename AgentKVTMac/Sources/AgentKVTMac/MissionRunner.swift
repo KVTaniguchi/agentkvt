@@ -20,7 +20,7 @@ public final class MissionRunner {
         let allowedTools = mission.allowedMCPTools
         let loop = AgentLoop(client: client, registry: registry, allowedToolIds: allowedTools)
         let systemPrompt = mission.systemPrompt
-        let userMessage = "Execute your mission. Use the available tools to create action items or other outputs as defined in your instructions."
+        let userMessage = missionUserMessage(for: mission)
         let startLog = AgentLog(
             missionId: mission.id,
             missionName: mission.missionName,
@@ -86,5 +86,23 @@ public final class MissionRunner {
         let log = AgentLog(missionId: mission.id, missionName: mission.missionName, phase: "outcome", content: result)
         modelContext.insert(log)
         try modelContext.save()
+    }
+
+    private func missionUserMessage(for mission: MissionDefinition) -> String {
+        var message = "Execute your mission. Use the available tools to create action items or other outputs as defined in your instructions."
+        guard let ownerProfileId = mission.ownerProfileId else {
+            return message
+        }
+        let owner = try? modelContext.fetch(
+            FetchDescriptor<FamilyMember>(
+                predicate: #Predicate<FamilyMember> { $0.id == ownerProfileId }
+            )
+        ).first
+        if let owner {
+            message += " Mission owner profile: \(owner.displayName). Keep outputs grounded in this person's context."
+        } else {
+            message += " Mission owner profile ID: \(ownerProfileId.uuidString). Keep outputs grounded in this person's context."
+        }
+        return message
     }
 }
