@@ -226,8 +226,10 @@ private func runScheduler(
     // ── 60-second clock (lowest priority — background heartbeat) ─────────────────
     // Checks due CRON missions and pending chat messages. Arrives last in line when
     // a webhook or CloudKit sync is already queued.
+    let configuredInterval = Int(ProcessInfo.processInfo.environment["SCHEDULER_INTERVAL_SECONDS"] ?? "60") ?? 60
+    let clockIntervalSeconds = max(1, configuredInterval)
     let clockTimer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
-    clockTimer.schedule(deadline: .now(), repeating: .seconds(60))
+    clockTimer.schedule(deadline: .now(), repeating: .seconds(clockIntervalSeconds))
     clockTimer.setEventHandler {
         executionQueue.enqueue(.clockTick, priority: .low)
     }
@@ -238,6 +240,7 @@ private func runScheduler(
           Inbox:    \(emailIngestor.directory.path)
           Inbound:  \(dropzoneDir.path)
           Webhook:  port \(webhookPort)
+          Clock:    every \(clockIntervalSeconds)s
           CloudKit: listening for NSPersistentStoreRemoteChangeNotification
         """)
 

@@ -111,6 +111,8 @@ actor MissionExecutionQueue {
             while try await chatRunner.processNextPendingMessage() {}
 
             let missions = try modelContext.fetch(FetchDescriptor<MissionDefinition>())
+            let dueScheduledMissions = scheduler.dueMissions(from: missions)
+            print("[MissionExecutionQueue] Clock tick: \(describeMissionSnapshot(missions, dueScheduledMissions: dueScheduledMissions))")
             if try StigmergyBoardMaintenance.hasActiveWorkUnits(modelContext: modelContext) {
                 let boardSchedule = WorkUnit.boardMissionTriggerSchedule
                 for mission in missions where mission.isEnabled && mission.triggerSchedule == boardSchedule {
@@ -127,7 +129,7 @@ actor MissionExecutionQueue {
             }
             }
 
-            for mission in scheduler.dueMissions(from: missions) {
+            for mission in dueScheduledMissions {
                 mission.lastRunAt = Date()
                 mission.updatedAt = Date()
                 try modelContext.save()
@@ -234,5 +236,35 @@ actor MissionExecutionQueue {
                 }
             }
         }
+    }
+
+    private func describeMissionSnapshot(
+        _ missions: [MissionDefinition],
+        dueScheduledMissions: [MissionDefinition]
+    ) -> String {
+        guard !missions.isEmpty else {
+            return "0 missions visible on Mac store."
+        }
+
+        let enabledCount = missions.filter(\.isEnabled).count
+        let missionList = missions
+            .sorted { $0.updatedAt > $1.updatedAt }
+            .map { mission in
+                "\(mission.missionName) [\(mission.triggerSchedule)] enabled=\(mission.isEnabled) lastRun=\(mission.lastRunAt.map(Self.logTimestamp) ?? "never")"
+            }
+            .joined(separator: "; ")
+
+        if dueScheduledMissions.isEmpty {
+            return "\(missions.count) mission(s) visible, \(enabledCount) enabled, 0 due. Visible: \(missionList)"
+        }
+
+        let dueNames = dueScheduledMissions.map(\.missionName).joined(separator: ", ")
+        return "\(missions.count) mission(s) visible, \(enabledCount) enabled, \(dueScheduledMissions.count) due now (\(dueNames)). Visible: \(missionList)"
+    }
+
+    private static func logTimestamp(_ date: Date) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.string(from: date)
     }
 }
