@@ -37,13 +37,17 @@ public final class SignalHandler: @unchecked Sendable {
     /// Suspends until SIGINT (Ctrl-C) or SIGTERM (`kill`, `launchctl stop`) arrives.
     /// Safe to call from any actor or Task context.
     public func waitForShutdown() async {
-        await withCheckedContinuation { [weak self] continuation in
-            guard let self else { continuation.resume(); return }
-            self.lock.lock()
-            self.continuation = continuation
-            self.lock.unlock()
-            self.installHandler(for: SIGINT,  name: "SIGINT")
-            self.installHandler(for: SIGTERM, name: "SIGTERM")
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { [weak self] continuation in
+                guard let self else { continuation.resume(); return }
+                self.lock.lock()
+                self.continuation = continuation
+                self.lock.unlock()
+                self.installHandler(for: SIGINT,  name: "SIGINT")
+                self.installHandler(for: SIGTERM, name: "SIGTERM")
+            }
+        } onCancel: { [weak self] in
+            self?.cancelWait()
         }
     }
 
@@ -74,6 +78,10 @@ public final class SignalHandler: @unchecked Sendable {
     private func handle(signal: Int32, name: String) {
         print("\n[SignalHandler] \(name) received — beginning graceful shutdown.")
 
+        cancelWait()
+    }
+
+    private func cancelWait() {
         lock.lock()
         let cont = continuation
         continuation = nil

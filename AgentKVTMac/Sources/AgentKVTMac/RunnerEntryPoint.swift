@@ -145,8 +145,14 @@ public func runAgentKVTMacRunner() async {
 private func runSingleTest(registry: ToolRegistry, client: OllamaClient) async {
     let allowedTools = ["write_action_item"]
     let loop = AgentLoop(client: client, registry: registry, allowedToolIds: allowedTools)
-    let systemPrompt = "You are a helpful assistant. When the user asks you to create an action for them, use the write_action_item tool with a short title and systemIntent. You must use the tool when asked to create or write an action."
-    let userMessage = "Create one action item with title 'Test Action from Runner' and systemIntent 'test.intent'."
+    let systemPrompt = """
+    You are a helpful assistant. When the user asks you to create an action for them, you must call the write_action_item tool exactly once.
+    Use one of these valid systemIntent values only: calendar.create, mail.reply, reminder.add, url.open.
+    """
+    let userMessage = """
+    Create one action item with title "Test Action from Runner" and systemIntent "url.open".
+    Do not explain anything before or after the tool call.
+    """
     do {
         let result = try await loop.run(systemPrompt: systemPrompt, userMessage: userMessage)
         print("Agent result: \(result)")
