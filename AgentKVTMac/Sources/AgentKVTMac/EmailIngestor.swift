@@ -2,7 +2,7 @@ import Foundation
 
 /// Agent Inbox: watches a directory for .eml files (or polls), parses and sanitizes,
 /// then enqueues (intent, general_content) for the incoming_email_trigger tool.
-public final class EmailIngestor {
+public final class EmailIngestor: @unchecked Sendable {
     public static let defaultInboxDirectory = FileManager.default.homeDirectoryForCurrentUser.appending(path: ".agentkvt/inbox", directoryHint: .isDirectory)
 
     public struct PendingEmail: Sendable {

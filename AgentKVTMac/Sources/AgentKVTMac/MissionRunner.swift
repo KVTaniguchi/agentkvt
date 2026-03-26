@@ -4,7 +4,7 @@ import SwiftData
 
 /// Runs a single mission: invokes the LLM with the mission's prompt and allowed tools,
 /// then writes outcome to AgentLog. ActionItems are written by tools (e.g. write_action_item).
-public final class MissionRunner {
+public final class MissionRunner: @unchecked Sendable {
     private let modelContext: ModelContext
     private let client: any OllamaClientProtocol
     private let registry: ToolRegistry

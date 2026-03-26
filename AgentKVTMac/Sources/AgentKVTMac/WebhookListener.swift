@@ -4,12 +4,12 @@ import Network
 /// Listens on a local TCP port for HTTP POST requests. On each request, fires `onPayload`
 /// with the raw request body and immediately responds with 200 OK. Uses Network.framework
 /// (zero external dependencies). Intended for LAN-local triggers only.
-final class WebhookListener {
+final class WebhookListener: @unchecked Sendable {
     private let port: NWEndpoint.Port
-    let onPayload: (String) -> Void
+    let onPayload: @Sendable (String) -> Void
     private var listener: NWListener?
 
-    init(port: UInt16 = 8765, onPayload: @escaping (String) -> Void) {
+    init(port: UInt16 = 8765, onPayload: @escaping @Sendable (String) -> Void) {
         self.port = NWEndpoint.Port(rawValue: port)!
         self.onPayload = onPayload
     }

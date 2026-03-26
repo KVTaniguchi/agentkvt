@@ -10,7 +10,7 @@ public protocol OllamaClientProtocol {
 ///
 /// Operational config: On a dedicated machine (e.g. Mac Studio), configure the LLM host for up to 90%
 /// memory/GPU utilization; see Docs/LLM_THROTTLING.md.
-public final class OllamaClient {
+public final class OllamaClient: @unchecked Sendable {
     public let baseURL: URL
     public let model: String
     private let session: URLSession

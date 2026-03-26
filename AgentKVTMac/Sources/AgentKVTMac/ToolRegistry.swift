@@ -1,7 +1,7 @@
 import Foundation
 
 /// Zero-trust tool registry: each tool has a stable ID, JSON schema, and a handler that validates/sanitizes arguments.
-public final class ToolRegistry {
+public final class ToolRegistry: @unchecked Sendable {
     public typealias ToolHandler = ([String: Any]) async throws -> String
 
     public struct Tool {

@@ -3,7 +3,7 @@ import ManagerCore
 import SwiftData
 
 /// Processes optional chat threads written by iPhone into the shared store.
-public final class ChatRunner {
+public final class ChatRunner: @unchecked Sendable {
     private let modelContext: ModelContext
     private let client: any OllamaClientProtocol
     private let registry: ToolRegistry
