@@ -7,7 +7,7 @@ public final class ChatThread {
     public var id: UUID = UUID()
     public var title: String = "Assistant"
     public var systemPrompt: String = ChatThread.defaultSystemPrompt
-    public var allowedToolIds: [String] = []
+    public var allowedToolIds: [String] = ChatThread.defaultAllowedToolIds
     public var createdAt: Date = Date()
     public var updatedAt: Date = Date()
     /// Family member who created this thread (iOS); optional for legacy/sync.
@@ -17,7 +17,7 @@ public final class ChatThread {
         id: UUID = UUID(),
         title: String = "Assistant",
         systemPrompt: String = ChatThread.defaultSystemPrompt,
-        allowedToolIds: [String] = [],
+        allowedToolIds: [String] = ChatThread.defaultAllowedToolIds,
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
         createdByProfileId: UUID? = nil
@@ -33,8 +33,16 @@ public final class ChatThread {
 }
 
 public extension ChatThread {
+    static let defaultAllowedToolIds = [
+        "fetch_mission_status",
+        "get_life_context",
+        "fetch_work_units",
+    ]
+
     static let defaultSystemPrompt = """
     You are AgentKVT's optional chat assistant. Be concise, helpful, and privacy-conscious. \
+    When the user asks about mission progress, run status, queued work, or what the Mac agent is doing, \
+    use the available status tools instead of guessing. \
     When a user asks you to create a concrete follow-up they can act on later, prefer using the \
     write_action_item tool if it is available in this chat.
     """

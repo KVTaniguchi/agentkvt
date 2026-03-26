@@ -72,11 +72,11 @@ flowchart TB
 - **LLM integration:**
   - Connect to local host (Ollama or LM Studio): send prompts, receive responses, parse tool-call requests and feed results back.
   - No mission scheduling yet — e.g. single "test" prompt that can call one tool and write one `ActionItem` to SwiftData.
-- **LLM throttling (docs/scripts):**
-  - Document or generate config to cap GPU/Neural Engine at ~80% and preserve 20% headroom (per FOUNDATIONAL_PLAN §2).
+- **Dedicated-machine runtime guidance (docs/scripts):**
+  - Document the intended deployment model: dedicated Mac, one mission at a time, bounded queueing, and LLM-host tuning instead of an in-app CPU/GPU throttle.
 
 **Dependencies:** Phase 1 (ManagerCore + schema).  
-**Exit criteria:** Mac app runs; one test prompt triggers one tool call and one `ActionItem` write; throttling documented.
+**Exit criteria:** Mac app runs; one test prompt triggers one tool call and one `ActionItem` write; dedicated-machine runtime guidance documented.
 
 ---
 
@@ -167,10 +167,10 @@ flowchart TB
   - **Career (Tech Job Scout):** Mission that scans for roles and creates ActionItems (e.g. `write_action_item`, optional `web_search_and_fetch` / `headless_browser_scout`).
   - **Finance (Budget Sentinel):** Mission that monitors CSV/transaction data (e.g. via Dropzone) and produces ActionItems when limits exceeded.
 - **AgentLog:** Ensure all missions write reasoning/tool-calls/outcomes to `AgentLog`; verify one audit path (e.g. simple log viewer or export).
-- **Sync and stability:** Confirm SwiftData sync between Mac and iOS; no hardcoded missions in binary; LLM throttling in place for heavy loops.
+- **Sync and stability:** Confirm SwiftData sync between Mac and iOS; no hardcoded missions in binary; dedicated-machine runtime guidance matches actual runner behavior.
 
 **Dependencies:** All previous phases.  
-**Exit criteria:** Both example missions run from user-defined definitions; ActionItems appear on iOS; AgentLog is populated and reviewable; sync and throttling documented/verified.
+**Exit criteria:** Both example missions run from user-defined definitions; ActionItems appear on iOS; AgentLog is populated and reviewable; sync and runtime guidance documented/verified.
 
 ---
 

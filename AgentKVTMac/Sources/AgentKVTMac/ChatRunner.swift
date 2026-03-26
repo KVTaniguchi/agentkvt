@@ -50,7 +50,8 @@ public final class ChatRunner: @unchecked Sendable {
                 sortBy: [SortDescriptor(\.timestamp, order: .forward)]
             )
             let history = try modelContext.fetch(historyDescriptor)
-            let loop = AgentLoop(client: client, registry: registry, allowedToolIds: thread.allowedToolIds)
+            let allowedToolIds = thread.allowedToolIds.isEmpty ? ChatThread.defaultAllowedToolIds : thread.allowedToolIds
+            let loop = AgentLoop(client: client, registry: registry, allowedToolIds: allowedToolIds)
             let messages = buildConversation(systemPrompt: thread.systemPrompt, history: history)
             let result = try await loop.run(messages: messages) { [modelContext] event in
                 guard let log = ChatRunner.makeLog(for: event, thread: thread) else { return }

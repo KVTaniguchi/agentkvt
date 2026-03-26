@@ -85,6 +85,7 @@ public func runAgentKVTMacRunner() async {
         registry.register(makeSendNotificationEmailTool(destinationEmail: email))
     }
     registry.register(makeGetLifeContextTool(modelContext: context))
+    registry.register(makeFetchMissionStatusTool(modelContext: context))
     if let pat = ProcessInfo.processInfo.environment["GITHUB_AGENT_PAT"],
        let reposEnv = ProcessInfo.processInfo.environment["GITHUB_AGENT_REPOS"], !pat.isEmpty {
         let repos = reposEnv.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }

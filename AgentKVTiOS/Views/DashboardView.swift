@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 import ManagerCore
 
-/// Dashboard: observe ActionItem and render dynamic AppIntentButtons. No chat.
+/// Dashboard: main iOS surface for actions, missions, logs, files, and chat.
 struct DashboardView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var profileStore: FamilyProfileStore

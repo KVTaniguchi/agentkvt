@@ -49,6 +49,59 @@ struct ContextToolsTests {
         
         #expect(result.contains("not found"))
     }
+
+    @Test("FetchMissionStatusTool returns mission details and recent logs")
+    func fetchMissionStatusReturnsRecentMissionActivity() async throws {
+        let (context, _) = try createInMemoryContext()
+        let lastRun = Date().addingTimeInterval(-300)
+        let mission = MissionDefinition(
+            missionName: "Job Scout",
+            systemPrompt: "Look for jobs",
+            triggerSchedule: "daily|08:00",
+            allowedMCPTools: ["web_search_and_fetch"],
+            lastRunAt: lastRun
+        )
+        context.insert(mission)
+        context.insert(AgentLog(
+            missionId: mission.id,
+            missionName: mission.missionName,
+            phase: "outcome",
+            content: "Found 3 matching roles."
+        ))
+        try context.save()
+
+        let tool = makeFetchMissionStatusTool(modelContext: context)
+        let result = try await tool.handler([:])
+
+        #expect(result.contains("Mission: Job Scout"))
+        #expect(result.contains("Trigger: daily|08:00"))
+        #expect(result.contains("Latest run completed successfully."))
+        #expect(result.contains("Found 3 matching roles."))
+    }
+
+    @Test("FetchMissionStatusTool filters by mission name")
+    func fetchMissionStatusFiltersByMissionName() async throws {
+        let (context, _) = try createInMemoryContext()
+        context.insert(MissionDefinition(
+            missionName: "Budget Sentinel",
+            systemPrompt: "Track transactions",
+            triggerSchedule: "daily|20:00",
+            allowedMCPTools: []
+        ))
+        context.insert(MissionDefinition(
+            missionName: "Career Scout",
+            systemPrompt: "Track jobs",
+            triggerSchedule: "daily|08:00",
+            allowedMCPTools: []
+        ))
+        try context.save()
+
+        let tool = makeFetchMissionStatusTool(modelContext: context)
+        let result = try await tool.handler(["mission_name": "career"])
+
+        #expect(result.contains("Mission: Career Scout"))
+        #expect(!result.contains("Budget Sentinel"))
+    }
     
     // MARK: - DropzoneTools Tests
     

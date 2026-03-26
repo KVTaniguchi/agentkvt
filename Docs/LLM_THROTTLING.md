@@ -4,10 +4,11 @@ The macOS agent runs on a **dedicated machine** (e.g. Mac Studio). Operational c
 
 ## Requirement (Dedicated Machine)
 
-- **Allow up to 90% of available memory and GPU layers** for the runner.
-- **Preserve ~10% compute headroom** so the system remains responsive.
+- Prefer a model size and host configuration that fit comfortably on the machine without swap thrash or repeated thermal instability.
+- The agent runtime should remain **single-flight**: one mission or chat inference at a time.
+- Keep the machine awake and available for unattended operation.
 
-(On a shared machine, you may cap lower, e.g. 80% / 20% headroom; see FOUNDATIONAL_PLAN §2 for that scenario.)
+This project does **not** implement an application-level CPU/GPU/ANE throttle inside the agent code.
 
 ## Ollama
 
@@ -26,20 +27,21 @@ Ollama does not expose a built-in “max GPU %” setting. Use system-level or p
    There is no standard way to cap GPU usage at a fixed % from user space. Options:
    - Use a model that fits in memory without thrashing (smaller models use less GPU).
    - Run fewer concurrent requests so that the LLM is not constantly at 100%.
-   - On a dedicated Mac Studio, **90% utilization** is acceptable; leave ~10% headroom via scheduling (one mission at a time, spaced runs).
+   - On a dedicated Mac Studio, high utilization is acceptable as long as the system remains stable under the chosen model and mission cadence.
 
 ## LM Studio
 
 Check LM Studio’s settings for:
-- **Max GPU layers** or **GPU offload %** — set to **90%** (or higher) on a dedicated machine for maximum performance.
+- **Max GPU layers** or **GPU offload %** — tune for the installed model and available memory.
 - **Context / batch size** — tune for your model and memory.
 
 ## Recommendation
 
-- **Operational:** Run the mission scheduler so that only one mission runs at a time; space out runs (e.g. every 5–10 minutes) to avoid sustained 100% usage.
+- **Operational:** Run the mission scheduler so that only one mission runs at a time. Use mission cadence and model choice to manage sustained load.
 - **Model choice:** Prefer a model that fits comfortably in memory (e.g. 8B–70B depending on hardware) to reduce swap and thrashing.
-- **Monitoring:** Use Activity Monitor (or `sudo powermetrics`) to observe GPU/ANE usage; if the system becomes unresponsive, reduce model size or mission frequency.
+- **Availability:** Keep App Nap / system sleep disabled for the unattended runner so scheduled work and sync continue reliably.
+- **Monitoring:** Use Activity Monitor (or `sudo powermetrics`) to observe GPU/ANE usage; if the system becomes unstable, reduce model size or mission frequency.
 
 ## Status
 
-No application-level throttle is implemented in the agent code. Throttling/limits are achieved by operational choices (scheduling, model size, one mission at a time) and, where available, host/LLM configuration (LM Studio GPU limits, `nice`, etc.). **For a dedicated Mac Studio, configure the LLM host for up to 90% utilization.**
+No application-level throttle is implemented in the agent code. Resource management is achieved by operational choices and runtime structure: one mission at a time, bounded trigger buffering, model sizing, and host/LLM configuration where available. Sleep prevention in the runner exists to improve unattended availability, not to reserve headroom for other interactive apps.
