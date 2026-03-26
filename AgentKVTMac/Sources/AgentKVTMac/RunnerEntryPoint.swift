@@ -76,6 +76,7 @@ public func runAgentKVTMacRunner() async {
         exit(1)
     }
     let context = ModelContext(container)
+    let sharedModelContext = SharedModelContext(context)
     let registry = ToolRegistry()
     registry.register(makeWriteActionItemTool(modelContext: context))
     registry.register(makeWebSearchAndFetchTool())
@@ -129,7 +130,7 @@ public func runAgentKVTMacRunner() async {
 
     if ProcessInfo.processInfo.environment["RUN_SCHEDULER"] == "1" {
         await runScheduler(
-            context: context,
+            context: sharedModelContext,
             client: client,
             registry: registry,
             emailIngestor: emailIngestor,
@@ -165,7 +166,7 @@ private func runSingleTest(registry: ToolRegistry, client: OllamaClient) async {
 // MARK: - Scheduler (production event-driven mode)
 
 private func runScheduler(
-    context: ModelContext,
+    context: SharedModelContext,
     client: OllamaClient,
     registry: ToolRegistry,
     emailIngestor: EmailIngestor,

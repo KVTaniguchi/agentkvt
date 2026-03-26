@@ -41,20 +41,20 @@ actor MissionExecutionQueue {
     // MARK: - Init
 
     init(
-        modelContext: ModelContext,
+        modelContext: SharedModelContext,
         client: OllamaClient,
         registry: ToolRegistry,
         emailIngestor: EmailIngestor,
         dropzoneDir: URL
     ) {
-        self.modelContext = modelContext
+        self.modelContext = modelContext.raw
         self.scheduler = MissionScheduler()
-        self.missionRunner = MissionRunner(modelContext: modelContext, client: client, registry: registry)
-        self.chatRunner = ChatRunner(modelContext: modelContext, client: client, registry: registry)
+        self.missionRunner = MissionRunner(modelContext: modelContext.raw, client: client, registry: registry)
+        self.chatRunner = ChatRunner(modelContext: modelContext.raw, client: client, registry: registry)
         self.dropzoneDir = dropzoneDir
         self.dropzone = DropzoneService(directory: dropzoneDir)
         self.emailIngestor = emailIngestor
-        self.cloudInbound = CloudInboundService(modelContext: modelContext, directory: dropzoneDir)
+        self.cloudInbound = CloudInboundService(modelContext: modelContext.raw, directory: dropzoneDir)
         self.agentQueue = AgentQueue()
     }
 
@@ -114,24 +114,26 @@ actor MissionExecutionQueue {
             if try StigmergyBoardMaintenance.hasActiveWorkUnits(modelContext: modelContext) {
                 let boardSchedule = WorkUnit.boardMissionTriggerSchedule
                 for mission in missions where mission.isEnabled && mission.triggerSchedule == boardSchedule {
-                    mission.lastRunAt = Date()
-                    mission.updatedAt = Date()
-                    try modelContext.save()
-                    do {
-                        try await missionRunner.run(mission)
-                        print("[MissionExecutionQueue] Ran work unit board mission: \(mission.missionName)")
-                    } catch {
-                        print("[MissionExecutionQueue] Work unit board mission '\(mission.missionName)' failed: \(error)")
-                    }
+                mission.lastRunAt = Date()
+                mission.updatedAt = Date()
+                try modelContext.save()
+                let request = MissionRunner.Request(mission)
+                do {
+                    try await missionRunner.run(request)
+                    print("[MissionExecutionQueue] Ran work unit board mission: \(mission.missionName)")
+                } catch {
+                    print("[MissionExecutionQueue] Work unit board mission '\(mission.missionName)' failed: \(error)")
                 }
+            }
             }
 
             for mission in scheduler.dueMissions(from: missions) {
                 mission.lastRunAt = Date()
                 mission.updatedAt = Date()
                 try modelContext.save()
+                let request = MissionRunner.Request(mission)
                 do {
-                    try await missionRunner.run(mission)
+                    try await missionRunner.run(request)
                     print("[MissionExecutionQueue] Ran scheduled mission: \(mission.missionName)")
                 } catch {
                     print("[MissionExecutionQueue] Scheduled mission '\(mission.missionName)' failed: \(error)")
@@ -148,8 +150,9 @@ actor MissionExecutionQueue {
                 mission.lastRunAt = Date()
                 mission.updatedAt = Date()
                 try modelContext.save()
+                let request = MissionRunner.Request(mission)
                 do {
-                    try await missionRunner.run(mission)
+                    try await missionRunner.run(request)
                     print("[MissionExecutionQueue] Ran email mission: \(mission.missionName)")
                 } catch {
                     print("[MissionExecutionQueue] Email mission '\(mission.missionName)' failed: \(error)")
@@ -167,8 +170,9 @@ actor MissionExecutionQueue {
                 mission.lastRunAt = Date()
                 mission.updatedAt = Date()
                 try modelContext.save()
+                let request = MissionRunner.Request(mission)
                 do {
-                    try await missionRunner.run(mission)
+                    try await missionRunner.run(request)
                     print("[MissionExecutionQueue] Ran inbound file mission: \(mission.missionName)")
                 } catch {
                     print("[MissionExecutionQueue] Inbound file mission '\(mission.missionName)' failed: \(error)")
@@ -192,8 +196,9 @@ actor MissionExecutionQueue {
                 mission.lastRunAt = Date()
                 mission.updatedAt = Date()
                 try modelContext.save()
+                let request = MissionRunner.Request(mission)
                 do {
-                    try await missionRunner.run(mission)
+                    try await missionRunner.run(request)
                     print("[MissionExecutionQueue] Ran webhook mission: \(mission.missionName)")
                 } catch {
                     print("[MissionExecutionQueue] Webhook mission '\(mission.missionName)' failed: \(error)")
@@ -220,8 +225,9 @@ actor MissionExecutionQueue {
                 mission.lastRunAt = Date()
                 mission.updatedAt = Date()
                 try modelContext.save()
+                let request = MissionRunner.Request(mission)
                 do {
-                    try await missionRunner.run(mission)
+                    try await missionRunner.run(request)
                     print("[MissionExecutionQueue] Ran CloudKit summary mission: \(mission.missionName)")
                 } catch {
                     print("[MissionExecutionQueue] CloudKit summary mission '\(mission.missionName)' failed: \(error)")
