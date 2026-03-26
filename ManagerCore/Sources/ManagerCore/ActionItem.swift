@@ -5,14 +5,14 @@ import SwiftData
 /// The Mac agent writes these; the iOS app renders them as AppIntentButtons.
 @Model
 public final class ActionItem {
-    public var id: UUID
-    public var title: String
-    public var systemIntent: String
+    public var id: UUID = UUID()
+    public var title: String = ""
+    public var systemIntent: String = ""
     public var payloadData: Data?
-    public var relevanceScore: Double
-    public var timestamp: Date
+    public var relevanceScore: Double = 1.0
+    public var timestamp: Date = Date()
     public var missionId: UUID?
-    public var isHandled: Bool
+    public var isHandled: Bool = false
     /// When created from a user-facing flow with attribution; Mac agent rows typically leave nil.
     public var createdByProfileId: UUID?
 

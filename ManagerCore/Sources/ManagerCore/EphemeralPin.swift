@@ -4,12 +4,12 @@ import SwiftData
 /// Short-lived “pheromone” pin that evaporates after `expiresAt` (clock-tick GC on the Mac runner).
 @Model
 public final class EphemeralPin {
-    public var id: UUID
-    public var content: String
+    public var id: UUID = UUID()
+    public var content: String = ""
     public var category: String?
-    public var strength: Double
-    public var expiresAt: Date
-    public var createdAt: Date
+    public var strength: Double = 1.0
+    public var expiresAt: Date = Date()
+    public var createdAt: Date = Date()
 
     public init(
         id: UUID = UUID(),

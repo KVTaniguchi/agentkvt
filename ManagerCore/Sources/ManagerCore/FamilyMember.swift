@@ -5,11 +5,11 @@ import SwiftData
 /// this record attributes actions and messages to an individual.
 @Model
 public final class FamilyMember {
-    public var id: UUID
-    public var displayName: String
+    public var id: UUID = UUID()
+    public var displayName: String = ""
     /// Optional short label for lists (e.g. emoji).
-    public var symbol: String
-    public var createdAt: Date
+    public var symbol: String = ""
+    public var createdAt: Date = Date()
 
     public init(
         id: UUID = UUID(),

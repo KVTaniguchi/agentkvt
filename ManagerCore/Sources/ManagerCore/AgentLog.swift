@@ -5,13 +5,13 @@ import SwiftData
 /// Enables the user to audit the agent's behavior.
 @Model
 public final class AgentLog {
-    public var id: UUID
+    public var id: UUID = UUID()
     public var missionId: UUID?
     public var missionName: String?
-    public var phase: String // e.g. "reasoning", "tool_call", "outcome"
-    public var content: String
+    public var phase: String = "" // e.g. "reasoning", "tool_call", "outcome"
+    public var content: String = ""
     public var toolName: String?
-    public var timestamp: Date
+    public var timestamp: Date = Date()
 
     public init(
         id: UUID = UUID(),

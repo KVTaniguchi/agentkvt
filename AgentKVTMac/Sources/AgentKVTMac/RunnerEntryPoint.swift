@@ -40,12 +40,32 @@ public func runAgentKVTMacRunner() async {
         groupContainer: .none,
         cloudKitDatabase: .private(cloudKitContainerIdentifier)
     )
-    if let c = try? ModelContainer(for: schema, configurations: [sharedPersistentConfig]) {
+    let localPersistentConfig = ModelConfiguration(
+        "default-local",
+        schema: schema,
+        isStoredInMemoryOnly: false,
+        allowsSave: true
+    )
+    let environment = ProcessInfo.processInfo.environment
+    let bundleIdentifier = Bundle.main.bundleIdentifier
+    let shouldAttemptCloudKit = environment["AGENTKVT_DISABLE_CLOUDKIT"] != "1"
+        && !(bundleIdentifier?.isEmpty ?? true)
+
+    if shouldAttemptCloudKit,
+       let c = try? ModelContainer(for: schema, configurations: [sharedPersistentConfig]) {
         container = c
         print("SwiftData storage: app group + CloudKit")
-    } else if let c = try? ModelContainer(for: schema, configurations: [cloudKitOnlyConfig]) {
+    } else if shouldAttemptCloudKit,
+              let c = try? ModelContainer(for: schema, configurations: [cloudKitOnlyConfig]) {
         container = c
         print("SwiftData storage: CloudKit only")
+    } else if let c = try? ModelContainer(for: schema, configurations: [localPersistentConfig]) {
+        container = c
+        if shouldAttemptCloudKit {
+            print("SwiftData storage: local disk fallback")
+        } else {
+            print("SwiftData storage: local disk only (CloudKit disabled for CLI runner)")
+        }
     } else {
         let inMemoryConfig = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
         container = try? ModelContainer(for: schema, configurations: [inMemoryConfig])

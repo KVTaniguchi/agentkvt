@@ -4,11 +4,11 @@ import SwiftData
 /// File uploaded from iOS for the Mac agent to consume.
 @Model
 public final class InboundFile {
-    public var id: UUID
-    public var fileName: String
-    public var fileData: Data
-    public var timestamp: Date
-    public var isProcessed: Bool
+    public var id: UUID = UUID()
+    public var fileName: String = ""
+    public var fileData: Data = Data()
+    public var timestamp: Date = Date()
+    public var isProcessed: Bool = false
     public var uploadedByProfileId: UUID?
 
     public init(
@@ -27,4 +27,3 @@ public final class InboundFile {
         self.uploadedByProfileId = uploadedByProfileId
     }
 }
-

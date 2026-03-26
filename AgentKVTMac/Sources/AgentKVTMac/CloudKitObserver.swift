@@ -17,7 +17,7 @@ import Foundation
 /// `NSPersistentStoreRemoteChangeNotificationPostOptionKey = true` is set on the store.
 /// `NSPersistentCloudKitContainer` (which SwiftData uses for CloudKit backends) sets this
 /// automatically — no extra setup required.
-final class CloudKitObserver {
+final class CloudKitObserver: @unchecked Sendable {
 
     // MARK: - State
 

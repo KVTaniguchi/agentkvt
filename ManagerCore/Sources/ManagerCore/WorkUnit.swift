@@ -14,21 +14,21 @@ public enum WorkUnitState: String, Sendable, Codable, CaseIterable {
 /// A durable work item on the shared board: JSON mound payload + explicit state for stigmergic coordination.
 @Model
 public final class WorkUnit {
-    public var id: UUID
-    public var title: String
+    public var id: UUID = UUID()
+    public var title: String = ""
     /// Free-form category for mission filtering (e.g. "travel", "school").
-    public var category: String
-    public var state: String
+    public var category: String = "general"
+    public var state: String = WorkUnitState.draft.rawValue
     /// Evolving JSON blob (flight_info, hotel_info, etc.).
     public var moundPayload: Data?
     /// Optional hint so missions can fetch without parsing JSON every time.
     public var activePhaseHint: String?
     /// Pheromone-style priority for ordering when multiple units are ready.
-    public var priority: Double
+    public var priority: Double = 1.0
     public var claimedByMissionId: UUID?
     public var claimedUntil: Date?
-    public var createdAt: Date
-    public var updatedAt: Date
+    public var createdAt: Date = Date()
+    public var updatedAt: Date = Date()
     /// Optional: family member who created this unit (e.g. from a future iOS flow).
     public var createdByProfileId: UUID?
 

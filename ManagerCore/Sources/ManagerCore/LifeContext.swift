@@ -5,10 +5,10 @@ import SwiftData
 /// (e.g., specific goals, geographic locations, important dates).
 @Model
 public final class LifeContext {
-    public var id: UUID
-    public var key: String
-    public var value: String
-    public var updatedAt: Date
+    public var id: UUID = UUID()
+    public var key: String = ""
+    public var value: String = ""
+    public var updatedAt: Date = Date()
 
     public init(id: UUID = UUID(), key: String, value: String, updatedAt: Date = Date()) {
         self.id = id

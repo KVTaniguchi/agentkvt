@@ -4,13 +4,13 @@ import SwiftData
 /// One message in an optional chat thread shared between iPhone and the Mac runner.
 @Model
 public final class ChatMessage {
-    public var id: UUID
-    public var threadId: UUID
-    public var role: String
-    public var content: String
-    public var status: String
+    public var id: UUID = UUID()
+    public var threadId: UUID = UUID()
+    public var role: String = ""
+    public var content: String = ""
+    public var status: String = ChatMessageStatus.completed.rawValue
     public var errorMessage: String?
-    public var timestamp: Date
+    public var timestamp: Date = Date()
     /// Set for `role == user` when sent from iOS; assistant/system messages omit.
     public var authorProfileId: UUID?
 

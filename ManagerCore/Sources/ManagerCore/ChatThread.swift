@@ -4,12 +4,12 @@ import SwiftData
 /// Optional conversational thread that can be used from iPhone without replacing the main ActionItem UI.
 @Model
 public final class ChatThread {
-    public var id: UUID
-    public var title: String
-    public var systemPrompt: String
-    public var allowedToolIds: [String]
-    public var createdAt: Date
-    public var updatedAt: Date
+    public var id: UUID = UUID()
+    public var title: String = "Assistant"
+    public var systemPrompt: String = ChatThread.defaultSystemPrompt
+    public var allowedToolIds: [String] = []
+    public var createdAt: Date = Date()
+    public var updatedAt: Date = Date()
     /// Family member who created this thread (iOS); optional for legacy/sync.
     public var createdByProfileId: UUID?
 

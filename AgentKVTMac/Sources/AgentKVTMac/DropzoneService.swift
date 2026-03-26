@@ -4,7 +4,7 @@ import PDFKit
 /// Secure file inbound: monitors a single directory (e.g. ~/.agentkvt/inbound/).
 /// Only this folder is read; the agent has no broad system access.
 /// When PDF, CSV, or TXT files appear, parses and exposes content for mission context.
-public final class DropzoneService {
+public final class DropzoneService: @unchecked Sendable {
     public static let defaultDirectory = FileManager.default.homeDirectoryForCurrentUser.appending(path: ".agentkvt/inbound", directoryHint: .isDirectory)
 
     private let directory: URL

@@ -4,14 +4,14 @@ import SwiftData
 /// Durable negative trail for APIs or resources: other missions read this and backoff (slime-mold routing).
 @Model
 public final class ResourceHealth {
-    public var id: UUID
+    public var id: UUID = UUID()
     /// Stable key, e.g. URL host + path or tool name.
-    public var resourceKey: String
+    public var resourceKey: String = ""
     public var lastFailureAt: Date?
     public var cooldownUntil: Date?
-    public var failureCount: Int
+    public var failureCount: Int = 0
     public var lastErrorMessage: String?
-    public var updatedAt: Date
+    public var updatedAt: Date = Date()
 
     public init(
         id: UUID = UUID(),
