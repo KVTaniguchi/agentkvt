@@ -148,6 +148,11 @@ public final class OllamaClient: @unchecked Sendable {
         let messages: [Message]
         let tools: [ToolDef]?
         let stream: Bool
+        let options: ChatOptions?
+    }
+
+    struct ChatOptions: Encodable {
+        let temperature: Double
     }
 
     /// Response from /api/chat (non-streaming).
@@ -157,13 +162,45 @@ public final class OllamaClient: @unchecked Sendable {
         public let error: String?
     }
 
+    private struct ManualToolResponse: Decodable {
+        let content: String?
+        let toolCalls: [ManualToolCall]?
+
+        enum CodingKeys: String, CodingKey {
+            case content
+            case toolCalls = "tool_calls"
+        }
+
+        struct ManualToolCall: Decodable {
+            let name: String
+            let arguments: JSONValue
+        }
+    }
+
     /// Send chat request and return the assistant message (and optional tool_calls).
     public func chat(messages: [Message], tools: [ToolDef]? = nil) async throws -> Message {
+        do {
+            return try await performChat(messages: messages, tools: tools)
+        } catch let OllamaError.apiError(message)
+            where (tools?.isEmpty == false) && shouldRetryWithManualToolMode(apiErrorMessage: message) {
+            return try await performManualToolChat(messages: messages, tools: tools ?? [])
+        }
+    }
+
+    private func performChat(messages: [Message], tools: [ToolDef]?) async throws -> Message {
         let url = baseURL.appending(path: "api/chat")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder().encode(ChatRequest(model: model, messages: messages, tools: tools, stream: false))
+        request.httpBody = try JSONEncoder().encode(
+            ChatRequest(
+                model: model,
+                messages: messages,
+                tools: tools,
+                stream: false,
+                options: ChatOptions(temperature: 0)
+            )
+        )
 
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw OllamaError.invalidResponse }
@@ -174,6 +211,97 @@ public final class OllamaClient: @unchecked Sendable {
         let parsed = try JSONDecoder().decode(ChatResponse.self, from: data)
         guard let msg = parsed.message else { throw OllamaError.noMessage }
         return msg
+    }
+
+    private func performManualToolChat(messages: [Message], tools: [ToolDef]) async throws -> Message {
+        let manualMessages = makeManualToolMessages(from: messages, tools: tools)
+        let raw = try await performChat(messages: manualMessages, tools: nil)
+        let rawContent = raw.content?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let normalized = normalizeManualToolPayload(rawContent)
+        guard let data = normalized.data(using: .utf8) else {
+            return .init(role: "assistant", content: rawContent, toolCalls: nil)
+        }
+        guard let parsed = try? JSONDecoder().decode(ManualToolResponse.self, from: data) else {
+            return .init(role: "assistant", content: rawContent, toolCalls: nil)
+        }
+        let toolCalls = try parsed.toolCalls?.map { call in
+            OllamaClient.ToolCall(
+                id: nil,
+                type: "function",
+                function: .init(name: call.name, arguments: try call.arguments.jsonString())
+            )
+        }
+        return .init(role: "assistant", content: parsed.content, toolCalls: toolCalls)
+    }
+
+    private func shouldRetryWithManualToolMode(apiErrorMessage: String) -> Bool {
+        let lowercased = apiErrorMessage.lowercased()
+        return lowercased.contains("value looks like object")
+            || lowercased.contains("tool")
+            || lowercased.contains("closing '}'")
+    }
+
+    private func makeManualToolMessages(from messages: [Message], tools: [ToolDef]) -> [Message] {
+        let toolDescriptions = tools.map { tool in
+            let params = (try? JSONEncoder().encode(tool.function.parameters))
+                .flatMap { String(data: $0, encoding: .utf8) } ?? "null"
+            return "- \(tool.function.name): \(tool.function.description ?? "No description"). Parameters schema: \(params)"
+        }.joined(separator: "\n")
+
+        let manualToolSystemPrompt = """
+        Automatic tool calling is unavailable for this request.
+        You must respond with JSON only, no Markdown and no prose outside JSON.
+
+        If you need to call a tool, respond exactly like:
+        {"tool_calls":[{"name":"tool_name","arguments":{"key":"value"}}]}
+
+        If you want to answer normally without a tool, respond exactly like:
+        {"content":"your reply"}
+
+        Available tools:
+        \(toolDescriptions)
+        """
+
+        var manualMessages: [Message] = [
+            .init(role: "system", content: manualToolSystemPrompt, toolCalls: nil)
+        ]
+
+        for message in messages {
+            switch message.role {
+            case "tool":
+                let toolName = message.name ?? "tool"
+                manualMessages.append(
+                    .init(
+                        role: "user",
+                        content: "Tool result from \(toolName):\n\(message.content ?? "")",
+                        toolCalls: nil
+                    )
+                )
+            case "assistant":
+                if let toolCalls = message.toolCalls, !toolCalls.isEmpty {
+                    let summary = toolCalls.compactMap { call -> String? in
+                        guard let function = call.function else { return nil }
+                        return "Requested tool \(function.name) with arguments \(function.arguments)"
+                    }.joined(separator: "\n")
+                    manualMessages.append(.init(role: "assistant", content: summary, toolCalls: nil))
+                } else {
+                    manualMessages.append(.init(role: message.role, content: message.content, toolCalls: nil))
+                }
+            default:
+                manualMessages.append(.init(role: message.role, content: message.content, toolCalls: nil))
+            }
+        }
+
+        return manualMessages
+    }
+
+    private func normalizeManualToolPayload(_ rawContent: String) -> String {
+        let trimmed = rawContent.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("```") else { return trimmed }
+        let lines = trimmed.split(separator: "\n", omittingEmptySubsequences: false)
+        guard lines.count >= 3 else { return trimmed }
+        let body = lines.dropFirst().dropLast().joined(separator: "\n")
+        return String(body).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
