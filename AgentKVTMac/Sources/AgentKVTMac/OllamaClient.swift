@@ -68,6 +68,32 @@ public final class OllamaClient: @unchecked Sendable {
         public struct FunctionCall: Codable, Sendable {
             public let name: String
             public let arguments: String
+
+            enum CodingKeys: String, CodingKey {
+                case name, arguments
+            }
+
+            public init(name: String, arguments: String) {
+                self.name = name
+                self.arguments = arguments
+            }
+
+            public init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                name = try c.decode(String.self, forKey: .name)
+                if let stringValue = try? c.decode(String.self, forKey: .arguments) {
+                    arguments = stringValue
+                } else {
+                    let jsonValue = try c.decode(JSONValue.self, forKey: .arguments)
+                    arguments = try jsonValue.jsonString()
+                }
+            }
+
+            public func encode(to encoder: Encoder) throws {
+                var c = encoder.container(keyedBy: CodingKeys.self)
+                try c.encode(name, forKey: .name)
+                try c.encode(arguments, forKey: .arguments)
+            }
         }
         enum CodingKeys: String, CodingKey {
             case id, type, function
@@ -158,4 +184,58 @@ public enum OllamaError: Error {
     case httpStatus(Int)
     case apiError(String)
     case noMessage
+}
+
+private enum JSONValue: Codable, Sendable {
+    case string(String)
+    case number(Double)
+    case bool(Bool)
+    case object([String: JSONValue])
+    case array([JSONValue])
+    case null
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() {
+            self = .null
+        } else if let value = try? container.decode(String.self) {
+            self = .string(value)
+        } else if let value = try? container.decode(Bool.self) {
+            self = .bool(value)
+        } else if let value = try? container.decode(Double.self) {
+            self = .number(value)
+        } else if let value = try? container.decode([String: JSONValue].self) {
+            self = .object(value)
+        } else if let value = try? container.decode([JSONValue].self) {
+            self = .array(value)
+        } else {
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unsupported JSON value.")
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .string(let value):
+            try container.encode(value)
+        case .number(let value):
+            try container.encode(value)
+        case .bool(let value):
+            try container.encode(value)
+        case .object(let value):
+            try container.encode(value)
+        case .array(let value):
+            try container.encode(value)
+        case .null:
+            try container.encodeNil()
+        }
+    }
+
+    func jsonString() throws -> String {
+        let data = try JSONEncoder().encode(self)
+        guard let string = String(data: data, encoding: .utf8) else {
+            throw EncodingError.invalidValue(self, .init(codingPath: [], debugDescription: "Unable to encode JSON value as UTF-8 string."))
+        }
+        return string
+    }
 }
