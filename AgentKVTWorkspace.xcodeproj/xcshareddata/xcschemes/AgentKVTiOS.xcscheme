@@ -17,7 +17,7 @@
                BlueprintIdentifier = "A6000001"
                BuildableName = "AgentKVTiOS.app"
                BlueprintName = "AgentKVTiOS"
-               ReferencedContainer = "container:AgentKVTiOS.xcodeproj">
+               ReferencedContainer = "container:AgentKVTWorkspace.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
          <BuildActionEntry
@@ -31,7 +31,7 @@
                BlueprintIdentifier = "B6000001"
                BuildableName = "AgentKVTiOSTests.xctest"
                BlueprintName = "AgentKVTiOSTests"
-               ReferencedContainer = "container:AgentKVTiOS.xcodeproj">
+               ReferencedContainer = "container:AgentKVTWorkspace.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -49,7 +49,7 @@
                BlueprintIdentifier = "B6000001"
                BuildableName = "AgentKVTiOSTests.xctest"
                BlueprintName = "AgentKVTiOSTests"
-               ReferencedContainer = "container:AgentKVTiOS.xcodeproj">
+               ReferencedContainer = "container:AgentKVTWorkspace.xcodeproj">
             </BuildableReference>
          </TestableReference>
       </Testables>
@@ -64,12 +64,22 @@
       debugDocumentVersioning = "YES"
       debugServiceExtension = "internal"
       allowLocationSimulation = "YES">
+      <BuildableProductRunnable
+         runnableDebuggingMode = "0">
+         <BuildableReference
+            BuildableIdentifier = "primary"
+            BlueprintIdentifier = "A6000001"
+            BuildableName = "AgentKVTiOS.app"
+            BlueprintName = "AgentKVTiOS"
+            ReferencedContainer = "container:AgentKVTWorkspace.xcodeproj">
+         </BuildableReference>
+      </BuildableProductRunnable>
       <BuildableReference
          BuildableIdentifier = "primary"
          BlueprintIdentifier = "A6000001"
          BuildableName = "AgentKVTiOS.app"
          BlueprintName = "AgentKVTiOS"
-         ReferencedContainer = "container:AgentKVTiOS.xcodeproj">
+         ReferencedContainer = "container:AgentKVTWorkspace.xcodeproj">
       </BuildableReference>
    </LaunchAction>
    <ProfileAction
@@ -83,7 +93,7 @@
          BlueprintIdentifier = "A6000001"
          BuildableName = "AgentKVTiOS.app"
          BlueprintName = "AgentKVTiOS"
-         ReferencedContainer = "container:AgentKVTiOS.xcodeproj">
+         ReferencedContainer = "container:AgentKVTWorkspace.xcodeproj">
       </BuildableReference>
    </ProfileAction>
    <AnalyzeAction

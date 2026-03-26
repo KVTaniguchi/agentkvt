@@ -14,24 +14,10 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "A6000001"
-               BuildableName = "AgentKVTiOS.app"
-               BlueprintName = "AgentKVTiOS"
-               ReferencedContainer = "container:AgentKVTiOS.xcodeproj">
-            </BuildableReference>
-         </BuildActionEntry>
-         <BuildActionEntry
-            buildForTesting = "YES"
-            buildForRunning = "NO"
-            buildForProfiling = "NO"
-            buildForArchiving = "NO"
-            buildForAnalyzing = "YES">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "B6000001"
-               BuildableName = "AgentKVTiOSTests.xctest"
-               BlueprintName = "AgentKVTiOSTests"
-               ReferencedContainer = "container:AgentKVTiOS.xcodeproj">
+               BlueprintIdentifier = "C6000001"
+               BuildableName = "AgentKVTMacApp.app"
+               BlueprintName = "AgentKVTMacApp"
+               ReferencedContainer = "container:AgentKVTWorkspace.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -42,16 +28,6 @@
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       shouldUseLaunchSchemeArgsEnv = "YES">
       <Testables>
-         <TestableReference
-            skipped = "NO">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "B6000001"
-               BuildableName = "AgentKVTiOSTests.xctest"
-               BlueprintName = "AgentKVTiOSTests"
-               ReferencedContainer = "container:AgentKVTiOS.xcodeproj">
-            </BuildableReference>
-         </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction
@@ -68,19 +44,24 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "A6000001"
-            BuildableName = "AgentKVTiOS.app"
-            BlueprintName = "AgentKVTiOS"
-            ReferencedContainer = "container:AgentKVTiOS.xcodeproj">
+            BlueprintIdentifier = "C6000001"
+            BuildableName = "AgentKVTMacApp.app"
+            BlueprintName = "AgentKVTMacApp"
+            ReferencedContainer = "container:AgentKVTWorkspace.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
-      <BuildableReference
-         BuildableIdentifier = "primary"
-         BlueprintIdentifier = "A6000001"
-         BuildableName = "AgentKVTiOS.app"
-         BlueprintName = "AgentKVTiOS"
-         ReferencedContainer = "container:AgentKVTiOS.xcodeproj">
-      </BuildableReference>
+      <EnvironmentVariables>
+         <EnvironmentVariable
+            key = "RUN_SCHEDULER"
+            value = "1"
+            isEnabled = "YES">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "SCHEDULER_INTERVAL_SECONDS"
+            value = "30"
+            isEnabled = "YES">
+         </EnvironmentVariable>
+      </EnvironmentVariables>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"
@@ -90,10 +71,10 @@
       debugDocumentVersioning = "YES">
       <BuildableReference
          BuildableIdentifier = "primary"
-         BlueprintIdentifier = "A6000001"
-         BuildableName = "AgentKVTiOS.app"
-         BlueprintName = "AgentKVTiOS"
-         ReferencedContainer = "container:AgentKVTiOS.xcodeproj">
+         BlueprintIdentifier = "C6000001"
+         BuildableName = "AgentKVTMacApp.app"
+         BlueprintName = "AgentKVTMacApp"
+         ReferencedContainer = "container:AgentKVTWorkspace.xcodeproj">
       </BuildableReference>
    </ProfileAction>
    <AnalyzeAction
