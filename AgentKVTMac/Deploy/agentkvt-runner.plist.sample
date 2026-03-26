@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- App bundles default to scheduler mode automatically, but keeping this explicit is fine. -->
+    <key>RUN_SCHEDULER</key>
+    <true/>
+
+    <!-- Recommended for the current Ollama smoke-tested path. -->
+    <key>OLLAMA_MODEL</key>
+    <string>llama3.2:latest</string>
+
+    <!-- Optional overrides -->
+    <key>OLLAMA_BASE_URL</key>
+    <string>http://localhost:11434</string>
+    <key>SCHEDULER_INTERVAL_SECONDS</key>
+    <integer>30</integer>
+    <key>WEBHOOK_PORT</key>
+    <integer>8765</integer>
+
+    <!-- Optional path overrides -->
+    <!-- <key>AGENTKVT_INBOX_DIR</key><string>/Users/familyagent/.agentkvt/inbox</string> -->
+    <!-- <key>AGENTKVT_INBOUND_DIR</key><string>/Users/familyagent/.agentkvt/inbound</string> -->
+
+    <!-- Optional integrations -->
+    <!-- <key>NOTIFICATION_EMAIL</key><string>you@example.com</string> -->
+    <!-- <key>GITHUB_AGENT_PAT</key><string>ghp_...</string> -->
+    <!-- <key>GITHUB_AGENT_REPOS</key><array><string>owner/repo-one</string><string>owner/repo-two</string></array> -->
+</dict>
+</plist>

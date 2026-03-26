@@ -58,6 +58,7 @@ This is the path to use when following:
 
 - [Docs/E2E_VERIFICATION.md](../Docs/E2E_VERIFICATION.md)
 - [Docs/SYNC.md](../Docs/SYNC.md)
+- [Docs/MAC_PRODUCTION_DEPLOYMENT.md](../Docs/MAC_PRODUCTION_DEPLOYMENT.md)
 
 Why:
 

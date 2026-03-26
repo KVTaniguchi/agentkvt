@@ -1,0 +1,98 @@
+import Foundation
+import Testing
+@testable import AgentKVTMac
+
+struct RunnerSettingsTests {
+
+    @Test("app bundles default to scheduler mode")
+    func appBundleDefaultsToSchedulerMode() {
+        let source = RunnerSettingsSource(
+            environment: [:],
+            bundleIdentifier: "com.agentkvt.app",
+            groupContainerURL: nil,
+            homeDirectory: URL(fileURLWithPath: "/tmp/agentkvt-runner-settings-home")
+        )
+
+        let settings = RunnerSettings.load(from: source)
+
+        #expect(settings.runScheduler)
+        #expect(settings.ollamaModel == "llama3.2")
+        #expect(settings.webhookPort == 8765)
+        #expect(settings.schedulerIntervalSeconds == 60)
+        #expect(settings.configFileURL.path == "/tmp/agentkvt-runner-settings-home/.agentkvt/agentkvt-runner.plist")
+    }
+
+    @Test("config file supplies production app settings")
+    func configFileSuppliesSettings() throws {
+        let tempDirectory = makeTemporaryDirectory()
+        let groupContainer = tempDirectory.appending(path: "group", directoryHint: .isDirectory)
+        let appSupportDirectory = groupContainer
+            .appending(path: "Library", directoryHint: .isDirectory)
+            .appending(path: "Application Support", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: appSupportDirectory, withIntermediateDirectories: true)
+
+        let configFile = appSupportDirectory.appending(path: "agentkvt-runner.plist", directoryHint: .notDirectory)
+        let plist: [String: Any] = [
+            "RUN_SCHEDULER": false,
+            "OLLAMA_MODEL": "llama3.2:latest",
+            "OLLAMA_BASE_URL": "http://127.0.0.1:11434",
+            "SCHEDULER_INTERVAL_SECONDS": 15,
+            "WEBHOOK_PORT": 9001
+        ]
+        let data = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+        try data.write(to: configFile)
+
+        let source = RunnerSettingsSource(
+            environment: [:],
+            bundleIdentifier: "com.agentkvt.app",
+            groupContainerURL: groupContainer,
+            homeDirectory: tempDirectory
+        )
+
+        let settings = RunnerSettings.load(from: source)
+
+        #expect(settings.configFileLoaded)
+        #expect(settings.runScheduler == false)
+        #expect(settings.ollamaModel == "llama3.2:latest")
+        #expect(settings.ollamaBaseURL.absoluteString == "http://127.0.0.1:11434")
+        #expect(settings.schedulerIntervalSeconds == 15)
+        #expect(settings.webhookPort == 9001)
+    }
+
+    @Test("environment overrides config file")
+    func environmentOverridesConfigFile() throws {
+        let tempDirectory = makeTemporaryDirectory()
+        let configFile = tempDirectory.appending(path: "runner.plist", directoryHint: .notDirectory)
+        let plist: [String: Any] = [
+            "RUN_SCHEDULER": false,
+            "OLLAMA_MODEL": "llama4:latest",
+            "SCHEDULER_INTERVAL_SECONDS": 45
+        ]
+        let data = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+        try data.write(to: configFile)
+
+        let source = RunnerSettingsSource(
+            environment: [
+                "AGENTKVT_CONFIG_FILE": configFile.path,
+                "RUN_SCHEDULER": "1",
+                "OLLAMA_MODEL": "llama3.2:latest",
+                "SCHEDULER_INTERVAL_SECONDS": "10"
+            ],
+            bundleIdentifier: "com.agentkvt.app",
+            groupContainerURL: nil,
+            homeDirectory: tempDirectory
+        )
+
+        let settings = RunnerSettings.load(from: source)
+
+        #expect(settings.runScheduler)
+        #expect(settings.ollamaModel == "llama3.2:latest")
+        #expect(settings.schedulerIntervalSeconds == 10)
+    }
+
+    private func makeTemporaryDirectory() -> URL {
+        let url = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString, directoryHint: .isDirectory)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+}

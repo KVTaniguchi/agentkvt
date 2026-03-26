@@ -26,6 +26,10 @@ This project now assumes a **single shared family Apple ID** for the AgentKVT sy
 
 - Run a shared persistence layer on the Mac and have iOS connect over the local network or Tailscale. Requires custom sync service or shared DB; both apps still need the same schema (ManagerCore). More setup; data stays on your network.
 
+## Production CloudKit note
+
+If the iPhone client is installed through TestFlight, the Mac side should also be distributed in a production-style way instead of being run only from Xcode. See [Docs/MAC_PRODUCTION_DEPLOYMENT.md](MAC_PRODUCTION_DEPLOYMENT.md).
+
 ## Enabling the Mac app to use the shared CloudKit container
 
 The Mac side is currently a **Swift Package executable** (`swift run AgentKVTMacRunner`). Executables built with SPM do not get code-signed with entitlements, so they cannot use iCloud/CloudKit. To share the same container as iOS, the Mac must run as an **Xcode-built macOS app** that has the iCloud capability.

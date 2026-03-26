@@ -9,6 +9,11 @@ public let sharedAppGroupIdentifier = "group.com.agentkvt.shared"
 /// Runs the AgentKVT Mac runner (scheduler or single test). Use from the CLI executable or from the Mac app target.
 /// When run from an app that has the iCloud.AgentKVT entitlement, SwiftData will use the shared CloudKit container.
 public func runAgentKVTMacRunner() async {
+    let settings = RunnerSettings.load()
+    for message in settings.startupMessages {
+        print(message)
+    }
+
     let schema = Schema([
         LifeContext.self,
         MissionDefinition.self,
@@ -46,10 +51,7 @@ public func runAgentKVTMacRunner() async {
         isStoredInMemoryOnly: false,
         allowsSave: true
     )
-    let environment = ProcessInfo.processInfo.environment
-    let bundleIdentifier = Bundle.main.bundleIdentifier
-    let shouldAttemptCloudKit = environment["AGENTKVT_DISABLE_CLOUDKIT"] != "1"
-        && !(bundleIdentifier?.isEmpty ?? true)
+    let shouldAttemptCloudKit = !settings.disableCloudKit && settings.isAppBundle
 
     if shouldAttemptCloudKit,
        let c = try? ModelContainer(for: schema, configurations: [sharedPersistentConfig]) {
@@ -82,21 +84,20 @@ public func runAgentKVTMacRunner() async {
     registry.register(makeWebSearchAndFetchTool())
     registry.register(makeHeadlessBrowserScoutTool())
     registry.register(makeFetchBeeAIContextTool(modelContext: context))
-    if let email = ProcessInfo.processInfo.environment["NOTIFICATION_EMAIL"], !email.isEmpty {
+    if let email = settings.notificationEmail, !email.isEmpty {
         registry.register(makeSendNotificationEmailTool(destinationEmail: email))
     }
     registry.register(makeGetLifeContextTool(modelContext: context))
     registry.register(makeFetchMissionStatusTool(modelContext: context))
-    if let pat = ProcessInfo.processInfo.environment["GITHUB_AGENT_PAT"],
-       let reposEnv = ProcessInfo.processInfo.environment["GITHUB_AGENT_REPOS"], !pat.isEmpty {
-        let repos = reposEnv.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    if let pat = settings.githubPAT, !pat.isEmpty {
+        let repos = settings.githubAllowedRepos
         if !repos.isEmpty {
             registry.register(makeGitHubTool(pat: pat, allowedRepos: repos))
         }
     }
     let inboxDir: URL
-    if let path = ProcessInfo.processInfo.environment["AGENTKVT_INBOX_DIR"], !path.isEmpty {
-        inboxDir = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+    if let configuredInboxDir = settings.inboxDirectory {
+        inboxDir = configuredInboxDir
     } else {
         inboxDir = EmailIngestor.defaultInboxDirectory
     }
@@ -104,8 +105,8 @@ public func runAgentKVTMacRunner() async {
     registry.register(makeIncomingEmailTriggerTool(ingestor: emailIngestor))
 
     let dropzoneDir: URL
-    if let path = ProcessInfo.processInfo.environment["AGENTKVT_INBOUND_DIR"], !path.isEmpty {
-        dropzoneDir = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+    if let configuredDropzoneDir = settings.inboundDirectory {
+        dropzoneDir = configuredDropzoneDir
     } else {
         dropzoneDir = DropzoneService.defaultDirectory
     }
@@ -124,17 +125,19 @@ public func runAgentKVTMacRunner() async {
     registry.register(makeClearResourceHealthTool(modelContext: context))
 
     let client = OllamaClient(
-        baseURL: URL(string: ProcessInfo.processInfo.environment["OLLAMA_BASE_URL"] ?? "http://localhost:11434")!,
-        model: ProcessInfo.processInfo.environment["OLLAMA_MODEL"] ?? "llama3.2"
+        baseURL: settings.ollamaBaseURL,
+        model: settings.ollamaModel
     )
 
-    if ProcessInfo.processInfo.environment["RUN_SCHEDULER"] == "1" {
+    if settings.runScheduler {
         await runScheduler(
             context: sharedModelContext,
             client: client,
             registry: registry,
             emailIngestor: emailIngestor,
-            dropzoneDir: dropzoneDir
+            dropzoneDir: dropzoneDir,
+            webhookPort: settings.webhookPort,
+            clockIntervalSeconds: settings.schedulerIntervalSeconds
         )
     } else {
         await runSingleTest(registry: registry, client: client)
@@ -170,7 +173,9 @@ private func runScheduler(
     client: OllamaClient,
     registry: ToolRegistry,
     emailIngestor: EmailIngestor,
-    dropzoneDir: URL
+    dropzoneDir: URL,
+    webhookPort: UInt16,
+    clockIntervalSeconds: Int
 ) async {
     // ── Build the strict serial execution queue ──────────────────────────────────
     // All triggers funnel here. The actor's `run()` loop processes them one at a
@@ -207,7 +212,6 @@ private func runScheduler(
     }
 
     // ── Webhook listener (highest priority — explicit external intent) ────────────
-    let webhookPort = UInt16(ProcessInfo.processInfo.environment["WEBHOOK_PORT"] ?? "8765") ?? 8765
     let webhookListener = WebhookListener(port: webhookPort) { payload in
         executionQueue.enqueue(.webhook(payload), priority: .high)
     }
@@ -226,8 +230,6 @@ private func runScheduler(
     // ── 60-second clock (lowest priority — background heartbeat) ─────────────────
     // Checks due CRON missions and pending chat messages. Arrives last in line when
     // a webhook or CloudKit sync is already queued.
-    let configuredInterval = Int(ProcessInfo.processInfo.environment["SCHEDULER_INTERVAL_SECONDS"] ?? "60") ?? 60
-    let clockIntervalSeconds = max(1, configuredInterval)
     let clockTimer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
     clockTimer.schedule(deadline: .now(), repeating: .seconds(clockIntervalSeconds))
     clockTimer.setEventHandler {

@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+
+<!--
+  AgentKVT Mac App — launchd User Agent
+  =====================================
+  Use this when the production/TestFlight macOS app is installed and you want the
+  signed app bundle to relaunch automatically after login or unexpected exit.
+
+  Install:
+    cp com.agentkvt.macapp.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.agentkvt.macapp.plist
+    launchctl enable gui/$(id -u)/com.agentkvt.macapp
+
+  Uninstall:
+    launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.agentkvt.macapp.plist
+    rm ~/Library/LaunchAgents/com.agentkvt.macapp.plist
+
+  Notes:
+  - Replace the app path below with the actual installed app location.
+  - The app reads its runtime settings from:
+      ~/Library/Group Containers/group.com.agentkvt.shared/Library/Application Support/agentkvt-runner.plist
+    so you usually do not need to pass environment variables here.
+  - Runtime logs live at:
+      ~/Library/Group Containers/group.com.agentkvt.shared/Library/Logs/agentkvt-mac.log
+-->
+
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.agentkvt.macapp</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Applications/AgentKVTMacApp.app/Contents/MacOS/AgentKVTMacApp</string>
+    </array>
+
+    <key>LimitLoadToSessionType</key>
+    <array>
+        <string>Aqua</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>ThrottleInterval</key>
+    <integer>15</integer>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/agentkvt-macapp-launchd.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/agentkvt-macapp-launchd.err</string>
+</dict>
+</plist>

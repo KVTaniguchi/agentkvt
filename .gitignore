@@ -2,4 +2,6 @@
 .build/
 *.xcodeproj/xcuserdata/
 *.xcworkspace/xcuserdata/
+**/.swiftpm/xcode/xcuserdata/
+*.xcuserstate
 DerivedData/
