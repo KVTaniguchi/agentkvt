@@ -60,17 +60,21 @@ public enum RuntimeLogCapture {
 
             let mirroredStdout = originalStdout
             let mirroredLogHandle = fileHandle
+            let timestampSink = TimestampingSink(
+                fileHandle: mirroredLogHandle,
+                mirroredStdout: mirroredStdout
+            )
             let source = DispatchSource.makeReadSource(
                 fileDescriptor: capturePipe.fileHandleForReading.fileDescriptor,
-                queue: .global(qos: .utility)
+                queue: DispatchQueue(label: "RuntimeLogCapture.pipe")
             )
             source.setEventHandler {
                 let data = capturePipe.fileHandleForReading.availableData
                 guard !data.isEmpty else { return }
-                try? mirroredLogHandle?.write(contentsOf: data)
-                try? mirroredStdout.write(contentsOf: data)
+                timestampSink.consume(data)
             }
             source.setCancelHandler {
+                timestampSink.flushRemainder()
                 try? capturePipe.fileHandleForReading.close()
                 try? capturePipe.fileHandleForWriting.close()
                 try? mirroredLogHandle?.close()
@@ -121,5 +125,46 @@ public enum RuntimeLogCapture {
             formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
             return formatter.string(from: Date())
         }
+    }
+}
+
+private final class TimestampingSink: @unchecked Sendable {
+    private var bufferedData = Data()
+    private let fileHandle: FileHandle?
+    private let mirroredStdout: FileHandle
+    private let formatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    init(fileHandle: FileHandle?, mirroredStdout: FileHandle) {
+        self.fileHandle = fileHandle
+        self.mirroredStdout = mirroredStdout
+    }
+
+    func consume(_ data: Data) {
+        bufferedData.append(data)
+
+        while let newlineIndex = bufferedData.firstIndex(of: 0x0A) {
+            let lineData = bufferedData.prefix(upTo: newlineIndex)
+            bufferedData.removeSubrange(...newlineIndex)
+            writeTimestampedLine(lineData)
+        }
+    }
+
+    func flushRemainder() {
+        guard !bufferedData.isEmpty else { return }
+        writeTimestampedLine(bufferedData)
+        bufferedData.removeAll(keepingCapacity: false)
+    }
+
+    private func writeTimestampedLine<S: DataProtocol>(_ lineData: S) {
+        var payload = Data()
+        payload.append("[\(formatter.string(from: Date()))] ".data(using: .utf8)!)
+        payload.append(contentsOf: lineData)
+        payload.append(0x0A)
+        try? fileHandle?.write(contentsOf: payload)
+        try? mirroredStdout.write(contentsOf: payload)
     }
 }
