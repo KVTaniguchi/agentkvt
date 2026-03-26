@@ -31,7 +31,7 @@ enum IntentRoute {
         switch normalizedIntent {
 
         case SystemIntent.calendarCreate.rawValue:
-            var intent = CreateCalendarEventIntent()
+            let intent = CreateCalendarEventIntent()
             intent.eventTitle = payload["eventTitle"] as? String ?? item.title
             intent.startDate = (payload["startDate"] as? String).flatMap(parseISO8601) ?? Date()
             intent.durationMinutes = payload["durationMinutes"] as? Int ?? 60
@@ -39,14 +39,14 @@ enum IntentRoute {
             return .calendar(intent)
 
         case SystemIntent.mailReply.rawValue:
-            var intent = DraftMailReplyIntent()
+            let intent = DraftMailReplyIntent()
             intent.toAddress = payload["toAddress"] as? String ?? ""
             intent.subject = payload["subject"] as? String ?? item.title
             intent.draftBody = payload["draftBody"] as? String ?? ""
             return .mailReply(intent)
 
         case SystemIntent.reminderAdd.rawValue:
-            var intent = AddReminderIntent()
+            let intent = AddReminderIntent()
             intent.reminderTitle = payload["reminderTitle"] as? String ?? item.title
             intent.dueDate = (payload["dueDate"] as? String).flatMap(parseISO8601)
             intent.notes = payload["notes"] as? String
@@ -56,7 +56,7 @@ enum IntentRoute {
             guard let rawURL = payload["url"] as? String, let url = URL(string: rawURL) else {
                 return .unknown(systemIntent: item.systemIntent)
             }
-            var intent = OpenAgentURLIntent()
+            let intent = OpenAgentURLIntent()
             intent.targetURL = url
             intent.label = payload["label"] as? String ?? item.title
             return .openURL(intent)
