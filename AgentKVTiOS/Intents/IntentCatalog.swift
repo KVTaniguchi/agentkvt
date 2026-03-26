@@ -85,7 +85,7 @@ struct DraftMailReplyIntent: AppIntent {
 struct AddReminderIntent: AppIntent {
     static let title: LocalizedStringResource = "Add Reminder"
     static let description = IntentDescription(
-        "Save an agent-generated reminder to Apple Reminders.",
+        "Save an agent-generated reminder to the Reminders app.",
         categoryName: "AgentKVT"
     )
 
