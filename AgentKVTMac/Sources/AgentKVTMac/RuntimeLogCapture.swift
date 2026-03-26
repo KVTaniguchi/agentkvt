@@ -7,6 +7,9 @@ public enum RuntimeLogCapture {
     public static let defaultDirectory = FileManager.default.homeDirectoryForCurrentUser
         .appending(path: ".agentkvt/logs", directoryHint: .isDirectory)
     public static let defaultFileURL = defaultDirectory.appending(path: "agentkvt-mac.log")
+    public static let sharedContainerLogFileURL = FileManager.default
+        .containerURL(forSecurityApplicationGroupIdentifier: sharedAppGroupIdentifier)?
+        .appending(path: "Library/Logs/agentkvt-mac.log")
 
     private static let state = State()
 
@@ -92,6 +95,9 @@ public enum RuntimeLogCapture {
             }
             if let customPath = ProcessInfo.processInfo.environment["AGENTKVT_LOG_FILE"], !customPath.isEmpty {
                 return URL(fileURLWithPath: (customPath as NSString).expandingTildeInPath)
+            }
+            if let sharedContainerLogFileURL = RuntimeLogCapture.sharedContainerLogFileURL {
+                return sharedContainerLogFileURL
             }
             return RuntimeLogCapture.defaultFileURL
         }
