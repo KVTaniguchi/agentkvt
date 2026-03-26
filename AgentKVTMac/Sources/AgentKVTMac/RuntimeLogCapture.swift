@@ -1,0 +1,119 @@
+import Darwin
+import Foundation
+
+/// Mirrors stdout/stderr to a persistent log file so the signed Mac app can be
+/// inspected over SSH even when its primary console is Xcode.
+public enum RuntimeLogCapture {
+    public static let defaultDirectory = FileManager.default.homeDirectoryForCurrentUser
+        .appending(path: ".agentkvt/logs", directoryHint: .isDirectory)
+    public static let defaultFileURL = defaultDirectory.appending(path: "agentkvt-mac.log")
+
+    private static let state = State()
+
+    @discardableResult
+    public static func configure(
+        processLabel: String,
+        logFileURL: URL? = nil
+    ) async -> URL {
+        await state.configure(processLabel: processLabel, logFileURL: logFileURL)
+    }
+
+    actor State {
+        private var isConfigured = false
+        private var pipe: Pipe?
+        private var readSource: DispatchSourceRead?
+        private var logHandle: FileHandle?
+        private var originalStdout = FileHandle.standardOutput
+        private var originalStderr = FileHandle.standardError
+
+        func configure(processLabel: String, logFileURL: URL?) -> URL {
+            let destination = resolvedLogFileURL(explicitURL: logFileURL)
+            guard !isConfigured else {
+                return destination
+            }
+
+            prepareLogFile(at: destination)
+
+            let fileHandle = try? FileHandle(forWritingTo: destination)
+            let _ = try? fileHandle?.seekToEnd()
+
+            let stdoutFD = dup(STDOUT_FILENO)
+            let stderrFD = dup(STDERR_FILENO)
+            if stdoutFD >= 0 {
+                originalStdout = FileHandle(fileDescriptor: stdoutFD, closeOnDealloc: true)
+            }
+            if stderrFD >= 0 {
+                originalStderr = FileHandle(fileDescriptor: stderrFD, closeOnDealloc: true)
+            }
+
+            let capturePipe = Pipe()
+            pipe = capturePipe
+            logHandle = fileHandle
+
+            setvbuf(stdout, nil, _IONBF, 0)
+            setvbuf(stderr, nil, _IONBF, 0)
+            dup2(capturePipe.fileHandleForWriting.fileDescriptor, STDOUT_FILENO)
+            dup2(capturePipe.fileHandleForWriting.fileDescriptor, STDERR_FILENO)
+
+            let mirroredStdout = originalStdout
+            let mirroredLogHandle = fileHandle
+            let source = DispatchSource.makeReadSource(
+                fileDescriptor: capturePipe.fileHandleForReading.fileDescriptor,
+                queue: .global(qos: .utility)
+            )
+            source.setEventHandler {
+                let data = capturePipe.fileHandleForReading.availableData
+                guard !data.isEmpty else { return }
+                try? mirroredLogHandle?.write(contentsOf: data)
+                try? mirroredStdout.write(contentsOf: data)
+            }
+            source.setCancelHandler {
+                try? capturePipe.fileHandleForReading.close()
+                try? capturePipe.fileHandleForWriting.close()
+                try? mirroredLogHandle?.close()
+            }
+            source.resume()
+            readSource = source
+
+            isConfigured = true
+
+            let sessionHeader = """
+
+            ===== AgentKVT session started \(timestamp()) [\(processLabel)] pid=\(ProcessInfo.processInfo.processIdentifier) =====
+            """
+            writeDirect(sessionHeader + "\n", to: fileHandle, mirroredStdout: mirroredStdout)
+
+            return destination
+        }
+
+        private func resolvedLogFileURL(explicitURL: URL?) -> URL {
+            if let explicitURL {
+                return explicitURL
+            }
+            if let customPath = ProcessInfo.processInfo.environment["AGENTKVT_LOG_FILE"], !customPath.isEmpty {
+                return URL(fileURLWithPath: (customPath as NSString).expandingTildeInPath)
+            }
+            return RuntimeLogCapture.defaultFileURL
+        }
+
+        private func prepareLogFile(at url: URL) {
+            let directory = url.deletingLastPathComponent()
+            try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            if !FileManager.default.fileExists(atPath: url.path) {
+                let _ = FileManager.default.createFile(atPath: url.path, contents: nil)
+            }
+        }
+
+        private func writeDirect(_ string: String, to fileHandle: FileHandle?, mirroredStdout: FileHandle) {
+            guard let data = string.data(using: .utf8) else { return }
+            try? fileHandle?.write(contentsOf: data)
+            try? mirroredStdout.write(contentsOf: data)
+        }
+
+        private func timestamp() -> String {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            return formatter.string(from: Date())
+        }
+    }
+}

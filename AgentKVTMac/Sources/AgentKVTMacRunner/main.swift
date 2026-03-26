@@ -16,6 +16,9 @@ import Foundation
 // into the MissionExecutionQueue's `for await` drain loop, which terminates at
 // the next suspension point.
 
+let logFile = await RuntimeLogCapture.configure(processLabel: "AgentKVTMacRunner")
+print("[Logging] Writing logs to \(logFile.path)")
+
 let assertion = PowerAssertion(
     reason: "AgentKVT: background agent must remain active for CloudKit sync and LLM inference"
 )
