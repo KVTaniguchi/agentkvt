@@ -10,6 +10,9 @@ struct FamilyOnboardingView: View {
     @State private var displayName = ""
     @State private var symbol = ""
     @State private var errorMessage: String?
+    @State private var isSaving = false
+
+    private let backendSync = IOSBackendSyncService()
 
     var body: some View {
         NavigationStack {
@@ -50,8 +53,8 @@ struct FamilyOnboardingView: View {
             .navigationTitle("Welcome")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Continue") { createProfile() }
-                        .disabled(displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    Button(isSaving ? "Saving…" : "Continue") { createProfile() }
+                        .disabled(isSaving || displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
         }
@@ -61,17 +64,23 @@ struct FamilyOnboardingView: View {
         let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return }
         let sym = symbol.trimmingCharacters(in: .whitespacesAndNewlines)
-        let member = FamilyMember(displayName: name, symbol: sym)
         IOSRuntimeLog.log("[FamilyOnboardingView] Creating initial family member '\(name)' symbol='\(sym)'")
-        modelContext.insert(member)
-        do {
-            try modelContext.save()
-            profileStore.selectProfile(member.id)
-            errorMessage = nil
-            IOSRuntimeLog.log("[FamilyOnboardingView] Created initial family member id=\(member.id.uuidString)")
-        } catch {
-            errorMessage = error.localizedDescription
-            IOSRuntimeLog.log("[FamilyOnboardingView] Failed to create initial family member '\(name)': \(error)")
+        isSaving = true
+        Task { @MainActor in
+            do {
+                let member = try await backendSync.createFamilyMember(
+                    displayName: name,
+                    symbol: sym,
+                    modelContext: modelContext
+                )
+                profileStore.selectProfile(member.id)
+                errorMessage = nil
+                IOSRuntimeLog.log("[FamilyOnboardingView] Created initial family member id=\(member.id.uuidString)")
+            } catch {
+                errorMessage = error.localizedDescription
+                IOSRuntimeLog.log("[FamilyOnboardingView] Failed to create initial family member '\(name)': \(error)")
+            }
+            isSaving = false
         }
     }
 }
@@ -85,6 +94,9 @@ struct AddFamilyMemberSheet: View {
     @State private var displayName = ""
     @State private var symbol = ""
     @State private var errorMessage: String?
+    @State private var isSaving = false
+
+    private let backendSync = IOSBackendSyncService()
 
     var body: some View {
         NavigationStack {
@@ -104,8 +116,8 @@ struct AddFamilyMemberSheet: View {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Add") { save() }
-                        .disabled(displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    Button(isSaving ? "Adding…" : "Add") { save() }
+                        .disabled(isSaving || displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
         }
@@ -116,14 +128,21 @@ struct AddFamilyMemberSheet: View {
         guard !name.isEmpty else { return }
         let sym = symbol.trimmingCharacters(in: .whitespacesAndNewlines)
         IOSRuntimeLog.log("[AddFamilyMemberSheet] Creating family member '\(name)' symbol='\(sym)'")
-        modelContext.insert(FamilyMember(displayName: name, symbol: sym))
-        do {
-            try modelContext.save()
-            IOSRuntimeLog.log("[AddFamilyMemberSheet] Created family member '\(name)'")
-            dismiss()
-        } catch {
-            errorMessage = error.localizedDescription
-            IOSRuntimeLog.log("[AddFamilyMemberSheet] Failed to create family member '\(name)': \(error)")
+        isSaving = true
+        Task { @MainActor in
+            do {
+                _ = try await backendSync.createFamilyMember(
+                    displayName: name,
+                    symbol: sym,
+                    modelContext: modelContext
+                )
+                IOSRuntimeLog.log("[AddFamilyMemberSheet] Created family member '\(name)'")
+                dismiss()
+            } catch {
+                errorMessage = error.localizedDescription
+                IOSRuntimeLog.log("[AddFamilyMemberSheet] Failed to create family member '\(name)': \(error)")
+            }
+            isSaving = false
         }
     }
 }

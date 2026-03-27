@@ -3,7 +3,8 @@ Rails.application.routes.draw do
 
   namespace :v1 do
     resource :bootstrap, only: :show
-    resources :missions, only: [:index, :create, :update]
+    resources :family_members, only: [:index, :create]
+    resources :missions, only: [:index, :create, :update, :destroy]
     resources :action_items, only: [:index] do
       post :handle, on: :member
     end

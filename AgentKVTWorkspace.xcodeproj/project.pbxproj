@@ -20,6 +20,8 @@
 		A1000011 /* IntentCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000010 /* IntentCatalog.swift */; };
 		A1000012 /* IntentRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000011 /* IntentRouter.swift */; };
 		A1000013 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A2000012 /* Assets.xcassets */; };
+		A1000014 /* IOSBackendAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000013 /* IOSBackendAPIClient.swift */; };
+		A1000015 /* IOSBackendSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000014 /* IOSBackendSettings.swift */; };
 		B1000001 /* ManagerCore in Frameworks */ = {isa = PBXBuildFile; productRef = A3000001 /* ManagerCore */; };
 		B1000002 /* ManagerCoreIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000002 /* ManagerCoreIntegrationTests.swift */; };
 		C1000001 /* AgentKVTMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2000001 /* AgentKVTMacApp.swift */; };
@@ -53,6 +55,8 @@
 		A2000010 /* IntentCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntentCatalog.swift; sourceTree = "<group>"; };
 		A2000011 /* IntentRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntentRouter.swift; sourceTree = "<group>"; };
 		A2000012 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A2000013 /* IOSBackendAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSBackendAPIClient.swift; sourceTree = "<group>"; };
+		A2000014 /* IOSBackendSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSBackendSettings.swift; sourceTree = "<group>"; };
 		B2000001 /* AgentKVTiOSTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AgentKVTiOSTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B2000002 /* ManagerCoreIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManagerCoreIntegrationTests.swift; sourceTree = "<group>"; };
 		C2000000 /* AgentKVTMacApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AgentKVTMacApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -106,6 +110,7 @@
 				A2000001 /* AgentKVTiOSApp.swift */,
 				A2000012 /* Assets.xcassets */,
 				A5000004 /* Intents */,
+				A5000005 /* Services */,
 				A5000002 /* Views */,
 			);
 			path = AgentKVTiOS;
@@ -143,6 +148,15 @@
 				A2000011 /* IntentRouter.swift */,
 			);
 			path = Intents;
+			sourceTree = "<group>";
+		};
+		A5000005 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				A2000013 /* IOSBackendAPIClient.swift */,
+				A2000014 /* IOSBackendSettings.swift */,
+			);
+			path = Services;
 			sourceTree = "<group>";
 		};
 		B5000001 /* AgentKVTiOS/AgentKVTiOSTests */ = {
@@ -311,6 +325,8 @@
 				A1000004 /* LifeContextView.swift in Sources */,
 				A1000006 /* AgentLogView.swift in Sources */,
 				A1000007 /* ChatView.swift in Sources */,
+				A1000014 /* IOSBackendAPIClient.swift in Sources */,
+				A1000015 /* IOSBackendSettings.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

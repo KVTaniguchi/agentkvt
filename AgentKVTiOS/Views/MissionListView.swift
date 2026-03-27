@@ -12,6 +12,7 @@ struct MissionListView: View {
     @State private var deletionErrorMessage: String?
 
     private static let knownToolIds = ["write_action_item", "web_search_and_fetch", "headless_browser_scout", "send_notification_email", "github_agent", "fetch_bee_ai_context", "incoming_email_trigger"]
+    private let backendSync = IOSBackendSyncService()
 
     var body: some View {
         NavigationStack {
@@ -25,13 +26,15 @@ struct MissionListView: View {
                             defaultOwnerProfileId: profileStore.currentProfileId
                         ) { name, prompt, schedule, tools, ownerProfileId in
                             IOSRuntimeLog.log("[MissionListView] Saving existing mission '\(name)' schedule=\(schedule) tools=\(tools.joined(separator: ",")) owner=\(ownerProfileId?.uuidString ?? "none")")
-                            mission.missionName = name
-                            mission.systemPrompt = prompt
-                            mission.triggerSchedule = schedule
-                            mission.allowedMCPTools = tools
-                            mission.ownerProfileId = ownerProfileId
-                            mission.updatedAt = Date()
-                            try modelContext.save()
+                            try await backendSync.saveMission(
+                                existingMission: mission,
+                                name: name,
+                                prompt: prompt,
+                                schedule: schedule,
+                                tools: tools,
+                                ownerProfileId: ownerProfileId,
+                                modelContext: modelContext
+                            )
                             IOSRuntimeLog.log("[MissionListView] Saved existing mission id=\(mission.id.uuidString)")
                         }
                     } label: {
@@ -58,17 +61,20 @@ struct MissionListView: View {
                     familyMembers: familyMembers,
                     defaultOwnerProfileId: profileStore.currentProfileId
                 ) { name, prompt, schedule, tools, ownerProfileId in
-                    let m = MissionDefinition(
-                        missionName: name,
-                        systemPrompt: prompt,
-                        triggerSchedule: schedule,
-                        allowedMCPTools: tools,
-                        ownerProfileId: ownerProfileId
-                    )
                     IOSRuntimeLog.log("[MissionListView] Creating mission '\(name)' schedule=\(schedule) tools=\(tools.joined(separator: ",")) owner=\(ownerProfileId?.uuidString ?? "none")")
-                    modelContext.insert(m)
-                    try modelContext.save()
-                    IOSRuntimeLog.log("[MissionListView] Created mission id=\(m.id.uuidString)")
+                    try await backendSync.saveMission(
+                        existingMission: nil,
+                        name: name,
+                        prompt: prompt,
+                        schedule: schedule,
+                        tools: tools,
+                        ownerProfileId: ownerProfileId,
+                        modelContext: modelContext
+                    )
+                    let refreshedMission = missions.first {
+                        $0.missionName == name && $0.triggerSchedule == schedule
+                    }
+                    IOSRuntimeLog.log("[MissionListView] Created mission id=\(refreshedMission?.id.uuidString ?? "unknown")")
                     showAddMission = false
                 }
             }
@@ -85,6 +91,9 @@ struct MissionListView: View {
         }
         .onAppear {
             logMissionSnapshot(reason: "Appeared")
+        }
+        .task {
+            await backendSync.syncMissions(modelContext: modelContext)
         }
         .onChange(of: missionVisibilitySignature) { _, _ in
             logMissionSnapshot(reason: "Mission list changed")
@@ -119,15 +128,14 @@ struct MissionListView: View {
             .joined(separator: ", ")
         IOSRuntimeLog.log("[MissionListView] Deleting \(missionsToDelete.count) mission(s): \(deletedSummary)")
 
-        do {
-            for mission in missionsToDelete {
-                modelContext.delete(mission)
+        Task { @MainActor in
+            do {
+                try await backendSync.deleteMissions(missionsToDelete, modelContext: modelContext)
+                IOSRuntimeLog.log("[MissionListView] Deleted \(missionsToDelete.count) mission(s).")
+            } catch {
+                deletionErrorMessage = error.localizedDescription
+                IOSRuntimeLog.log("[MissionListView] Mission deletion failed: \(error)")
             }
-            try modelContext.save()
-            IOSRuntimeLog.log("[MissionListView] Deleted \(missionsToDelete.count) mission(s).")
-        } catch {
-            deletionErrorMessage = error.localizedDescription
-            IOSRuntimeLog.log("[MissionListView] Mission deletion failed: \(error)")
         }
     }
 }
@@ -160,7 +168,7 @@ struct MissionEditView: View {
     let toolIds: [String]
     let familyMembers: [FamilyMember]
     let defaultOwnerProfileId: UUID?
-    let onSave: (String, String, String, [String], UUID?) throws -> Void
+    let onSave: @MainActor (String, String, String, [String], UUID?) async throws -> Void
 
     @State private var name: String = ""
     @State private var systemPrompt: String = ""
@@ -168,6 +176,7 @@ struct MissionEditView: View {
     @State private var selectedToolIds: Set<String> = []
     @State private var ownerProfileId: UUID?
     @State private var validationMessage: String?
+    @State private var isSaving = false
     @Environment(\.dismiss) private var dismiss
 
     private var trimmedName: String {
@@ -244,7 +253,7 @@ struct MissionEditView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
+                    Button(isSaving ? "Saving…" : "Save") {
                         guard isFormValid else {
                             validationMessage = validationError()
                             IOSRuntimeLog.log("[MissionEditView] Validation failed for '\(trimmedName)': \(validationMessage ?? "Unknown validation error.")")
@@ -252,16 +261,20 @@ struct MissionEditView: View {
                         }
                         let sortedToolIds = Array(selectedToolIds).sorted()
                         IOSRuntimeLog.log("[MissionEditView] Save tapped for '\(trimmedName)' schedule=\(normalizedSchedule) tools=\(sortedToolIds.joined(separator: ",")) owner=\(ownerProfileId?.uuidString ?? "none")")
-                        do {
-                            try onSave(trimmedName, trimmedPrompt, normalizedSchedule, sortedToolIds, ownerProfileId)
-                            validationMessage = nil
-                            dismiss()
-                        } catch {
-                            validationMessage = "Save failed: \(error.localizedDescription)"
-                            IOSRuntimeLog.log("[MissionEditView] Save failed for '\(trimmedName)': \(error)")
+                        isSaving = true
+                        Task { @MainActor in
+                            do {
+                                try await onSave(trimmedName, trimmedPrompt, normalizedSchedule, sortedToolIds, ownerProfileId)
+                                validationMessage = nil
+                                dismiss()
+                            } catch {
+                                validationMessage = "Save failed: \(error.localizedDescription)"
+                                IOSRuntimeLog.log("[MissionEditView] Save failed for '\(trimmedName)': \(error)")
+                            }
+                            isSaving = false
                         }
                     }
-                    .disabled(!isFormValid)
+                    .disabled(!isFormValid || isSaving)
                 }
             }
             .onAppear {

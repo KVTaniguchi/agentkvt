@@ -7,7 +7,7 @@ class V1MissionsTest < ActionDispatch::IntegrationTest
     @family_member = @workspace.family_members.create!(display_name: "Kevin", symbol: "K")
   end
 
-  test "create index and update missions" do
+  test "create index update and destroy missions" do
     post "/v1/missions", params: {
       mission: {
         mission_name: "Universal Orlando Family Trip",
@@ -36,6 +36,13 @@ class V1MissionsTest < ActionDispatch::IntegrationTest
     body = JSON.parse(response.body)
     assert_equal "daily|21:15", body.dig("mission", "trigger_schedule")
     assert_equal false, body.dig("mission", "is_enabled")
+
+    delete "/v1/missions/#{mission_id}", headers: workspace_headers
+    assert_response :no_content
+
+    get "/v1/missions", headers: workspace_headers
+    assert_response :success
+    assert_equal 0, JSON.parse(response.body).fetch("missions").length
   end
 
   private

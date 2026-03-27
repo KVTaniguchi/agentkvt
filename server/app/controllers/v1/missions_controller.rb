@@ -22,6 +22,13 @@ module V1
       render json: { mission: serialize_mission(mission) }
     end
 
+    def destroy
+      mission = current_workspace.missions.find(params[:id])
+      mission.destroy!
+
+      head :no_content
+    end
+
     private
 
     def mission_params

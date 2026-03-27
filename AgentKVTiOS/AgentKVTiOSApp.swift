@@ -13,6 +13,7 @@ struct AgentKVTiOSApp: App {
     var sharedModelContainer: ModelContainer = {
         let logFile = IOSRuntimeLog.bootstrap(processLabel: "AgentKVTiOSApp")
         IOSRuntimeLog.log("[Logging] Writing logs to \(logFile.path)")
+        IOSRuntimeLog.log(IOSBackendSettings.load().startupMessage)
         logIOSCloudKitDiagnostics()
         let schema = Schema([
             LifeContext.self,
