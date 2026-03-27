@@ -82,7 +82,6 @@ public func runAgentKVTMacRunner() async {
     let context = ModelContext(container)
     let sharedModelContext = SharedModelContext(context)
     let registry = ToolRegistry()
-    registry.register(makeWriteActionItemTool(modelContext: context))
     registry.register(makeWebSearchAndFetchTool())
     registry.register(makeHeadlessBrowserScoutTool())
     registry.register(makeFetchBeeAIContextTool(modelContext: context))
@@ -130,19 +129,37 @@ public func runAgentKVTMacRunner() async {
         baseURL: settings.ollamaBaseURL,
         model: settings.ollamaModel
     )
+    let backendClient = settings.backendBaseURL.map {
+        BackendAPIClient(
+            baseURL: $0,
+            workspaceSlug: settings.backendWorkspaceSlug ?? "default",
+            agentToken: settings.backendAgentToken
+        )
+    }
 
     if settings.runScheduler {
+        if let backendClient {
+            registry.register(makeWriteActionItemTool(backendClient: backendClient))
+        } else {
+            registry.register(makeWriteActionItemTool(modelContext: context))
+        }
         await runScheduler(
             context: sharedModelContext,
             modelContainer: container,
             client: client,
             registry: registry,
+            backendClient: backendClient,
             emailIngestor: emailIngestor,
             dropzoneDir: dropzoneDir,
             webhookPort: settings.webhookPort,
             clockIntervalSeconds: settings.schedulerIntervalSeconds
         )
     } else {
+        if let backendClient {
+            registry.register(makeWriteActionItemTool(backendClient: backendClient))
+        } else {
+            registry.register(makeWriteActionItemTool(modelContext: context))
+        }
         await runSingleTest(registry: registry, client: client)
     }
 }
@@ -216,6 +233,7 @@ private func runScheduler(
     modelContainer: ModelContainer,
     client: OllamaClient,
     registry: ToolRegistry,
+    backendClient: BackendAPIClient?,
     emailIngestor: EmailIngestor,
     dropzoneDir: URL,
     webhookPort: UInt16,
@@ -230,6 +248,7 @@ private func runScheduler(
         modelContainer: modelContainer,
         client: client,
         registry: registry,
+        backendClient: backendClient,
         emailIngestor: emailIngestor,
         dropzoneDir: dropzoneDir
     )

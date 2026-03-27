@@ -9,21 +9,30 @@ public final class MissionRunner: @unchecked Sendable {
         public let id: UUID
         public let missionName: String
         public let systemPrompt: String
+        public let triggerSchedule: String
         public let allowedToolIds: [String]
         public let ownerProfileId: UUID?
+        public let isEnabled: Bool
+        public let lastRunAt: Date?
 
         public init(
             id: UUID,
             missionName: String,
             systemPrompt: String,
+            triggerSchedule: String = "",
             allowedToolIds: [String],
-            ownerProfileId: UUID?
+            ownerProfileId: UUID?,
+            isEnabled: Bool = true,
+            lastRunAt: Date? = nil
         ) {
             self.id = id
             self.missionName = missionName
             self.systemPrompt = systemPrompt
+            self.triggerSchedule = triggerSchedule
             self.allowedToolIds = allowedToolIds
             self.ownerProfileId = ownerProfileId
+            self.isEnabled = isEnabled
+            self.lastRunAt = lastRunAt
         }
 
         init(_ mission: MissionDefinition) {
@@ -31,8 +40,11 @@ public final class MissionRunner: @unchecked Sendable {
                 id: mission.id,
                 missionName: mission.missionName,
                 systemPrompt: mission.systemPrompt,
+                triggerSchedule: mission.triggerSchedule,
                 allowedToolIds: mission.allowedMCPTools,
-                ownerProfileId: mission.ownerProfileId
+                ownerProfileId: mission.ownerProfileId,
+                isEnabled: mission.isEnabled,
+                lastRunAt: mission.lastRunAt
             )
         }
     }
@@ -40,11 +52,18 @@ public final class MissionRunner: @unchecked Sendable {
     private let modelContext: ModelContext
     private let client: any OllamaClientProtocol
     private let registry: ToolRegistry
+    private let logWriter: any MissionLogWriting
 
-    public init(modelContext: ModelContext, client: any OllamaClientProtocol, registry: ToolRegistry) {
+    public init(
+        modelContext: ModelContext,
+        client: any OllamaClientProtocol,
+        registry: ToolRegistry,
+        logWriter: (any MissionLogWriting)? = nil
+    ) {
         self.modelContext = modelContext
         self.client = client
         self.registry = registry
+        self.logWriter = logWriter ?? SwiftDataMissionLogWriter(modelContext: modelContext)
     }
 
     public func run(_ request: Request) async throws {
@@ -52,71 +71,56 @@ public final class MissionRunner: @unchecked Sendable {
         let loop = AgentLoop(client: client, registry: registry, allowedToolIds: allowedTools)
         let systemPrompt = request.systemPrompt
         let userMessage = missionUserMessage(ownerProfileId: request.ownerProfileId)
-        let startLog = AgentLog(
+        await logWriter.writeLog(
             missionId: request.id,
             missionName: request.missionName,
             phase: "start",
-            content: "Starting mission with \(allowedTools.count) allowed tool(s): \(allowedTools.joined(separator: ", "))"
+            content: "Starting mission with \(allowedTools.count) allowed tool(s): \(allowedTools.joined(separator: ", "))",
+            toolName: nil
         )
-        modelContext.insert(startLog)
-        try modelContext.save()
         let result: String
         do {
             let context = MissionExecutionContext.Context(missionId: request.id, missionName: request.missionName)
             result = try await MissionExecutionContext.$current.withValue(context) {
-                try await loop.run(systemPrompt: systemPrompt, userMessage: userMessage) { [modelContext] event in
-                    let log = switch event {
+                try await loop.run(systemPrompt: systemPrompt, userMessage: userMessage) { event in
+                    let details: (phase: String, content: String, toolName: String?) = switch event {
                     case .assistantResponse(let content, let toolCalls):
-                        AgentLog(
-                            missionId: request.id,
-                            missionName: request.missionName,
-                            phase: "assistant",
-                            content: content ?? "Assistant requested \(toolCalls.count) tool call(s)."
-                        )
+                        ("assistant", content ?? "Assistant requested \(toolCalls.count) tool call(s).", nil)
                     case .toolCallRequested(let name, let arguments):
-                        AgentLog(
-                            missionId: request.id,
-                            missionName: request.missionName,
-                            phase: "tool_call",
-                            content: arguments,
-                            toolName: name
-                        )
+                        ("tool_call", arguments, name)
                     case .toolCallCompleted(let name, let result):
-                        AgentLog(
-                            missionId: request.id,
-                            missionName: request.missionName,
-                            phase: "tool_result",
-                            content: result,
-                            toolName: name
-                        )
+                        ("tool_result", result, name)
                     case .finalResponse(let content):
-                        AgentLog(
-                            missionId: request.id,
-                            missionName: request.missionName,
-                            phase: "assistant_final",
-                            content: content
-                        )
+                        ("assistant_final", content, nil)
                     case .maxRoundsReached:
-                        AgentLog(
-                            missionId: request.id,
-                            missionName: request.missionName,
-                            phase: "warning",
-                            content: "Agent loop reached max rounds before producing a final response."
-                        )
+                        ("warning", "Agent loop reached max rounds before producing a final response.", nil)
                     }
-                    modelContext.insert(log)
-                    try? modelContext.save()
+                    await self.logWriter.writeLog(
+                        missionId: request.id,
+                        missionName: request.missionName,
+                        phase: details.phase,
+                        content: details.content,
+                        toolName: details.toolName
+                    )
                 }
             }
         } catch {
-            let log = AgentLog(missionId: request.id, missionName: request.missionName, phase: "error", content: "Error: \(error)")
-            modelContext.insert(log)
-            try modelContext.save()
+            await logWriter.writeLog(
+                missionId: request.id,
+                missionName: request.missionName,
+                phase: "error",
+                content: "Error: \(error)",
+                toolName: nil
+            )
             throw error
         }
-        let log = AgentLog(missionId: request.id, missionName: request.missionName, phase: "outcome", content: result)
-        modelContext.insert(log)
-        try modelContext.save()
+        await logWriter.writeLog(
+            missionId: request.id,
+            missionName: request.missionName,
+            phase: "outcome",
+            content: result,
+            toolName: nil
+        )
     }
 
     /// Run one mission and log the outcome.

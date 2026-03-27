@@ -13,6 +13,10 @@
     <!-- Optional overrides -->
     <key>OLLAMA_BASE_URL</key>
     <string>http://localhost:11434</string>
+    <!-- Backend API mode -->
+    <!-- <key>AGENTKVT_API_BASE_URL</key><string>http://100.64.0.10:3000</string> -->
+    <!-- <key>AGENTKVT_WORKSPACE_SLUG</key><string>default</string> -->
+    <!-- <key>AGENTKVT_AGENT_TOKEN</key><string>replace-me</string> -->
     <key>SCHEDULER_INTERVAL_SECONDS</key>
     <integer>30</integer>
     <key>WEBHOOK_PORT</key>

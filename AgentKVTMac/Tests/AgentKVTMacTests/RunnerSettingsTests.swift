@@ -36,6 +36,9 @@ struct RunnerSettingsTests {
             "RUN_SCHEDULER": false,
             "OLLAMA_MODEL": "llama3.2:latest",
             "OLLAMA_BASE_URL": "http://127.0.0.1:11434",
+            "AGENTKVT_API_BASE_URL": "http://127.0.0.1:3000",
+            "AGENTKVT_WORKSPACE_SLUG": "family",
+            "AGENTKVT_AGENT_TOKEN": "secret-token",
             "SCHEDULER_INTERVAL_SECONDS": 15,
             "WEBHOOK_PORT": 9001
         ]
@@ -55,6 +58,9 @@ struct RunnerSettingsTests {
         #expect(settings.runScheduler == false)
         #expect(settings.ollamaModel == "llama3.2:latest")
         #expect(settings.ollamaBaseURL.absoluteString == "http://127.0.0.1:11434")
+        #expect(settings.backendBaseURL?.absoluteString == "http://127.0.0.1:3000")
+        #expect(settings.backendWorkspaceSlug == "family")
+        #expect(settings.backendAgentToken == "secret-token")
         #expect(settings.schedulerIntervalSeconds == 15)
         #expect(settings.webhookPort == 9001)
     }
@@ -76,7 +82,9 @@ struct RunnerSettingsTests {
                 "AGENTKVT_CONFIG_FILE": configFile.path,
                 "RUN_SCHEDULER": "1",
                 "OLLAMA_MODEL": "llama3.2:latest",
-                "SCHEDULER_INTERVAL_SECONDS": "10"
+                "SCHEDULER_INTERVAL_SECONDS": "10",
+                "AGENTKVT_API_BASE_URL": "http://127.0.0.1:3000",
+                "AGENTKVT_WORKSPACE_SLUG": "override-workspace"
             ],
             bundleIdentifier: "com.agentkvt.app",
             groupContainerURL: nil,
@@ -88,6 +96,8 @@ struct RunnerSettingsTests {
         #expect(settings.runScheduler)
         #expect(settings.ollamaModel == "llama3.2:latest")
         #expect(settings.schedulerIntervalSeconds == 10)
+        #expect(settings.backendBaseURL?.absoluteString == "http://127.0.0.1:3000")
+        #expect(settings.backendWorkspaceSlug == "override-workspace")
     }
 
     private func makeTemporaryDirectory() -> URL {

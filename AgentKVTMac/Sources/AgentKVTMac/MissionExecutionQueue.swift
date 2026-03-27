@@ -34,6 +34,7 @@ actor MissionExecutionQueue {
     private let dropzoneDir: URL
     private let emailIngestor: EmailIngestor
     private let cloudInbound: CloudInboundService
+    private let backendClient: BackendAPIClient?
 
     // MARK: - Trigger buffer (priority-sorted, bounded)
 
@@ -46,13 +47,25 @@ actor MissionExecutionQueue {
         modelContainer: ModelContainer,
         client: OllamaClient,
         registry: ToolRegistry,
+        backendClient: BackendAPIClient?,
         emailIngestor: EmailIngestor,
         dropzoneDir: URL
     ) {
         self.modelContext = modelContext.raw
         self.modelContainer = modelContainer
         self.scheduler = MissionScheduler()
-        self.missionRunner = MissionRunner(modelContext: modelContext.raw, client: client, registry: registry)
+        self.backendClient = backendClient
+        let logWriter: any MissionLogWriting = if let backendClient {
+            BackendMissionLogWriter(backendClient: backendClient)
+        } else {
+            SwiftDataMissionLogWriter(modelContext: modelContext.raw)
+        }
+        self.missionRunner = MissionRunner(
+            modelContext: modelContext.raw,
+            client: client,
+            registry: registry,
+            logWriter: logWriter
+        )
         self.chatRunner = ChatRunner(modelContext: modelContext.raw, client: client, registry: registry)
         self.dropzoneDir = dropzoneDir
         self.dropzone = DropzoneService(directory: dropzoneDir)
@@ -113,6 +126,14 @@ actor MissionExecutionQueue {
             }
             while try await chatRunner.processNextPendingMessage() {}
 
+            if let backendClient {
+                let allMissions = try await backendClient.fetchMissions().map { $0.asRequest() }
+                let dueScheduledMissions = try await backendClient.fetchDueMissions(at: Date()).map { $0.asRequest() }
+                print("[MissionExecutionQueue] Clock tick: \(describeRemoteMissionSnapshot(allMissions, dueScheduledMissions: dueScheduledMissions))")
+                try await runRemoteMissions(dueScheduledMissions, using: backendClient, reason: "scheduled mission")
+                return
+            }
+
             let staleContextMissionCount = (try? modelContext.fetch(FetchDescriptor<MissionDefinition>()).count) ?? -1
             let fetchContext = freshContext()
             let missions = try fetchContext.fetch(FetchDescriptor<MissionDefinition>())
@@ -155,6 +176,12 @@ actor MissionExecutionQueue {
         case .emailFile(let url):
             print("[MissionExecutionQueue] Email arrived: \(url.lastPathComponent)")
             emailIngestor.scan()
+            if let backendClient {
+                let missions = try await backendClient.fetchMissions().map { $0.asRequest() }
+                let matching = missions.filter { $0.isEnabled && $0.allowedToolIds.contains("incoming_email_trigger") }
+                try await runRemoteMissions(matching, using: backendClient, reason: "email mission")
+                return
+            }
             let fetchContext = freshContext()
             let missions = try fetchContext.fetch(FetchDescriptor<MissionDefinition>())
             for mission in missions where mission.isEnabled
@@ -175,6 +202,16 @@ actor MissionExecutionQueue {
         case .inboundFile(let url):
             print("[MissionExecutionQueue] Inbound file arrived: \(url.lastPathComponent)")
             dropzone.scan()
+            if let backendClient {
+                let missions = try await backendClient.fetchMissions().map { $0.asRequest() }
+                let matching = missions.filter { mission in
+                    mission.isEnabled &&
+                    (mission.allowedToolIds.contains("list_dropzone_files") ||
+                        mission.allowedToolIds.contains("read_dropzone_file"))
+                }
+                try await runRemoteMissions(matching, using: backendClient, reason: "inbound file mission")
+                return
+            }
             let fetchContext = freshContext()
             let missions = try fetchContext.fetch(FetchDescriptor<MissionDefinition>())
             for mission in missions where mission.isEnabled
@@ -203,6 +240,12 @@ actor MissionExecutionQueue {
                 atomically: true,
                 encoding: .utf8
             )
+            if let backendClient {
+                let missions = try await backendClient.fetchMissions().map { $0.asRequest() }
+                let matching = missions.filter { $0.isEnabled && $0.triggerSchedule == "webhook" }
+                try await runRemoteMissions(matching, using: backendClient, reason: "webhook mission")
+                return
+            }
             let fetchContext = freshContext()
             let missions = try fetchContext.fetch(FetchDescriptor<MissionDefinition>())
             for mission in missions where mission.isEnabled
@@ -234,6 +277,12 @@ actor MissionExecutionQueue {
                 return
             }
             print("[MissionExecutionQueue] CloudKit sync: \(pending.count) pending summary(ies).")
+            if let backendClient {
+                let missions = try await backendClient.fetchMissions().map { $0.asRequest() }
+                let matching = missions.filter { $0.isEnabled && $0.allowedToolIds.contains("fetch_email_summaries") }
+                try await runRemoteMissions(matching, using: backendClient, reason: "CloudKit summary mission")
+                return
+            }
             let missions = try fetchContext.fetch(FetchDescriptor<MissionDefinition>())
             for mission in missions where mission.isEnabled
                 && mission.allowedMCPTools.contains("fetch_email_summaries") {
@@ -288,6 +337,49 @@ actor MissionExecutionQueue {
 
     private func freshContext() -> ModelContext {
         ModelContext(modelContainer)
+    }
+
+    private func runRemoteMissions(
+        _ missions: [MissionRunner.Request],
+        using backendClient: BackendAPIClient,
+        reason: String
+    ) async throws {
+        for mission in missions {
+            let runTimestamp = Date()
+            _ = try await backendClient.markMissionRun(missionId: mission.id, at: runTimestamp)
+            do {
+                try await missionRunner.run(mission)
+                print("[MissionExecutionQueue] Ran \(reason): \(mission.missionName)")
+            } catch {
+                print("[MissionExecutionQueue] \(reason.capitalized) '\(mission.missionName)' failed: \(error)")
+            }
+        }
+    }
+
+    private func describeRemoteMissionSnapshot(
+        _ missions: [MissionRunner.Request],
+        dueScheduledMissions: [MissionRunner.Request]
+    ) -> String {
+        guard !missions.isEmpty else {
+            return "0 missions visible from backend. Store census: backend-only mission source."
+        }
+
+        let enabledCount = missions.filter(\.isEnabled).count
+        let missionList = missions
+            .sorted { lhs, rhs in
+                (lhs.lastRunAt ?? .distantPast) > (rhs.lastRunAt ?? .distantPast)
+            }
+            .map { mission in
+                "\(mission.missionName) [\(mission.triggerSchedule)] enabled=\(mission.isEnabled) lastRun=\(mission.lastRunAt.map(Self.logTimestamp) ?? "never")"
+            }
+            .joined(separator: "; ")
+
+        if dueScheduledMissions.isEmpty {
+            return "\(missions.count) backend mission(s) visible, \(enabledCount) enabled, 0 due. Visible: \(missionList)"
+        }
+
+        let dueNames = dueScheduledMissions.map(\.missionName).joined(separator: ", ")
+        return "\(missions.count) backend mission(s) visible, \(enabledCount) enabled, \(dueScheduledMissions.count) due now (\(dueNames)). Visible: \(missionList)"
     }
 
     private static func logTimestamp(_ date: Date) -> String {
