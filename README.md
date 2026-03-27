@@ -10,7 +10,7 @@
 
 # AgentKVT
 
-Localized, closed-loop agentic system: **Brain** (macOS) + **Remote** (iOS), with a shared SwiftData bridge. Define missions and life context on your iPhone; the Mac runner executes them on schedule and pushes action items back to your phone.
+Localized, closed-loop agentic system: **Brain** (macOS) + **Remote** (iOS). The original shared SwiftData + CloudKit bridge is being replaced by a Mac-hosted Rails API + Postgres backend so different Apple IDs can share one canonical data store.
 
 **Suggested GitHub topics** (set under repo **About** → **Topics** for discoverability):
 
@@ -45,6 +45,7 @@ iOS → shared SwiftData store → Mac scheduler → MissionRunner → AgentLoop
 - **ManagerCore/** — Swift package: shared SwiftData schema (LifeContext, MissionDefinition, ActionItem, AgentLog). Used by both Mac and iOS.
 - **AgentKVTMac/** — macOS agent: MCP-style tool registry, Ollama client, mission runner, scheduler. Runner executable for one-off test or `RUN_SCHEDULER=1` for CRON-style runs.
 - **AgentKVTiOS/** — iOS app (Xcode project): SwiftUI dashboard (Actions, Missions, Context, Agent Log). No chat UI.
+- **server/** — Rails API app (generated on the server Mac) that will become the system of record for missions, actions, logs, and family state.
 - **Docs/** — SYNC.md, LLM_THROTTLING.md, TOOL_IDS.md, E2E_VERIFICATION.md.
 
 ## Quick start
@@ -62,5 +63,6 @@ iOS → shared SwiftData store → Mac scheduler → MissionRunner → AgentLoop
 - [FOUNDATIONAL_PLAN.MD](FOUNDATIONAL_PLAN.MD) — Architecture, schema, missions, tools, diagram.
 - [Docs/SUPERAGENT_IMPLEMENTATION_PHASES.md](Docs/SUPERAGENT_IMPLEMENTATION_PHASES.md) — Phased implementation plan (ManagerCore → Mac Brain → tools → mission engine → iOS → E2E).
 - [Docs/E2E_VERIFICATION.md](Docs/E2E_VERIFICATION.md) — E2E scenarios (Career, Finance), AgentLog audit, checklist.
+- [Docs/MAC_BACKEND_PLAN.md](Docs/MAC_BACKEND_PLAN.md) — Concrete plan for the Mac-hosted Rails + Postgres backend, including SSH bootstrap commands and first schema.
 
 Out of scope: DIYProjectManager retooling; see README for planning history.

@@ -5,3 +5,13 @@
 **/.swiftpm/xcode/xcuserdata/
 *.xcuserstate
 DerivedData/
+server/.bundle/
+server/.env
+server/.env.local
+server/log/*
+!server/log/.keep
+server/tmp/*
+!server/tmp/.keep
+server/storage/*
+!server/storage/.keep
+server/vendor/bundle/
