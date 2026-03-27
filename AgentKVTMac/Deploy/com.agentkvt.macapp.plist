@@ -18,9 +18,17 @@
 
   Notes:
   - Replace the app path below with the actual installed app location.
+  - We launch via `open -W -n -a` so LaunchServices starts the app as a real
+    macOS application and launchd waits until that app exits.
   - The app reads its runtime settings from:
       ~/Library/Group Containers/group.com.agentkvt.shared/Library/Application Support/agentkvt-runner.plist
     so you usually do not need to pass environment variables here.
+  - For an unsigned or Xcode-built app launched over SSH, app-group file access
+    may hang before the scheduler starts. In that case, add LaunchAgent
+    environment variables for:
+      AGENTKVT_CONFIG_FILE=~/.agentkvt/agentkvt-runner.plist
+      AGENTKVT_LOG_FILE=~/.agentkvt/logs/agentkvt-macapp.log
+    and copy the runtime plist to the home-path config file.
   - Runtime logs live at:
       ~/Library/Group Containers/group.com.agentkvt.shared/Library/Logs/agentkvt-mac.log
 -->
@@ -32,7 +40,11 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>/Applications/AgentKVTMacApp.app/Contents/MacOS/AgentKVTMacApp</string>
+        <string>/usr/bin/open</string>
+        <string>-W</string>
+        <string>-n</string>
+        <string>-a</string>
+        <string>/Applications/AgentKVTMacApp.app</string>
     </array>
 
     <key>LimitLoadToSessionType</key>

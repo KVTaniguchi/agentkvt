@@ -8,6 +8,8 @@ struct LifeContextView: View {
     @Query(sort: \LifeContext.key, order: .forward) private var contexts: [LifeContext]
     @State private var showAdd = false
 
+    private let backendSync = IOSBackendSyncService()
+
     var body: some View {
         NavigationStack {
             List {
@@ -27,6 +29,9 @@ struct LifeContextView: View {
                 }
             }
             .navigationTitle("Life Context")
+            .refreshable {
+                await backendSync.syncLifeContextEntries(modelContext: modelContext)
+            }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button("Add", systemImage: "plus") { showAdd = true }
@@ -37,6 +42,9 @@ struct LifeContextView: View {
                     showAdd = false
                 }
             }
+        }
+        .task {
+            await backendSync.syncLifeContextEntries(modelContext: modelContext)
         }
     }
 }
@@ -49,6 +57,10 @@ struct LifeContextEditView: View {
 
     @State private var key: String = ""
     @State private var value: String = ""
+    @State private var errorMessage: String?
+    @State private var isSaving = false
+
+    private let backendSync = IOSBackendSyncService()
 
     var body: some View {
         NavigationStack {
@@ -62,20 +74,26 @@ struct LifeContextEditView: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss(); onDismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        if let ctx = context {
-                            ctx.key = key
-                            ctx.value = value
-                            ctx.updatedAt = Date()
-                        } else {
-                            let ctx = LifeContext(key: key, value: value)
-                            modelContext.insert(ctx)
+                        Task { @MainActor in
+                            await saveContext()
                         }
-                        try? modelContext.save()
-                        dismiss()
-                        onDismiss()
                     }
-                    .disabled(key.isEmpty)
+                    .disabled(
+                        key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                        value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                        isSaving
+                    )
                 }
+            }
+            .alert("Save Failed", isPresented: Binding(
+                get: { errorMessage != nil },
+                set: { if !$0 { errorMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) {
+                    errorMessage = nil
+                }
+            } message: {
+                Text(errorMessage ?? "The life-context entry could not be saved.")
             }
             .onAppear {
                 if let c = context {
@@ -83,6 +101,26 @@ struct LifeContextEditView: View {
                     value = c.value
                 }
             }
+        }
+    }
+
+    @MainActor
+    private func saveContext() async {
+        isSaving = true
+        defer { isSaving = false }
+
+        do {
+            try await backendSync.saveLifeContext(
+                existingContext: context,
+                key: key,
+                value: value,
+                modelContext: modelContext
+            )
+            dismiss()
+            onDismiss()
+        } catch {
+            errorMessage = error.localizedDescription
+            IOSRuntimeLog.log("[LifeContextEditView] Failed to save life-context key=\(key): \(error)")
         }
     }
 }

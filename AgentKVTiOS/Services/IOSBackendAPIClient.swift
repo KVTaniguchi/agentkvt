@@ -46,9 +46,124 @@ struct IOSBackendMission: Codable, Sendable {
     let updatedAt: Date
 }
 
+enum IOSBackendJSONValue: Codable, Sendable {
+    case string(String)
+    case number(Double)
+    case bool(Bool)
+    case object([String: IOSBackendJSONValue])
+    case array([IOSBackendJSONValue])
+    case null
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+
+        if container.decodeNil() {
+            self = .null
+        } else if let bool = try? container.decode(Bool.self) {
+            self = .bool(bool)
+        } else if let int = try? container.decode(Int.self) {
+            self = .number(Double(int))
+        } else if let double = try? container.decode(Double.self) {
+            self = .number(double)
+        } else if let string = try? container.decode(String.self) {
+            self = .string(string)
+        } else if let object = try? container.decode([String: IOSBackendJSONValue].self) {
+            self = .object(object)
+        } else if let array = try? container.decode([IOSBackendJSONValue].self) {
+            self = .array(array)
+        } else {
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unsupported JSON value.")
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+
+        switch self {
+        case .string(let value):
+            try container.encode(value)
+        case .number(let value):
+            try container.encode(value)
+        case .bool(let value):
+            try container.encode(value)
+        case .object(let value):
+            try container.encode(value)
+        case .array(let value):
+            try container.encode(value)
+        case .null:
+            try container.encodeNil()
+        }
+    }
+
+    var foundationObject: Any {
+        switch self {
+        case .string(let value):
+            return value
+        case .number(let value):
+            return value
+        case .bool(let value):
+            return value
+        case .object(let value):
+            return value.mapValues { $0.foundationObject }
+        case .array(let value):
+            return value.map(\.foundationObject)
+        case .null:
+            return NSNull()
+        }
+    }
+
+    var stringValue: String? {
+        guard case .string(let value) = self else { return nil }
+        return value
+    }
+}
+
+struct IOSBackendActionItem: Codable, Sendable {
+    let id: UUID
+    let workspaceId: UUID
+    let sourceMissionId: UUID?
+    let ownerProfileId: UUID?
+    let title: String
+    let systemIntent: String
+    let payloadJson: [String: IOSBackendJSONValue]
+    let relevanceScore: Double
+    let isHandled: Bool
+    let handledAt: Date?
+    let timestamp: Date
+    let createdBy: String?
+    let createdAt: Date
+    let updatedAt: Date
+}
+
+struct IOSBackendAgentLog: Codable, Sendable {
+    let id: UUID
+    let workspaceId: UUID
+    let missionId: UUID?
+    let missionName: String?
+    let phase: String
+    let content: String
+    let metadataJson: [String: IOSBackendJSONValue]
+    let toolName: String?
+    let timestamp: Date
+    let createdAt: Date
+    let updatedAt: Date
+}
+
+struct IOSBackendLifeContextEntry: Codable, Sendable {
+    let id: UUID
+    let workspaceId: UUID
+    let key: String
+    let value: String
+    let createdAt: Date
+    let updatedAt: Date
+}
+
 struct IOSBackendBootstrap: Codable, Sendable {
     let familyMembers: [IOSBackendFamilyMember]
     let missions: [IOSBackendMission]
+    let actionItems: [IOSBackendActionItem]
+    let agentLogs: [IOSBackendAgentLog]
+    let lifeContextEntries: [IOSBackendLifeContextEntry]
     let pendingActionItemsCount: Int
     let recentAgentLogCount: Int
     let serverTime: Date?
@@ -68,6 +183,26 @@ private struct IOSBackendMissionsEnvelope: Codable {
 
 private struct IOSBackendMissionEnvelope: Codable {
     let mission: IOSBackendMission
+}
+
+private struct IOSBackendActionItemsEnvelope: Codable {
+    let actionItems: [IOSBackendActionItem]
+}
+
+private struct IOSBackendActionItemEnvelope: Codable {
+    let actionItem: IOSBackendActionItem
+}
+
+private struct IOSBackendAgentLogsEnvelope: Codable {
+    let agentLogs: [IOSBackendAgentLog]
+}
+
+private struct IOSBackendLifeContextEntriesEnvelope: Codable {
+    let lifeContextEntries: [IOSBackendLifeContextEntry]
+}
+
+private struct IOSBackendLifeContextEntryEnvelope: Codable {
+    let lifeContextEntry: IOSBackendLifeContextEntry
 }
 
 actor IOSBackendAPIClient {
@@ -123,6 +258,55 @@ actor IOSBackendAPIClient {
     func fetchMissions() async throws -> [IOSBackendMission] {
         let data = try await performRequest(path: "v1/missions")
         return try decoder.decode(IOSBackendMissionsEnvelope.self, from: data).missions
+    }
+
+    func fetchActionItems(limit: Int = 200) async throws -> [IOSBackendActionItem] {
+        let data = try await performRequest(path: "v1/action_items?limit=\(limit)")
+        return try decoder.decode(IOSBackendActionItemsEnvelope.self, from: data).actionItems
+    }
+
+    func handleActionItem(id: UUID, handledAt: Date) async throws -> IOSBackendActionItem {
+        let data = try await performRequest(
+            path: "v1/action_items/\(id.uuidString)/handle",
+            method: "POST",
+            jsonBody: [
+                "action_item": [
+                    "handled_at": iso8601(handledAt)
+                ]
+            ]
+        )
+        return try decoder.decode(IOSBackendActionItemEnvelope.self, from: data).actionItem
+    }
+
+    func fetchAgentLogs(limit: Int = 200) async throws -> [IOSBackendAgentLog] {
+        let data = try await performRequest(path: "v1/agent_logs?limit=\(limit)")
+        return try decoder.decode(IOSBackendAgentLogsEnvelope.self, from: data).agentLogs
+    }
+
+    func fetchLifeContextEntries() async throws -> [IOSBackendLifeContextEntry] {
+        let data = try await performRequest(path: "v1/life_context")
+        return try decoder.decode(IOSBackendLifeContextEntriesEnvelope.self, from: data).lifeContextEntries
+    }
+
+    func upsertLifeContextEntry(
+        id: UUID,
+        existingKey: String?,
+        key: String,
+        value: String
+    ) async throws -> IOSBackendLifeContextEntry {
+        let lookupKey = encodedPathComponent(existingKey ?? key)
+        let data = try await performRequest(
+            path: "v1/life_context/\(lookupKey)",
+            method: "PUT",
+            jsonBody: [
+                "life_context_entry": [
+                    "id": id.uuidString,
+                    "key": key,
+                    "value": value
+                ]
+            ]
+        )
+        return try decoder.decode(IOSBackendLifeContextEntryEnvelope.self, from: data).lifeContextEntry
     }
 
     func createMission(
@@ -253,6 +437,11 @@ actor IOSBackendAPIClient {
         }
         return url
     }
+
+    private func encodedPathComponent(_ raw: String) -> String {
+        let allowedCharacters = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
+        return raw.addingPercentEncoding(withAllowedCharacters: allowedCharacters) ?? raw
+    }
 }
 
 final class IOSBackendSyncService {
@@ -283,8 +472,11 @@ final class IOSBackendSyncService {
             let snapshot = try await client.fetchBootstrap()
             try reconcileFamilyMembers(snapshot.familyMembers, into: modelContext)
             try reconcileMissions(snapshot.missions, into: modelContext)
+            try reconcileActionItems(snapshot.actionItems, into: modelContext)
+            try reconcileAgentLogs(snapshot.agentLogs, into: modelContext)
+            try reconcileLifeContextEntries(snapshot.lifeContextEntries, into: modelContext)
             try modelContext.save()
-            IOSRuntimeLog.log("[IOSBackendSync] Bootstrapped \(snapshot.familyMembers.count) family member(s) and \(snapshot.missions.count) mission(s) from backend.")
+            IOSRuntimeLog.log("[IOSBackendSync] Bootstrapped \(snapshot.familyMembers.count) family member(s), \(snapshot.missions.count) mission(s), \(snapshot.actionItems.count) action item(s), \(snapshot.agentLogs.count) log(s), and \(snapshot.lifeContextEntries.count) life-context entry/entries from backend.")
         } catch {
             IOSRuntimeLog.log("[IOSBackendSync] Bootstrap failed: \(error)")
         }
@@ -329,6 +521,48 @@ final class IOSBackendSyncService {
             IOSRuntimeLog.log("[IOSBackendSync] Synced \(missions.count) mission(s) from backend.")
         } catch {
             IOSRuntimeLog.log("[IOSBackendSync] Mission sync failed: \(error)")
+        }
+    }
+
+    @MainActor
+    func syncActionItems(modelContext: ModelContext) async {
+        guard let client else { return }
+
+        do {
+            let actionItems = try await client.fetchActionItems()
+            try reconcileActionItems(actionItems, into: modelContext)
+            try modelContext.save()
+            IOSRuntimeLog.log("[IOSBackendSync] Synced \(actionItems.count) action item(s) from backend.")
+        } catch {
+            IOSRuntimeLog.log("[IOSBackendSync] Action-item sync failed: \(error)")
+        }
+    }
+
+    @MainActor
+    func syncAgentLogs(modelContext: ModelContext) async {
+        guard let client else { return }
+
+        do {
+            let agentLogs = try await client.fetchAgentLogs()
+            try reconcileAgentLogs(agentLogs, into: modelContext)
+            try modelContext.save()
+            IOSRuntimeLog.log("[IOSBackendSync] Synced \(agentLogs.count) agent log(s) from backend.")
+        } catch {
+            IOSRuntimeLog.log("[IOSBackendSync] Agent-log sync failed: \(error)")
+        }
+    }
+
+    @MainActor
+    func syncLifeContextEntries(modelContext: ModelContext) async {
+        guard let client else { return }
+
+        do {
+            let entries = try await client.fetchLifeContextEntries()
+            try reconcileLifeContextEntries(entries, into: modelContext)
+            try modelContext.save()
+            IOSRuntimeLog.log("[IOSBackendSync] Synced \(entries.count) life-context entry/entries from backend.")
+        } catch {
+            IOSRuntimeLog.log("[IOSBackendSync] Life-context sync failed: \(error)")
         }
     }
 
@@ -416,6 +650,54 @@ final class IOSBackendSyncService {
     }
 
     @MainActor
+    func handleActionItem(
+        _ actionItem: ActionItem,
+        handledAt: Date = Date(),
+        modelContext: ModelContext
+    ) async throws {
+        if let client {
+            let remote = try await client.handleActionItem(id: actionItem.id, handledAt: handledAt)
+            _ = upsertActionItem(remote, into: modelContext)
+        } else {
+            actionItem.isHandled = true
+        }
+        try modelContext.save()
+    }
+
+    @MainActor
+    func saveLifeContext(
+        existingContext: LifeContext?,
+        key: String,
+        value: String,
+        modelContext: ModelContext
+    ) async throws {
+        let normalizedKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let client {
+            let remote = try await client.upsertLifeContextEntry(
+                id: existingContext?.id ?? UUID(),
+                existingKey: existingContext?.key,
+                key: normalizedKey,
+                value: normalizedValue
+            )
+            _ = upsertLifeContextEntry(remote, into: modelContext)
+            try modelContext.save()
+            IOSRuntimeLog.log("[IOSBackendSync] Saved life-context key=\(remote.key) via backend.")
+            return
+        }
+
+        if let existingContext {
+            existingContext.key = normalizedKey
+            existingContext.value = normalizedValue
+            existingContext.updatedAt = Date()
+        } else {
+            modelContext.insert(LifeContext(key: normalizedKey, value: normalizedValue))
+        }
+        try modelContext.save()
+    }
+
+    @MainActor
     private func reconcileFamilyMembers(_ remoteMembers: [IOSBackendFamilyMember], into modelContext: ModelContext) throws {
         for remoteMember in remoteMembers {
             _ = upsertFamilyMember(remoteMember, into: modelContext)
@@ -427,6 +709,30 @@ final class IOSBackendSyncService {
         for remoteMission in remoteMissions {
             _ = upsertMission(remoteMission, into: modelContext)
         }
+    }
+
+    @MainActor
+    private func reconcileActionItems(_ remoteActionItems: [IOSBackendActionItem], into modelContext: ModelContext) throws {
+        for remoteActionItem in remoteActionItems {
+            _ = upsertActionItem(remoteActionItem, into: modelContext)
+        }
+        try pruneActionItems(excluding: Set(remoteActionItems.map(\.id)), in: modelContext)
+    }
+
+    @MainActor
+    private func reconcileAgentLogs(_ remoteAgentLogs: [IOSBackendAgentLog], into modelContext: ModelContext) throws {
+        for remoteAgentLog in remoteAgentLogs {
+            _ = upsertAgentLog(remoteAgentLog, into: modelContext)
+        }
+        try pruneAgentLogs(excluding: Set(remoteAgentLogs.map(\.id)), in: modelContext)
+    }
+
+    @MainActor
+    private func reconcileLifeContextEntries(_ remoteEntries: [IOSBackendLifeContextEntry], into modelContext: ModelContext) throws {
+        for remoteEntry in remoteEntries {
+            _ = upsertLifeContextEntry(remoteEntry, into: modelContext)
+        }
+        try pruneLifeContextEntries(excluding: Set(remoteEntries.map(\.id)), in: modelContext)
     }
 
     @discardableResult
@@ -480,6 +786,87 @@ final class IOSBackendSyncService {
         return mission
     }
 
+    @discardableResult
+    @MainActor
+    private func upsertActionItem(_ remoteActionItem: IOSBackendActionItem, into modelContext: ModelContext) -> ActionItem {
+        let payloadData = jsonData(from: remoteActionItem.payloadJson)
+
+        if let existing = actionItem(id: remoteActionItem.id, in: modelContext) {
+            existing.title = remoteActionItem.title
+            existing.systemIntent = remoteActionItem.systemIntent
+            existing.payloadData = payloadData
+            existing.relevanceScore = remoteActionItem.relevanceScore
+            existing.timestamp = remoteActionItem.timestamp
+            existing.missionId = remoteActionItem.sourceMissionId
+            existing.isHandled = remoteActionItem.isHandled
+            existing.createdByProfileId = remoteActionItem.ownerProfileId
+            return existing
+        }
+
+        let actionItem = ActionItem(
+            id: remoteActionItem.id,
+            title: remoteActionItem.title,
+            systemIntent: remoteActionItem.systemIntent,
+            payloadData: payloadData,
+            relevanceScore: remoteActionItem.relevanceScore,
+            timestamp: remoteActionItem.timestamp,
+            missionId: remoteActionItem.sourceMissionId,
+            isHandled: remoteActionItem.isHandled,
+            createdByProfileId: remoteActionItem.ownerProfileId
+        )
+        modelContext.insert(actionItem)
+        return actionItem
+    }
+
+    @discardableResult
+    @MainActor
+    private func upsertAgentLog(_ remoteAgentLog: IOSBackendAgentLog, into modelContext: ModelContext) -> AgentLog {
+        let toolName = remoteAgentLog.toolName ?? remoteAgentLog.metadataJson["tool_name"]?.stringValue
+
+        if let existing = agentLog(id: remoteAgentLog.id, in: modelContext) {
+            existing.missionId = remoteAgentLog.missionId
+            existing.missionName = remoteAgentLog.missionName
+            existing.phase = remoteAgentLog.phase
+            existing.content = remoteAgentLog.content
+            existing.toolName = toolName
+            existing.timestamp = remoteAgentLog.timestamp
+            return existing
+        }
+
+        let agentLog = AgentLog(
+            id: remoteAgentLog.id,
+            missionId: remoteAgentLog.missionId,
+            missionName: remoteAgentLog.missionName,
+            phase: remoteAgentLog.phase,
+            content: remoteAgentLog.content,
+            toolName: toolName,
+            timestamp: remoteAgentLog.timestamp
+        )
+        modelContext.insert(agentLog)
+        return agentLog
+    }
+
+    @discardableResult
+    @MainActor
+    private func upsertLifeContextEntry(_ remoteEntry: IOSBackendLifeContextEntry, into modelContext: ModelContext) -> LifeContext {
+        if let existing = lifeContext(id: remoteEntry.id, in: modelContext) ?? lifeContext(key: remoteEntry.key, in: modelContext) {
+            existing.id = remoteEntry.id
+            existing.key = remoteEntry.key
+            existing.value = remoteEntry.value
+            existing.updatedAt = remoteEntry.updatedAt
+            return existing
+        }
+
+        let context = LifeContext(
+            id: remoteEntry.id,
+            key: remoteEntry.key,
+            value: remoteEntry.value,
+            updatedAt: remoteEntry.updatedAt
+        )
+        modelContext.insert(context)
+        return context
+    }
+
     @MainActor
     private func familyMember(id: UUID, in modelContext: ModelContext) -> FamilyMember? {
         let descriptor = FetchDescriptor<FamilyMember>(
@@ -494,5 +881,66 @@ final class IOSBackendSyncService {
             predicate: #Predicate<MissionDefinition> { $0.id == id }
         )
         return try? modelContext.fetch(descriptor).first
+    }
+
+    @MainActor
+    private func actionItem(id: UUID, in modelContext: ModelContext) -> ActionItem? {
+        let descriptor = FetchDescriptor<ActionItem>(
+            predicate: #Predicate<ActionItem> { $0.id == id }
+        )
+        return try? modelContext.fetch(descriptor).first
+    }
+
+    @MainActor
+    private func agentLog(id: UUID, in modelContext: ModelContext) -> AgentLog? {
+        let descriptor = FetchDescriptor<AgentLog>(
+            predicate: #Predicate<AgentLog> { $0.id == id }
+        )
+        return try? modelContext.fetch(descriptor).first
+    }
+
+    @MainActor
+    private func lifeContext(id: UUID, in modelContext: ModelContext) -> LifeContext? {
+        let descriptor = FetchDescriptor<LifeContext>(
+            predicate: #Predicate<LifeContext> { $0.id == id }
+        )
+        return try? modelContext.fetch(descriptor).first
+    }
+
+    @MainActor
+    private func lifeContext(key: String, in modelContext: ModelContext) -> LifeContext? {
+        let descriptor = FetchDescriptor<LifeContext>(
+            predicate: #Predicate<LifeContext> { $0.key == key }
+        )
+        return try? modelContext.fetch(descriptor).first
+    }
+
+    @MainActor
+    private func pruneActionItems(excluding remoteIDs: Set<UUID>, in modelContext: ModelContext) throws {
+        let localItems = try modelContext.fetch(FetchDescriptor<ActionItem>())
+        for localItem in localItems where !remoteIDs.contains(localItem.id) {
+            modelContext.delete(localItem)
+        }
+    }
+
+    @MainActor
+    private func pruneAgentLogs(excluding remoteIDs: Set<UUID>, in modelContext: ModelContext) throws {
+        let localLogs = try modelContext.fetch(FetchDescriptor<AgentLog>())
+        for localLog in localLogs where !remoteIDs.contains(localLog.id) {
+            modelContext.delete(localLog)
+        }
+    }
+
+    @MainActor
+    private func pruneLifeContextEntries(excluding remoteIDs: Set<UUID>, in modelContext: ModelContext) throws {
+        let localContexts = try modelContext.fetch(FetchDescriptor<LifeContext>())
+        for localContext in localContexts where !remoteIDs.contains(localContext.id) {
+            modelContext.delete(localContext)
+        }
+    }
+
+    private func jsonData(from object: [String: IOSBackendJSONValue]) -> Data? {
+        guard !object.isEmpty else { return nil }
+        return try? JSONSerialization.data(withJSONObject: object.mapValues(\.foundationObject), options: [])
     }
 }

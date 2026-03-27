@@ -69,12 +69,25 @@ module ApiSerialization
       id: agent_log.id,
       workspace_id: agent_log.workspace_id,
       mission_id: agent_log.mission_id,
+      mission_name: agent_log.mission&.mission_name,
       phase: agent_log.phase,
       content: agent_log.content,
       metadata_json: agent_log.metadata_json,
+      tool_name: agent_log.metadata_json["tool_name"],
       timestamp: iso8601(agent_log.timestamp),
       created_at: iso8601(agent_log.created_at),
       updated_at: iso8601(agent_log.updated_at)
+    }
+  end
+
+  def serialize_life_context_entry(entry)
+    {
+      id: entry.id,
+      workspace_id: entry.workspace_id,
+      key: entry.key,
+      value: entry.value,
+      created_at: iso8601(entry.created_at),
+      updated_at: iso8601(entry.updated_at)
     }
   end
 

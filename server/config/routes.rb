@@ -5,6 +5,7 @@ Rails.application.routes.draw do
     resource :bootstrap, only: :show
     resources :family_members, only: [:index, :create]
     resources :missions, only: [:index, :create, :update, :destroy]
+    resources :life_context, only: [:index, :update], controller: "life_context_entries", param: :key
     resources :action_items, only: [:index] do
       post :handle, on: :member
     end

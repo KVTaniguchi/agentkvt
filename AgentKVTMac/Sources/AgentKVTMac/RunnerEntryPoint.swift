@@ -14,7 +14,12 @@ public func runAgentKVTMacRunner() async {
     for message in settings.startupMessages {
         print(message)
     }
-    logMacCloudKitDiagnostics()
+    let shouldAttemptCloudKit = !settings.disableCloudKit && settings.isAppBundle
+    if shouldAttemptCloudKit {
+        logMacCloudKitDiagnostics()
+    } else {
+        print("[CloudKitDiagnostics] Skipped (CloudKit disabled or unavailable for this process mode).")
+    }
 
     let schema = Schema([
         LifeContext.self,
@@ -53,8 +58,6 @@ public func runAgentKVTMacRunner() async {
         isStoredInMemoryOnly: false,
         allowsSave: true
     )
-    let shouldAttemptCloudKit = !settings.disableCloudKit && settings.isAppBundle
-
     if shouldAttemptCloudKit,
        let c = try? ModelContainer(for: schema, configurations: [sharedPersistentConfig]) {
         container = c

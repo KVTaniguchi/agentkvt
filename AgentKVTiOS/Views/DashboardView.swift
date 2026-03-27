@@ -112,22 +112,30 @@ struct ActionItemsList: View {
     let items: [ActionItem]
     @Environment(\.modelContext) private var modelContext
     @Query private var missions: [MissionDefinition]
+    @State private var handleErrorMessage: String?
+
+    private let backendSync = IOSBackendSyncService()
 
     private var missionsById: [UUID: MissionDefinition] {
         Dictionary(uniqueKeysWithValues: missions.map { ($0.id, $0) })
     }
 
+    private var visibleItems: [ActionItem] {
+        items.filter { !$0.isHandled }
+    }
+
     var body: some View {
         NavigationStack {
             List {
-                ForEach(items.filter { !$0.isHandled }, id: \.id) { item in
+                ForEach(visibleItems, id: \.id) { item in
                     NavigationLink {
                         ActionItemDetailView(
                             item: item,
                             mission: item.missionId.flatMap { missionsById[$0] }
                         ) {
-                            item.isHandled = true
-                            try? modelContext.save()
+                            Task { @MainActor in
+                                await markHandled(item)
+                            }
                         }
                     } label: {
                         ActionItemRow(item: item, missionName: item.missionId.flatMap { missionsById[$0]?.missionName })
@@ -135,7 +143,41 @@ struct ActionItemsList: View {
                 }
             }
             .navigationTitle("Actions")
-            .emptyState(items.isEmpty, message: "No action items. Missions on the Mac will create them.")
+            .refreshable {
+                await backendSync.syncActionItems(modelContext: modelContext)
+            }
+            .emptyState(visibleItems.isEmpty, message: "No action items. Missions on the Mac will create them.")
+        }
+        .task {
+            await backendSync.syncActionItems(modelContext: modelContext)
+        }
+        .alert("Could Not Mark Action Done", isPresented: Binding(
+            get: { handleErrorMessage != nil },
+            set: { if !$0 { handleErrorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {
+                handleErrorMessage = nil
+            }
+        } message: {
+            Text(handleErrorMessage ?? "The action item could not be updated.")
+        }
+    }
+
+    @MainActor
+    private func markHandled(_ item: ActionItem) async {
+        guard !item.isHandled else { return }
+
+        let originalValue = item.isHandled
+        item.isHandled = true
+        try? modelContext.save()
+
+        do {
+            try await backendSync.handleActionItem(item, modelContext: modelContext)
+        } catch {
+            item.isHandled = originalValue
+            try? modelContext.save()
+            handleErrorMessage = error.localizedDescription
+            IOSRuntimeLog.log("[ActionItemsList] Failed to mark action item \(item.id.uuidString) handled: \(error)")
         }
     }
 }

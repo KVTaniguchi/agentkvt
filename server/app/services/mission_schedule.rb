@@ -36,8 +36,8 @@ class MissionSchedule
       return nil if value.blank?
 
       hour_string, minute_string = value.split(":", 2)
-      hour = Integer(hour_string, exception: false)
-      minute = Integer(minute_string, exception: false)
+      hour = parse_decimal_integer(hour_string)
+      minute = parse_decimal_integer(minute_string)
       return nil unless hour && minute
       return nil unless (0..23).cover?(hour) && (0..59).cover?(minute)
 
@@ -53,6 +53,10 @@ class MissionSchedule
       current = at.in_time_zone.beginning_of_day
       days_until = target_wday - current.wday
       current + days_until.days
+    end
+
+    def parse_decimal_integer(value)
+      Integer(value, 10, exception: false)
     end
   end
 end

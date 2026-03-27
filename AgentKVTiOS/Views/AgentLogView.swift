@@ -13,8 +13,11 @@ struct AgentLogView: View {
         var id: String { rawValue }
     }
 
+    @Environment(\.modelContext) private var modelContext
     @Query(sort: \AgentLog.timestamp, order: .reverse) private var logs: [AgentLog]
     @State private var selectedFilter: Filter = .all
+
+    private let backendSync = IOSBackendSyncService()
 
     private var filteredLogs: [AgentLog] {
         logs.filter { log in
@@ -48,6 +51,9 @@ struct AgentLogView: View {
                         AgentLogRow(log: log)
                     }
                 }
+                .refreshable {
+                    await backendSync.syncAgentLogs(modelContext: modelContext)
+                }
                 .emptyState(filteredLogs.isEmpty, message: emptyMessage)
             }
             .navigationTitle("Agent Log")
@@ -60,6 +66,9 @@ struct AgentLogView: View {
                     }
                 }
             }
+        }
+        .task {
+            await backendSync.syncAgentLogs(modelContext: modelContext)
         }
     }
 

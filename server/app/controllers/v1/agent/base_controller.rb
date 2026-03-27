@@ -1,6 +1,8 @@
 module V1
   module Agent
     class BaseController < V1::BaseController
+      include ActionController::HttpAuthentication::Token::ControllerMethods
+
       before_action :authenticate_agent!
 
       private

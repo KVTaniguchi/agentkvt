@@ -3,6 +3,8 @@ require "securerandom"
 
 class V1AgentEndpointsTest < ActionDispatch::IntegrationTest
   setup do
+    @previous_agent_token = ENV["AGENTKVT_AGENT_TOKEN"]
+    ENV["AGENTKVT_AGENT_TOKEN"] = "test-agent-token"
     @workspace = Workspace.create!(name: "Default Workspace", slug: "workspace-#{SecureRandom.hex(4)}")
     @mission = @workspace.missions.create!(
       mission_name: "Tech Job Scout",
@@ -13,9 +15,19 @@ class V1AgentEndpointsTest < ActionDispatch::IntegrationTest
     )
   end
 
+  teardown do
+    ENV["AGENTKVT_AGENT_TOKEN"] = @previous_agent_token
+  end
+
+  test "agent endpoints require a valid bearer token when configured" do
+    get "/v1/agent/due_missions", params: { at: Time.current.iso8601 }, headers: workspace_headers
+
+    assert_response :unauthorized
+  end
+
   test "agent can fetch due missions and write results" do
     travel_to Time.zone.parse("2026-03-27 21:05:00 UTC") do
-      get "/v1/agent/due_missions", params: { at: Time.current.iso8601 }, headers: workspace_headers
+      get "/v1/agent/due_missions", params: { at: Time.current.iso8601 }, headers: agent_headers
       assert_response :success
       assert_equal 1, JSON.parse(response.body).fetch("due_missions").length
 
@@ -25,7 +37,7 @@ class V1AgentEndpointsTest < ActionDispatch::IntegrationTest
           system_intent: "url.open",
           payload_json: { url: "https://example.com/jobs/1" }
         }
-      }, as: :json, headers: workspace_headers
+      }, as: :json, headers: agent_headers
       assert_response :created
 
       post "/v1/agent/missions/#{@mission.id}/logs", params: {
@@ -33,12 +45,12 @@ class V1AgentEndpointsTest < ActionDispatch::IntegrationTest
           phase: "outcome",
           content: "Created an action item."
         }
-      }, as: :json, headers: workspace_headers
+      }, as: :json, headers: agent_headers
       assert_response :created
 
       post "/v1/agent/missions/#{@mission.id}/mark_run", params: {
         ran_at: Time.current.iso8601
-      }, as: :json, headers: workspace_headers
+      }, as: :json, headers: agent_headers
       assert_response :success
     end
 
@@ -51,5 +63,9 @@ class V1AgentEndpointsTest < ActionDispatch::IntegrationTest
 
   def workspace_headers
     { "X-Workspace-Slug" => @workspace.slug, "ACCEPT" => "application/json" }
+  end
+
+  def agent_headers
+    workspace_headers.merge("Authorization" => "Bearer test-agent-token")
   end
 end

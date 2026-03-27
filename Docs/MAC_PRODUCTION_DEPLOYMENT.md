@@ -76,6 +76,20 @@ Useful starter values:
 
 Environment variables still override the file if you deliberately launch the app that way, but the config plist is the production-friendly path.
 
+For the current backend pivot smoke environment, there is one important distinction:
+
+- signed/TestFlight macOS app: use the shared app-group config/log paths above
+- unsigned or Xcode-built app launched by `launchd`: prefer home-directory overrides
+
+The unsigned launchd case can stall while opening app-group files before the scheduler starts. If you need to run that path on the server Mac during development, set these LaunchAgent environment variables:
+
+```text
+AGENTKVT_CONFIG_FILE=~/.agentkvt/agentkvt-runner.plist
+AGENTKVT_LOG_FILE=~/.agentkvt/logs/agentkvt-macapp.log
+```
+
+and copy the runtime plist from the app-group location into `~/.agentkvt/agentkvt-runner.plist`.
+
 ## 5. Launch and verify
 
 When the signed app launches, tail:

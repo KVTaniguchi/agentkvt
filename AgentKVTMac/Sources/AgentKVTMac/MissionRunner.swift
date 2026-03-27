@@ -85,7 +85,11 @@ public final class MissionRunner: @unchecked Sendable {
                 try await loop.run(systemPrompt: systemPrompt, userMessage: userMessage) { event in
                     let details: (phase: String, content: String, toolName: String?) = switch event {
                     case .assistantResponse(let content, let toolCalls):
-                        ("assistant", content ?? "Assistant requested \(toolCalls.count) tool call(s).", nil)
+                        (
+                            "assistant",
+                            self.assistantResponseContent(content, toolCallCount: toolCalls.count),
+                            nil
+                        )
                     case .toolCallRequested(let name, let arguments):
                         ("tool_call", arguments, name)
                     case .toolCallCompleted(let name, let result):
@@ -144,5 +148,13 @@ public final class MissionRunner: @unchecked Sendable {
             message += " Mission owner profile ID: \(ownerProfileId.uuidString). Keep outputs grounded in this person's context."
         }
         return message
+    }
+
+    private func assistantResponseContent(_ content: String?, toolCallCount: Int) -> String {
+        let trimmedContent = content?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let trimmedContent, !trimmedContent.isEmpty {
+            return trimmedContent
+        }
+        return "Assistant requested \(toolCallCount) tool call(s)."
     }
 }

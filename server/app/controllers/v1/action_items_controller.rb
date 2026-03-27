@@ -12,7 +12,7 @@ module V1
       action_item = current_workspace.action_items.find(params[:id])
       action_item.update!(
         is_handled: true,
-        handled_at: parsed_time(params[:handled_at]) || Time.current
+        handled_at: parsed_time(params.dig(:action_item, :handled_at) || params[:handled_at]) || Time.current
       )
 
       render json: { action_item: serialize_action_item(action_item) }

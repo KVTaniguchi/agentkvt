@@ -123,6 +123,19 @@ Server Mac runtime config:
   - `AGENTKVT_WORKSPACE_SLUG=default`
   - `AGENTKVT_AGENT_TOKEN=<same token as server/.env>`
 
+Server Mac service status:
+
+- the always-on Mac app is now running under `launchd` as `com.agentkvt.macapp`
+- current live app bundle path:
+  - `~/Applications/AgentKVTMacApp.app`
+- current live runtime config path:
+  - `~/.agentkvt/agentkvt-runner.plist`
+- current live Mac runtime log path:
+  - `~/.agentkvt/logs/agentkvt-macapp.log`
+- these home-path overrides are needed for the current unsigned/Xcode-built server app
+  because app-group config/log file access can hang before startup completes
+- signed/TestFlight builds should continue to use the shared app-group paths instead
+
 ## Current Intended File Layout
 
 Repo-managed code:

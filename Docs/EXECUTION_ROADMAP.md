@@ -14,8 +14,10 @@ Build a private, local-first planning system where:
 
 - the macOS Brain runs missions and generates structured outputs
 - the iOS Remote presents those outputs as deterministic user actions, with chat available for guided follow-up
-- SwiftData acts as the shared memory and audit layer
+- the Rails backend on Mac acts as the system of record for missions, action items, and logs
 - model usage remains local, constrained, and inspectable
+
+> **Architecture note:** The sync layer was pivoted from CloudKit-as-primary to a Mac-hosted Rails API as the system of record. SwiftData and CloudKit remain in use as a local cache and fallback, but the backend API is now the authoritative source for missions, action items, and logs. See [BACKEND_PIVOT_HANDOFF.md](BACKEND_PIVOT_HANDOFF.md) for the full rationale.
 
 ## MVP Definition
 
@@ -34,7 +36,7 @@ A user can:
 
 The MVP should include:
 
-- shared SwiftData schema for `LifeContext`, `MissionDefinition`, `ActionItem`, `AgentLog`, and current inbound-file support
+- shared data schema for `LifeContext`, `MissionDefinition`, `ActionItem`, `AgentLog`, and inbound-file support
 - iOS UI for viewing action items, editing missions, and managing life context
 - macOS runner that can execute scheduled missions with a restricted tool allowlist
 - local LLM integration through Ollama
@@ -52,28 +54,25 @@ The MVP does not need to fully deliver:
 - broad hardware auto-tuning across all Apple Silicon tiers
 - fully comprehensive tool-call tracing
 
-## Current Repo Snapshot
+## Current Repo Snapshot (as of March 2026)
 
-Based on the current code and docs, AgentKVT appears to already have a meaningful vertical slice.
+All major components are implemented with real business logic. This is no longer a vertical slice — it is a functioning system at the code level. The primary open question is whether the E2E loop closes reliably in practice.
 
-### Likely implemented
+### Implemented and verified by code review
 
-- `ManagerCore` shared models and Swift package
-- `AgentKVTMac` runner, mission scheduler, mission runner, and tool registry
-- local Ollama integration
-- multiple tools, including action writing, web, GitHub, email, inbound, and browser-scanning tools
-- iOS SwiftUI app with dashboard, missions, context, and log views
-- tests for models, scheduler behavior, tool registry, and parts of inbound flows
-- foundational docs for data flow, sync, throttling, E2E verification, tool IDs, and dropzone behavior
+- **Rails API backend** — full CRUD for missions, action items, agent logs, family members; workspace isolation via `X-Workspace-Slug`; bearer token auth for Mac agent endpoints; `MissionSchedule` service with daily/weekly scheduling and `last_run_at` idempotency; integration tests covering the full agent workflow
+- **Mac runner** — scheduler, `OllamaClient` (llama3.2 on localhost:11434), tool registry with ~13 tools, `BackendAPIClient` for writing results back to the server, `MissionLogWriter` with structured phases
+- **iOS app** — mission CRUD with validation, action item display with intent routing, backend sync via `IOSBackendSyncService`, bootstrap on launch, family member profiles, log view
+- **ManagerCore** — shared Swift package with `MissionDefinition`, `ActionItem`, `AgentLog`, `FamilyMember`, `LifeContext`, `ChatThread`, and supporting models
+- **Structured logging** — `AgentLog` phases include `start`, `tool_call`, `assistant`, `outcome`, and `error`; logs are stored in the backend and visible in iOS
 
-### Likely partial or unverified
+### Partial or unverified
 
-- real sync reliability between macOS and iOS
-- CloudKit readiness versus local-only assumptions in docs
-- scheduler correctness around duplicate prevention and idempotency
-- full audit logging for intermediate reasoning and tool calls
-- mission quality and usefulness for real-world user workflows
-- hardened privacy pipeline for all ingestion types
+- **E2E run in practice** — all code exists, but there is no documented evidence of a real mission completing end-to-end and producing useful `ActionItem`s
+- **Dual sync path complexity** — backend API is primary, but CloudKit/SwiftData remain as a secondary path; this creates two sync surfaces to keep aligned
+- **Inbound data sanitization** — email and dropzone ingestion tools exist, but privacy hardening and normalization before LLM exposure appear incomplete
+- **Mission quality** — no flagship mission has been tuned for repeatable, real-world usefulness
+- **`fetch_bee_ai_context` tool** — registered in the tool registry but likely a stub
 
 ### Still aspirational
 
@@ -85,22 +84,27 @@ Based on the current code and docs, AgentKVT appears to already have a meaningfu
 
 ## Existing vs Aspirational
 
-| Area | Current read | Notes |
+| Area | Current status | Notes |
 |---|---|---|
-| Shared data model | Present | Core entities and package structure exist. |
-| iOS deterministic remote + chat | Present | UI exists for actions, missions, context, logs, and a dedicated chat tab. |
-| macOS brain | Present | Runner, scheduler, and mission pipeline appear implemented. |
-| Tool allowlisting | Present | Tool registry and mission tool restrictions are documented and tested. |
-| Local LLM usage | Present | Ollama integration exists. |
-| Ingestion pipeline | Partial | Email/dropzone paths exist, but privacy and normalization likely need hardening. |
-| Auditability | Partial | Final mission outcomes are logged; full traceability appears incomplete. |
-| Sync | Partial | Some code/config exists, but docs suggest uncertainty or deferred completeness. |
-| Hardware-aware scaling | Aspirational | Vision exists; implementation strategy is not yet a finished product capability. |
-| Apple-native NLP/CoreML-first planning | Aspirational | Strong direction, but not yet the dominant implementation story. |
+| Shared data model | Done | Core entities in ManagerCore; backend schema mirrors them. |
+| iOS deterministic remote + chat | Done | Full UI for actions, missions, context, logs, and chat tab. |
+| macOS brain | Done | Runner, scheduler, tool registry, and Ollama integration all implemented. |
+| Tool allowlisting | Done | Per-mission `allowed_mcp_tools` JSONB array; enforced in runner and tested. |
+| Local LLM usage | Done | Ollama integration with tool-calling support (llama3.2 default). |
+| Rails backend as system of record | Done | Full API surface implemented; agent auth via bearer token. |
+| Scheduler idempotency | Done | `last_run_at` tracking in backend; daily/weekly schedule semantics tested. |
+| Structured audit logging | Done | Phase-based `AgentLog` in backend; exposed in iOS log view. |
+| Sync (primary path) | Done | Backend API is authoritative; iOS and Mac both sync via HTTP. |
+| Ingestion pipeline | Partial | Email/dropzone tools exist; privacy sanitization not hardened. |
+| Dual sync path (CloudKit + API) | Partial | Works as fallback; risk of divergence between the two paths. |
+| E2E run verified in practice | Unverified | Code is complete; no documented successful real run on record. |
+| Flagship mission archetype | Not started | No mission has been selected and tuned for repeated real-world use. |
+| Hardware-aware scaling | Aspirational | Vision exists; no implementation. |
+| Apple-native NLP/CoreML-first planning | Aspirational | Strong direction; not yet the dominant implementation story. |
 
 ## Milestones
 
-## Milestone 1: Close the core loop
+### Milestone 1: Close the core loop ✅ (code complete, E2E unverified)
 
 Goal: Make the current vertical slice consistently trustworthy.
 
@@ -111,14 +115,9 @@ Success looks like:
 - `AgentLog` entries make failures and outcomes understandable
 - one documented E2E flow works reliably for repeated testing
 
-Recommended focus:
+Status: All code for this milestone is implemented. The remaining work is to run the system end-to-end, confirm the loop closes in practice, and document the verified happy path. The scheduler, sync, output contracts, and logging are all in place.
 
-- validate the scheduler and due-mission semantics
-- tighten output contracts for `ActionItem` creation
-- verify the shared store and sync assumptions
-- document the exact happy path for one mission from creation to review
-
-## Milestone 2: Harden privacy and ingestion
+### Milestone 2: Harden privacy and ingestion
 
 Goal: Make personal data ingestion safe, local, and dependable.
 
@@ -135,7 +134,7 @@ Recommended focus:
 - add tests for transcript, CSV, and email ingestion paths
 - standardize how inbound data is attached to mission runs
 
-## Milestone 3: Improve trust and observability
+### Milestone 3: Improve trust and observability
 
 Goal: Reduce black-box behavior and make mission execution auditable.
 
@@ -145,13 +144,14 @@ Success looks like:
 - users can understand why an `ActionItem` appeared
 - repeated runs are easier to debug
 
+Status: The phase-based `AgentLog` structure is implemented. The remaining work is validating that logs are rich enough in practice to debug failures, and surfacing enough detail in the iOS log view.
+
 Recommended focus:
 
-- extend `AgentLog` coverage beyond final outcomes
-- define a minimal structured event model for mission execution
-- expose enough log detail in iOS to support review and debugging
+- validate log coverage against a real mission run
+- expose enough log detail in iOS to support review and debugging without guesswork
 
-## Milestone 4: Ship one excellent mission archetype
+### Milestone 4: Ship one excellent mission archetype
 
 Goal: Prove product value with one deeply useful mission, not many shallow ones.
 
@@ -166,7 +166,9 @@ Success looks like:
 - prompts, tools, and output schema are tuned for predictable behavior
 - the user can review and act through structured actions, with chat available for clarifications when needed
 
-## Milestone 5: Expand toward the sovereign planner vision
+Status: Not started. No flagship mission has been selected or tuned.
+
+### Milestone 5: Expand toward the sovereign planner vision
 
 Goal: Move from a working agent platform to a true life-management system.
 
@@ -180,14 +182,12 @@ Focus areas:
 
 ## Recommended Near-Term Backlog
 
-If we want the highest-value next work, the backlog should probably be:
+1. **Run the system end-to-end and document the result** — confirm that a mission created on iOS runs on Mac and produces `ActionItem`s visible in iOS; document the verified happy path in `E2E_VERIFICATION.md`
+2. **Resolve the dual sync path** — decide whether CloudKit/SwiftData remains a supported path or becomes dev-only; eliminate ambiguity so debugging is unambiguous
+3. **Harden inbound-data sanitization and mission-context shaping** — define the boundary between raw inbound data and what reaches the LLM
+4. **Pick one flagship mission and optimize it for repeatable usefulness** — tune prompt, tools, and output schema for a single real-world scenario
 
-1. Verify the end-to-end path for one mission from iOS authoring to iOS action display
-2. Resolve the sync story so docs and runtime behavior agree
-3. Improve scheduler idempotency and duplicate-run protection
-4. Expand `AgentLog` into a more useful execution trace
-5. Harden inbound-data sanitization and mission-context shaping
-6. Pick one flagship mission and optimize it for repeatable usefulness
+Items 3 and 4 from the original backlog (scheduler idempotency, `AgentLog` expansion) are now implemented.
 
 ## Key Product Decisions To Keep Stable
 
@@ -195,9 +195,10 @@ To avoid drift, these decisions should remain the default unless we intentionall
 
 - deterministic actions remain the primary interaction model, with chat as a complementary interface
 - mission outputs should become structured `ActionItem`s
-- tools should stay sandboxed and explicitly allowlisted
+- tools should stay sandboxed and explicitly allowlisted per mission
 - personal data should be sanitized locally before broad model exposure
-- local-first execution should be the baseline, with cloud dependency treated as optional
+- local-first execution should be the baseline; the Rails backend runs on the same Mac as the agent runner
+- the backend API is the system of record; CloudKit/SwiftData is a cache, not an authority
 
 ## Working Definition of Done
 
@@ -211,11 +212,9 @@ A roadmap item should generally be considered done when:
 
 ## Suggested Immediate Execution Order
 
-If we continue directly from this document, the best next sequence is:
+The system architecture is complete. The best next sequence is:
 
-1. audit the current E2E path for one mission
-2. reconcile sync and schema documentation with actual runtime behavior
-3. tighten scheduler and logging reliability
+1. run the system end-to-end for one mission and confirm the loop closes in practice
+2. document the verified happy path and any gaps found during the run
+3. decide on the dual sync path (backend-only vs. backend + CloudKit)
 4. select and refine a single flagship mission for MVP
-
-This keeps us focused on proving a trustworthy core loop before chasing the broader sovereign-planner feature set.
