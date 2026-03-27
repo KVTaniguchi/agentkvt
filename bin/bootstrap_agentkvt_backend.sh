@@ -31,6 +31,11 @@ brew list ruby >/dev/null 2>&1 || brew install ruby
 brew list postgresql@16 >/dev/null 2>&1 || brew install postgresql@16
 
 export PATH="${RUBY_PREFIX}/bin:${POSTGRES_PREFIX}/bin:${PATH}"
+USER_GEM_HOME="$(ruby -r rubygems -e 'print Gem.user_dir')"
+USER_GEM_BIN="${USER_GEM_HOME}/bin"
+export GEM_HOME="${USER_GEM_HOME}"
+export GEM_PATH="${USER_GEM_HOME}"
+export PATH="${USER_GEM_BIN}:${PATH}"
 
 ensure_command gem
 ensure_command initdb
@@ -40,11 +45,22 @@ ensure_command createdb
 
 mkdir -p "${LOG_DIR}" "${BACKUP_DIR}"
 
-gem list -i bundler >/dev/null 2>&1 || gem install bundler
-gem list -i rails -v 8.0.5 >/dev/null 2>&1 || gem install rails -v 8.0.5
+gem list -i bundler >/dev/null 2>&1 || gem install bundler --no-document
+gem list -i rails -v 8.0.5 >/dev/null 2>&1 || gem install rails -v 8.0.5 --no-document
 
 ensure_command bundle
 ensure_command rails
+
+RAILS_CMD="${USER_GEM_BIN}/rails"
+BUNDLE_CMD="${USER_GEM_BIN}/bundle"
+
+if [ ! -x "${RAILS_CMD}" ]; then
+  RAILS_CMD="$(command -v rails)"
+fi
+
+if [ ! -x "${BUNDLE_CMD}" ]; then
+  BUNDLE_CMD="$(command -v bundle)"
+fi
 
 if [ ! -f "${PGDATA}/PG_VERSION" ]; then
   mkdir -p "${PGDATA}"
@@ -66,7 +82,12 @@ if [ ! -f "${SERVER_DIR}/config/application.rb" ]; then
     echo "Refusing to overwrite existing ${SERVER_DIR}. Move it aside or delete it first." >&2
     exit 1
   fi
-  rails _8.0.5_ new "${SERVER_DIR}" --api -d postgresql --skip-git
+  "${RAILS_CMD}" _8.0.5_ new "${SERVER_DIR}" --api -d postgresql --skip-git
+fi
+
+if [ ! -f "${SERVER_DIR}/config/application.rb" ]; then
+  echo "Rails app generation failed. ${SERVER_DIR}/config/application.rb is missing." >&2
+  exit 1
 fi
 
 mkdir -p "${SERVER_DIR}/app/controllers" "${SERVER_DIR}/db/migrate"
@@ -82,7 +103,7 @@ mkdir -p "${SERVER_DIR}/log" "${SERVER_DIR}/tmp" "${SERVER_DIR}/storage"
 touch "${SERVER_DIR}/log/.keep" "${SERVER_DIR}/tmp/.keep" "${SERVER_DIR}/storage/.keep"
 
 cd "${SERVER_DIR}"
-bundle install
+"${BUNDLE_CMD}" install
 bin/rails db:prepare
 
 cat <<EOF
