@@ -179,6 +179,14 @@ struct MissionEditView: View {
     @State private var isSaving = false
     @Environment(\.dismiss) private var dismiss
 
+    private var outputContractAdvisory: String? {
+        guard selectedToolIds.contains("write_action_item"),
+              !trimmedPrompt.lowercased().contains("write_action_item") else {
+            return nil
+        }
+        return "write_action_item is enabled but not mentioned in the prompt. The agent may run and produce no visible output."
+    }
+
     private var trimmedName: String {
         name.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -213,8 +221,21 @@ struct MissionEditView: View {
             Form {
                 Section("Mission") {
                     TextField("Name", text: $name)
-                    TextField("System prompt", text: $systemPrompt, axis: .vertical)
-                        .lineLimit(4...8)
+                    TextField(
+                        "System prompt",
+                        text: $systemPrompt,
+                        prompt: Text("e.g. Search for iOS engineer roles at Series B startups. For each lead, call write_action_item with systemIntent url.open and payloadJson {\"url\": \"...\", \"label\": \"...\"}"),
+                        axis: .vertical
+                    )
+                    .lineLimit(4...8)
+                    Text("To surface results on the dashboard, your prompt must instruct the agent to call write_action_item with one of: calendar.create, mail.reply, reminder.add, url.open.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if let advisory = outputContractAdvisory {
+                        Text(advisory)
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
                 }
                 Section("Schedule") {
                     TextField("Trigger (e.g. daily|08:00, weekly|monday)", text: $triggerSchedule)

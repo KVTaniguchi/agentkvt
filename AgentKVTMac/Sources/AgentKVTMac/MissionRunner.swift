@@ -54,6 +54,10 @@ public final class MissionRunner: @unchecked Sendable {
     private let registry: ToolRegistry
     private let logWriter: any MissionLogWriting
 
+    private final class ActionItemCounter: @unchecked Sendable {
+        var count = 0
+    }
+
     public init(
         modelContext: ModelContext,
         client: any OllamaClientProtocol,
@@ -78,33 +82,44 @@ public final class MissionRunner: @unchecked Sendable {
             content: "Starting mission with \(allowedTools.count) allowed tool(s): \(allowedTools.joined(separator: ", "))",
             toolName: nil
         )
+        let actionItemsCounter = ActionItemCounter()
         let result: String
         do {
             let context = MissionExecutionContext.Context(missionId: request.id, missionName: request.missionName)
             result = try await MissionExecutionContext.$current.withValue(context) {
                 try await loop.run(systemPrompt: systemPrompt, userMessage: userMessage) { event in
-                    let details: (phase: String, content: String, toolName: String?) = switch event {
-                    case .assistantResponse(let content, let toolCalls):
-                        (
-                            "assistant",
-                            self.assistantResponseContent(content, toolCallCount: toolCalls.count),
-                            nil
-                        )
+                    let phase: String
+                    let content: String
+                    let toolName: String?
+                    switch event {
+                    case .assistantResponse(let responseContent, let toolCalls):
+                        phase = "assistant"
+                        content = self.assistantResponseContent(responseContent, toolCallCount: toolCalls.count)
+                        toolName = nil
                     case .toolCallRequested(let name, let arguments):
-                        ("tool_call", arguments, name)
-                    case .toolCallCompleted(let name, let result):
-                        ("tool_result", result, name)
-                    case .finalResponse(let content):
-                        ("assistant_final", content, nil)
+                        phase = "tool_call"
+                        content = arguments
+                        toolName = name
+                    case .toolCallCompleted(let name, let toolResult):
+                        phase = "tool_result"
+                        content = toolResult
+                        toolName = name
+                        if name == "write_action_item" { actionItemsCounter.count += 1 }
+                    case .finalResponse(let responseContent):
+                        phase = "assistant_final"
+                        content = responseContent
+                        toolName = nil
                     case .maxRoundsReached:
-                        ("warning", "Agent loop reached max rounds before producing a final response.", nil)
+                        phase = "warning"
+                        content = "Agent loop reached max rounds before producing a final response."
+                        toolName = nil
                     }
                     await self.logWriter.writeLog(
                         missionId: request.id,
                         missionName: request.missionName,
-                        phase: details.phase,
-                        content: details.content,
-                        toolName: details.toolName
+                        phase: phase,
+                        content: content,
+                        toolName: toolName
                     )
                 }
             }
@@ -117,6 +132,15 @@ public final class MissionRunner: @unchecked Sendable {
                 toolName: nil
             )
             throw error
+        }
+        if allowedTools.contains("write_action_item") && actionItemsCounter.count == 0 {
+            await logWriter.writeLog(
+                missionId: request.id,
+                missionName: request.missionName,
+                phase: "warning",
+                content: "Mission completed but write_action_item was never called. No action items were created and the user will see no output. Ensure the system prompt instructs the agent to call write_action_item.",
+                toolName: nil
+            )
         }
         await logWriter.writeLog(
             missionId: request.id,

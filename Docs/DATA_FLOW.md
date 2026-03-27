@@ -93,13 +93,24 @@ flowchart TB
 | Field | Example |
 |-------|--------|
 | **Name** | "Find a job" |
-| **System prompt** | "You are a career coach. Each week, review the user's goals and job-search context from Life Context. Suggest 3 concrete next steps (e.g. apply to X, reach out to Y, update resume for Z). Create one action item per step so the user can tap and act from their phone." |
+| **System prompt** | "You are a career scout. Search for senior iOS roles in SF. For each lead, call write_action_item with systemIntent url.open and payloadJson {\"url\": \"...\", \"label\": \"...\"}." |
 | **Schedule** | `weekly|sunday` (runs every Sunday) or `daily|09:00` (every morning) or `webhook` (only when triggered externally) |
 | **Allowed tools** | e.g. `write_action_item`, `web_search_and_fetch`, `headless_browser_scout`, `send_notification_email`, `fetch_bee_ai_context` |
 
+**Output contract:** If `write_action_item` is in the mission's allowed tools, the system prompt **must** explicitly instruct the agent to call it — otherwise the mission runs silently and produces no visible output on iOS. The iOS authoring UI shows the valid `systemIntent` values and a soft advisory if the prompt doesn't mention `write_action_item`. The backend also validates this before saving.
+
+**Payload schemas for write_action_item** (see `SystemIntent.payloadFields` in ManagerCore for the canonical definition):
+
+| systemIntent | Required keys | Optional keys |
+|---|---|---|
+| `calendar.create` | `eventTitle`, `startDate` (ISO-8601) | `durationMinutes`, `notes` |
+| `mail.reply` | `toAddress`, `subject`, `draftBody` | — |
+| `reminder.add` | `reminderTitle` | `dueDate` (ISO-8601), `notes` |
+| `url.open` | `url` (absolute) | `label` |
+
 **Data stored:** A `MissionDefinition` record in SwiftData (same schema on iOS and Mac). Optionally the user also maintains **Life Context** (e.g. key `goals` = "Senior iOS role in SF", key `location` = "PST") used by missions.
 
-**How it reaches the Mac:** The iOS app and Mac app share the same SwiftData schema. In a typical setup, they share a store (e.g. via CloudKit sync, or a shared volume on the Mac). The Mac process reads from that store; it does not have its own UI.
+**How it reaches the Mac:** The iOS app syncs mission data to the Mac-hosted Rails backend via HTTP. The Mac runner polls the backend for due missions on a 60-second clock tick.
 
 ---
 
@@ -130,10 +141,11 @@ flowchart TB
 **What it does:**
 
 1. Builds an **AgentLoop** with the mission’s **allowedMCPTools**.
-2. **System prompt** = mission’s `systemPrompt` (e.g. the career-coach instructions).
+2. **System prompt** = mission’s `systemPrompt`.
 3. **User message** = “Execute your mission. Use the available tools to create action items or other outputs…” — and if there is Dropzone or other inbound content, it’s prepended as “Additional context from inbound files: …”.
 4. Calls **AgentLoop.run(systemPrompt:userMessage:)**.
-5. When the loop finishes, it writes an **AgentLog** entry with `phase: "outcome"` and the final result (or logs an error and rethrows).
+5. When the loop finishes, it writes an **AgentLog** entry with `phase: “outcome”` and the final result (or logs an error and rethrows).
+6. If `write_action_item` was an allowed tool but was never called during the run, a `phase: “warning”` log is written: “Mission completed but write_action_item was never called. No action items were created and the user will see no output.” This is visible in the iOS log view.
 
 So the “process” for each mission is: **one LLM conversation**, with the mission’s instructions and optional extra context, during which the model can call tools.
 

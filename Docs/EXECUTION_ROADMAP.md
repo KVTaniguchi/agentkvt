@@ -74,6 +74,10 @@ All major components are implemented with real business logic. This is no longer
 - **Mission quality** — no flagship mission has been tuned for repeatable, real-world usefulness
 - **`fetch_bee_ai_context` tool** — registered in the tool registry but likely a stub
 
+### Recently completed
+
+- **Output contract** — the `write_action_item` tool now includes the full per-intent `payloadJson` schema in its description (so Ollama receives it on every run). The iOS mission authoring UI shows valid intents, a worked example as placeholder text, and an orange advisory when `write_action_item` is toggled on but absent from the prompt. The backend blocks saving a mission in this inconsistent state. The Mac runner emits a `"warning"` phase log if a mission completes without ever calling `write_action_item`. The canonical payload schema is defined in `ManagerCore/Sources/ManagerCore/SystemIntent.swift` and shared across both targets.
+
 ### Still aspirational
 
 - automatic hardware-tier model selection and graceful degradation
@@ -95,6 +99,7 @@ All major components are implemented with real business logic. This is no longer
 | Scheduler idempotency | Done | `last_run_at` tracking in backend; daily/weekly schedule semantics tested. |
 | Structured audit logging | Done | Phase-based `AgentLog` in backend; exposed in iOS log view. |
 | Sync (primary path) | Done | Backend API is authoritative; iOS and Mac both sync via HTTP. |
+| Output contract for write_action_item | Done | Per-intent payload schema in tool description, iOS authoring guidance, backend validation, no-output warning log. |
 | Ingestion pipeline | Partial | Email/dropzone tools exist; privacy sanitization not hardened. |
 | Dual sync path (CloudKit + API) | Partial | Works as fallback; risk of divergence between the two paths. |
 | E2E run verified in practice | Unverified | Code is complete; no documented successful real run on record. |

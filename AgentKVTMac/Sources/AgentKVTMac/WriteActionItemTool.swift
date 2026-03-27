@@ -58,20 +58,27 @@ struct BackendActionItemWriter: ActionItemWriting {
 /// MCP-style tool that writes a single ActionItem to the shared store.
 /// Only title and systemIntent are taken from LLM; payloadData is optional and validated.
 public func makeWriteActionItemTool(actionItemWriter: any ActionItemWriting) -> ToolRegistry.Tool {
-    ToolRegistry.Tool(
+    let payloadDescription: String = SystemIntent.allCases.map { intent in
+        let fields = intent.payloadFields.map { f in
+            "\(f.key): \(f.valueType)\(f.required ? "" : " (optional)")"
+        }.joined(separator: ", ")
+        return "\(intent.rawValue) → {\(fields)}"
+    }.joined(separator: "; ")
+
+    return ToolRegistry.Tool(
         id: "write_action_item",
         name: "write_action_item",
-        description: "Write a dynamic action item (button) for the iOS dashboard. Use this to present a result or recommendation to the user.",
+        description: "Write a dynamic action item (button) for the iOS dashboard. Call this tool to surface a result or recommendation to the user. Choose the systemIntent that best fits the output, then populate payloadJson with the required fields for that intent.",
         parameters: .init(
             type: "object",
             properties: [
                 "title": .init(type: "string", description: "Short button label, e.g. 'Review New Job Leads'"),
                 "systemIntent": .init(
                     type: "string",
-                    description: "Intent identifier for the button",
+                    description: "Intent identifier for the button. Determines which native iOS action is triggered.",
                     enumValues: SystemIntent.allCases.map(\.rawValue)
                 ),
-                "payloadJson": .init(type: "string", description: "Optional JSON string payload; omit or empty if not needed")
+                "payloadJson": .init(type: "string", description: "JSON object string with intent-specific fields. \(payloadDescription)")
             ],
             required: ["title", "systemIntent"]
         ),
