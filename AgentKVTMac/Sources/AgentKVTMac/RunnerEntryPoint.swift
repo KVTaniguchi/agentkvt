@@ -1,3 +1,4 @@
+import CloudKit
 import Foundation
 import ManagerCore
 import SwiftData
@@ -13,6 +14,7 @@ public func runAgentKVTMacRunner() async {
     for message in settings.startupMessages {
         print(message)
     }
+    logMacCloudKitDiagnostics()
 
     let schema = Schema([
         LifeContext.self,
@@ -142,6 +144,46 @@ public func runAgentKVTMacRunner() async {
         )
     } else {
         await runSingleTest(registry: registry, client: client)
+    }
+}
+
+private func logMacCloudKitDiagnostics() {
+    let container = CKContainer(identifier: cloudKitContainerIdentifier)
+    print("[CloudKitDiagnostics] Container: \(cloudKitContainerIdentifier)")
+    container.accountStatus { status, error in
+        if let error {
+            print("[CloudKitDiagnostics] accountStatus error: \(error)")
+            return
+        }
+        print("[CloudKitDiagnostics] accountStatus: \(describeCloudKitAccountStatus(status))")
+    }
+    container.fetchUserRecordID { recordID, error in
+        if let error {
+            print("[CloudKitDiagnostics] userRecordID error: \(error)")
+            return
+        }
+        guard let recordID else {
+            print("[CloudKitDiagnostics] userRecordID: nil")
+            return
+        }
+        print("[CloudKitDiagnostics] userRecordID: \(recordID.recordName) zone=\(recordID.zoneID.zoneName)")
+    }
+}
+
+private func describeCloudKitAccountStatus(_ status: CKAccountStatus) -> String {
+    switch status {
+    case .available:
+        return "available"
+    case .couldNotDetermine:
+        return "couldNotDetermine"
+    case .noAccount:
+        return "noAccount"
+    case .restricted:
+        return "restricted"
+    case .temporarilyUnavailable:
+        return "temporarilyUnavailable"
+    @unknown default:
+        return "unknown(\(status.rawValue))"
     }
 }
 

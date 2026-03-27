@@ -18,6 +18,7 @@ let package = Package(
             name: "AgentKVTMac",
             dependencies: ["ManagerCore"],
             linkerSettings: [
+                .linkedFramework("CloudKit"),
                 .linkedFramework("IOKit"),
             ]
         ),

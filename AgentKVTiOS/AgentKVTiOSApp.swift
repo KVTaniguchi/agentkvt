@@ -1,3 +1,4 @@
+import CloudKit
 import SwiftUI
 import SwiftData
 import ManagerCore
@@ -12,6 +13,7 @@ struct AgentKVTiOSApp: App {
     var sharedModelContainer: ModelContainer = {
         let logFile = IOSRuntimeLog.bootstrap(processLabel: "AgentKVTiOSApp")
         IOSRuntimeLog.log("[Logging] Writing logs to \(logFile.path)")
+        logIOSCloudKitDiagnostics()
         let schema = Schema([
             LifeContext.self,
             MissionDefinition.self,
@@ -78,6 +80,46 @@ struct AgentKVTiOSApp: App {
                 .environmentObject(familyProfileStore)
         }
         .modelContainer(sharedModelContainer)
+    }
+}
+
+private func logIOSCloudKitDiagnostics() {
+    let container = CKContainer(identifier: iosCloudKitContainerIdentifier)
+    IOSRuntimeLog.log("[CloudKitDiagnostics] Container: \(iosCloudKitContainerIdentifier)")
+    container.accountStatus { status, error in
+        if let error {
+            IOSRuntimeLog.log("[CloudKitDiagnostics] accountStatus error: \(error)")
+            return
+        }
+        IOSRuntimeLog.log("[CloudKitDiagnostics] accountStatus: \(describeIOSCloudKitAccountStatus(status))")
+    }
+    container.fetchUserRecordID { recordID, error in
+        if let error {
+            IOSRuntimeLog.log("[CloudKitDiagnostics] userRecordID error: \(error)")
+            return
+        }
+        guard let recordID else {
+            IOSRuntimeLog.log("[CloudKitDiagnostics] userRecordID: nil")
+            return
+        }
+        IOSRuntimeLog.log("[CloudKitDiagnostics] userRecordID: \(recordID.recordName) zone=\(recordID.zoneID.zoneName)")
+    }
+}
+
+private func describeIOSCloudKitAccountStatus(_ status: CKAccountStatus) -> String {
+    switch status {
+    case .available:
+        return "available"
+    case .couldNotDetermine:
+        return "couldNotDetermine"
+    case .noAccount:
+        return "noAccount"
+    case .restricted:
+        return "restricted"
+    case .temporarilyUnavailable:
+        return "temporarilyUnavailable"
+    @unknown default:
+        return "unknown(\(status.rawValue))"
     }
 }
 
