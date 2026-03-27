@@ -26,6 +26,7 @@ actor MissionExecutionQueue {
     // MARK: - Dependencies (all actor-isolated; safe from any thread via await)
 
     private let modelContext: ModelContext
+    private let modelContainer: ModelContainer
     private let scheduler: MissionScheduler
     private let missionRunner: MissionRunner
     private let chatRunner: ChatRunner
@@ -42,12 +43,14 @@ actor MissionExecutionQueue {
 
     init(
         modelContext: SharedModelContext,
+        modelContainer: ModelContainer,
         client: OllamaClient,
         registry: ToolRegistry,
         emailIngestor: EmailIngestor,
         dropzoneDir: URL
     ) {
         self.modelContext = modelContext.raw
+        self.modelContainer = modelContainer
         self.scheduler = MissionScheduler()
         self.missionRunner = MissionRunner(modelContext: modelContext.raw, client: client, registry: registry)
         self.chatRunner = ChatRunner(modelContext: modelContext.raw, client: client, registry: registry)
@@ -110,15 +113,20 @@ actor MissionExecutionQueue {
             }
             while try await chatRunner.processNextPendingMessage() {}
 
-            let missions = try modelContext.fetch(FetchDescriptor<MissionDefinition>())
+            let staleContextMissionCount = (try? modelContext.fetch(FetchDescriptor<MissionDefinition>()).count) ?? -1
+            let fetchContext = freshContext()
+            let missions = try fetchContext.fetch(FetchDescriptor<MissionDefinition>())
+            if staleContextMissionCount != missions.count {
+                print("[MissionExecutionQueue] Fresh-context visibility differs: long-lived context sees \(staleContextMissionCount), fresh context sees \(missions.count).")
+            }
             let dueScheduledMissions = scheduler.dueMissions(from: missions)
             print("[MissionExecutionQueue] Clock tick: \(describeMissionSnapshot(missions, dueScheduledMissions: dueScheduledMissions))")
-            if try StigmergyBoardMaintenance.hasActiveWorkUnits(modelContext: modelContext) {
+            if try StigmergyBoardMaintenance.hasActiveWorkUnits(modelContext: fetchContext) {
                 let boardSchedule = WorkUnit.boardMissionTriggerSchedule
                 for mission in missions where mission.isEnabled && mission.triggerSchedule == boardSchedule {
                 mission.lastRunAt = Date()
                 mission.updatedAt = Date()
-                try modelContext.save()
+                try fetchContext.save()
                 let request = MissionRunner.Request(mission)
                 do {
                     try await missionRunner.run(request)
@@ -132,7 +140,7 @@ actor MissionExecutionQueue {
             for mission in dueScheduledMissions {
                 mission.lastRunAt = Date()
                 mission.updatedAt = Date()
-                try modelContext.save()
+                try fetchContext.save()
                 let request = MissionRunner.Request(mission)
                 do {
                     try await missionRunner.run(request)
@@ -146,12 +154,13 @@ actor MissionExecutionQueue {
         case .emailFile(let url):
             print("[MissionExecutionQueue] Email arrived: \(url.lastPathComponent)")
             emailIngestor.scan()
-            let missions = try modelContext.fetch(FetchDescriptor<MissionDefinition>())
+            let fetchContext = freshContext()
+            let missions = try fetchContext.fetch(FetchDescriptor<MissionDefinition>())
             for mission in missions where mission.isEnabled
                 && mission.allowedMCPTools.contains("incoming_email_trigger") {
                 mission.lastRunAt = Date()
                 mission.updatedAt = Date()
-                try modelContext.save()
+                try fetchContext.save()
                 let request = MissionRunner.Request(mission)
                 do {
                     try await missionRunner.run(request)
@@ -165,13 +174,14 @@ actor MissionExecutionQueue {
         case .inboundFile(let url):
             print("[MissionExecutionQueue] Inbound file arrived: \(url.lastPathComponent)")
             dropzone.scan()
-            let missions = try modelContext.fetch(FetchDescriptor<MissionDefinition>())
+            let fetchContext = freshContext()
+            let missions = try fetchContext.fetch(FetchDescriptor<MissionDefinition>())
             for mission in missions where mission.isEnabled
                 && (mission.allowedMCPTools.contains("list_dropzone_files")
                     || mission.allowedMCPTools.contains("read_dropzone_file")) {
                 mission.lastRunAt = Date()
                 mission.updatedAt = Date()
-                try modelContext.save()
+                try fetchContext.save()
                 let request = MissionRunner.Request(mission)
                 do {
                     try await missionRunner.run(request)
@@ -192,12 +202,13 @@ actor MissionExecutionQueue {
                 atomically: true,
                 encoding: .utf8
             )
-            let missions = try modelContext.fetch(FetchDescriptor<MissionDefinition>())
+            let fetchContext = freshContext()
+            let missions = try fetchContext.fetch(FetchDescriptor<MissionDefinition>())
             for mission in missions where mission.isEnabled
                 && mission.triggerSchedule == "webhook" {
                 mission.lastRunAt = Date()
                 mission.updatedAt = Date()
-                try modelContext.save()
+                try fetchContext.save()
                 let request = MissionRunner.Request(mission)
                 do {
                     try await missionRunner.run(request)
@@ -212,21 +223,22 @@ actor MissionExecutionQueue {
         // pushed a compact IncomingEmailSummary via CloudKit. Find missions that
         // declare fetch_email_summaries in their allowed tools and run them.
         case .cloudKitSync:
+            let fetchContext = freshContext()
             let descriptor = FetchDescriptor<IncomingEmailSummary>(
                 predicate: #Predicate { !$0.processedByMac }
             )
-            let pending = (try? modelContext.fetch(descriptor)) ?? []
+            let pending = (try? fetchContext.fetch(descriptor)) ?? []
             guard !pending.isEmpty else {
                 print("[MissionExecutionQueue] CloudKit sync: no pending summaries.")
                 return
             }
             print("[MissionExecutionQueue] CloudKit sync: \(pending.count) pending summary(ies).")
-            let missions = try modelContext.fetch(FetchDescriptor<MissionDefinition>())
+            let missions = try fetchContext.fetch(FetchDescriptor<MissionDefinition>())
             for mission in missions where mission.isEnabled
                 && mission.allowedMCPTools.contains("fetch_email_summaries") {
                 mission.lastRunAt = Date()
                 mission.updatedAt = Date()
-                try modelContext.save()
+                try fetchContext.save()
                 let request = MissionRunner.Request(mission)
                 do {
                     try await missionRunner.run(request)
@@ -260,6 +272,10 @@ actor MissionExecutionQueue {
 
         let dueNames = dueScheduledMissions.map(\.missionName).joined(separator: ", ")
         return "\(missions.count) mission(s) visible, \(enabledCount) enabled, \(dueScheduledMissions.count) due now (\(dueNames)). Visible: \(missionList)"
+    }
+
+    private func freshContext() -> ModelContext {
+        ModelContext(modelContainer)
     }
 
     private static func logTimestamp(_ date: Date) -> String {

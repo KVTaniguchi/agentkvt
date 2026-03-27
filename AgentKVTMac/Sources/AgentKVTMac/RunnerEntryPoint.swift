@@ -132,6 +132,7 @@ public func runAgentKVTMacRunner() async {
     if settings.runScheduler {
         await runScheduler(
             context: sharedModelContext,
+            modelContainer: container,
             client: client,
             registry: registry,
             emailIngestor: emailIngestor,
@@ -170,6 +171,7 @@ private func runSingleTest(registry: ToolRegistry, client: OllamaClient) async {
 
 private func runScheduler(
     context: SharedModelContext,
+    modelContainer: ModelContainer,
     client: OllamaClient,
     registry: ToolRegistry,
     emailIngestor: EmailIngestor,
@@ -183,6 +185,7 @@ private func runScheduler(
     // (priority-sorted, bounded at 64 items) and are drained after inference completes.
     let executionQueue = MissionExecutionQueue(
         modelContext: context,
+        modelContainer: modelContainer,
         client: client,
         registry: registry,
         emailIngestor: emailIngestor,
