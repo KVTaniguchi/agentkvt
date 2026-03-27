@@ -1,10 +1,9 @@
 require "test_helper"
+require "securerandom"
 
 class V1AgentEndpointsTest < ActionDispatch::IntegrationTest
-  JSON_HEADERS = { "ACCEPT" => "application/json" }.freeze
-
   setup do
-    @workspace = Workspace.create!(name: "Default Workspace", slug: "default")
+    @workspace = Workspace.create!(name: "Default Workspace", slug: "workspace-#{SecureRandom.hex(4)}")
     @mission = @workspace.missions.create!(
       mission_name: "Tech Job Scout",
       system_prompt: "Create one action item.",
@@ -16,7 +15,7 @@ class V1AgentEndpointsTest < ActionDispatch::IntegrationTest
 
   test "agent can fetch due missions and write results" do
     travel_to Time.zone.parse("2026-03-27 21:05:00 UTC") do
-      get "/v1/agent/due_missions", params: { at: Time.current.iso8601 }, headers: JSON_HEADERS
+      get "/v1/agent/due_missions", params: { at: Time.current.iso8601 }, headers: workspace_headers
       assert_response :success
       assert_equal 1, JSON.parse(response.body).fetch("due_missions").length
 
@@ -26,7 +25,7 @@ class V1AgentEndpointsTest < ActionDispatch::IntegrationTest
           system_intent: "url.open",
           payload_json: { url: "https://example.com/jobs/1" }
         }
-      }, as: :json
+      }, as: :json, headers: workspace_headers
       assert_response :created
 
       post "/v1/agent/missions/#{@mission.id}/logs", params: {
@@ -34,17 +33,23 @@ class V1AgentEndpointsTest < ActionDispatch::IntegrationTest
           phase: "outcome",
           content: "Created an action item."
         }
-      }, as: :json
+      }, as: :json, headers: workspace_headers
       assert_response :created
 
       post "/v1/agent/missions/#{@mission.id}/mark_run", params: {
         ran_at: Time.current.iso8601
-      }, as: :json
+      }, as: :json, headers: workspace_headers
       assert_response :success
     end
 
     assert_equal 1, @workspace.action_items.count
     assert_equal 1, @workspace.agent_logs.count
     assert_not_nil @mission.reload.last_run_at
+  end
+
+  private
+
+  def workspace_headers
+    { "X-Workspace-Slug" => @workspace.slug, "ACCEPT" => "application/json" }
   end
 end
