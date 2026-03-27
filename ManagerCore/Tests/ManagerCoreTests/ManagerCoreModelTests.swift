@@ -175,4 +175,54 @@ struct ManagerCoreModelTests {
         #expect(messages.count == 1)
         #expect(messages[0].threadId == thread.id)
     }
+
+    @Test("Deleting a mission persists removal while mission-linked rows remain readable")
+    func missionDeletionPersistsAcrossContexts() throws {
+        let schema = Schema([
+            MissionDefinition.self,
+            ActionItem.self,
+            AgentLog.self,
+        ])
+        let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: schema, configurations: [config])
+        let context = ModelContext(container)
+
+        let mission = MissionDefinition(
+            missionName: "Nightly Briefing",
+            systemPrompt: "Summarize the latest updates.",
+            triggerSchedule: "daily|20:00",
+            allowedMCPTools: ["write_action_item"]
+        )
+        let actionItem = ActionItem(
+            title: "Review nightly briefing",
+            systemIntent: SystemIntent.urlOpen.rawValue,
+            missionId: mission.id
+        )
+        let log = AgentLog(
+            missionId: mission.id,
+            missionName: mission.missionName,
+            phase: "outcome",
+            content: "Mission completed successfully."
+        )
+
+        context.insert(mission)
+        context.insert(actionItem)
+        context.insert(log)
+        try context.save()
+
+        context.delete(mission)
+        try context.save()
+
+        let verificationContext = ModelContext(container)
+        let missions = try verificationContext.fetch(FetchDescriptor<MissionDefinition>())
+        let actionItems = try verificationContext.fetch(FetchDescriptor<ActionItem>())
+        let logs = try verificationContext.fetch(FetchDescriptor<AgentLog>())
+
+        #expect(missions.isEmpty)
+        #expect(actionItems.count == 1)
+        #expect(actionItems[0].missionId == mission.id)
+        #expect(logs.count == 1)
+        #expect(logs[0].missionId == mission.id)
+        #expect(logs[0].missionName == "Nightly Briefing")
+    }
 }
