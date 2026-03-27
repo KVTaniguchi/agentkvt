@@ -1,6 +1,8 @@
 require "test_helper"
 
 class V1AgentEndpointsTest < ActionDispatch::IntegrationTest
+  JSON_HEADERS = { "ACCEPT" => "application/json" }.freeze
+
   setup do
     @workspace = Workspace.create!(name: "Default Workspace", slug: "default")
     @mission = @workspace.missions.create!(
@@ -14,7 +16,7 @@ class V1AgentEndpointsTest < ActionDispatch::IntegrationTest
 
   test "agent can fetch due missions and write results" do
     travel_to Time.zone.parse("2026-03-27 21:05:00 UTC") do
-      get "/v1/agent/due_missions", params: { at: Time.current.iso8601 }, as: :json
+      get "/v1/agent/due_missions", params: { at: Time.current.iso8601 }, headers: JSON_HEADERS
       assert_response :success
       assert_equal 1, JSON.parse(response.body).fetch("due_missions").length
 
