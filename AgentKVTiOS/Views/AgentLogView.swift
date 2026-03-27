@@ -51,6 +51,15 @@ struct AgentLogView: View {
                 .emptyState(filteredLogs.isEmpty, message: emptyMessage)
             }
             .navigationTitle("Agent Log")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    if let runtimeLogURL = IOSRuntimeLog.availableLogFileURL {
+                        ShareLink(item: runtimeLogURL) {
+                            Label("Export runtime log", systemImage: "square.and.arrow.up")
+                        }
+                    }
+                }
+            }
         }
     }
 

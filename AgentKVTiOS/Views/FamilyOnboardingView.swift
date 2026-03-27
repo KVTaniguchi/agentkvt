@@ -62,13 +62,16 @@ struct FamilyOnboardingView: View {
         guard !name.isEmpty else { return }
         let sym = symbol.trimmingCharacters(in: .whitespacesAndNewlines)
         let member = FamilyMember(displayName: name, symbol: sym)
+        IOSRuntimeLog.log("[FamilyOnboardingView] Creating initial family member '\(name)' symbol='\(sym)'")
         modelContext.insert(member)
         do {
             try modelContext.save()
             profileStore.selectProfile(member.id)
             errorMessage = nil
+            IOSRuntimeLog.log("[FamilyOnboardingView] Created initial family member id=\(member.id.uuidString)")
         } catch {
             errorMessage = error.localizedDescription
+            IOSRuntimeLog.log("[FamilyOnboardingView] Failed to create initial family member '\(name)': \(error)")
         }
     }
 }
@@ -112,12 +115,15 @@ struct AddFamilyMemberSheet: View {
         let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return }
         let sym = symbol.trimmingCharacters(in: .whitespacesAndNewlines)
+        IOSRuntimeLog.log("[AddFamilyMemberSheet] Creating family member '\(name)' symbol='\(sym)'")
         modelContext.insert(FamilyMember(displayName: name, symbol: sym))
         do {
             try modelContext.save()
+            IOSRuntimeLog.log("[AddFamilyMemberSheet] Created family member '\(name)'")
             dismiss()
         } catch {
             errorMessage = error.localizedDescription
+            IOSRuntimeLog.log("[AddFamilyMemberSheet] Failed to create family member '\(name)': \(error)")
         }
     }
 }

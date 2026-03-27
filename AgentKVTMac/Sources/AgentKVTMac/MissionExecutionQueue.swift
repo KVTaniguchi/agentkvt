@@ -120,21 +120,22 @@ actor MissionExecutionQueue {
                 print("[MissionExecutionQueue] Fresh-context visibility differs: long-lived context sees \(staleContextMissionCount), fresh context sees \(missions.count).")
             }
             let dueScheduledMissions = scheduler.dueMissions(from: missions)
-            print("[MissionExecutionQueue] Clock tick: \(describeMissionSnapshot(missions, dueScheduledMissions: dueScheduledMissions))")
+            let storeCensus = describeStoreCensus(in: fetchContext, missionCount: missions.count)
+            print("[MissionExecutionQueue] Clock tick: \(describeMissionSnapshot(missions, dueScheduledMissions: dueScheduledMissions, storeCensus: storeCensus))")
             if try StigmergyBoardMaintenance.hasActiveWorkUnits(modelContext: fetchContext) {
                 let boardSchedule = WorkUnit.boardMissionTriggerSchedule
                 for mission in missions where mission.isEnabled && mission.triggerSchedule == boardSchedule {
-                mission.lastRunAt = Date()
-                mission.updatedAt = Date()
-                try fetchContext.save()
-                let request = MissionRunner.Request(mission)
-                do {
-                    try await missionRunner.run(request)
-                    print("[MissionExecutionQueue] Ran work unit board mission: \(mission.missionName)")
-                } catch {
-                    print("[MissionExecutionQueue] Work unit board mission '\(mission.missionName)' failed: \(error)")
+                    mission.lastRunAt = Date()
+                    mission.updatedAt = Date()
+                    try fetchContext.save()
+                    let request = MissionRunner.Request(mission)
+                    do {
+                        try await missionRunner.run(request)
+                        print("[MissionExecutionQueue] Ran work unit board mission: \(mission.missionName)")
+                    } catch {
+                        print("[MissionExecutionQueue] Work unit board mission '\(mission.missionName)' failed: \(error)")
+                    }
                 }
-            }
             }
 
             for mission in dueScheduledMissions {
@@ -252,10 +253,11 @@ actor MissionExecutionQueue {
 
     private func describeMissionSnapshot(
         _ missions: [MissionDefinition],
-        dueScheduledMissions: [MissionDefinition]
+        dueScheduledMissions: [MissionDefinition],
+        storeCensus: String
     ) -> String {
         guard !missions.isEmpty else {
-            return "0 missions visible on Mac store."
+            return "0 missions visible on Mac store. \(storeCensus)"
         }
 
         let enabledCount = missions.filter(\.isEnabled).count
@@ -272,6 +274,16 @@ actor MissionExecutionQueue {
 
         let dueNames = dueScheduledMissions.map(\.missionName).joined(separator: ", ")
         return "\(missions.count) mission(s) visible, \(enabledCount) enabled, \(dueScheduledMissions.count) due now (\(dueNames)). Visible: \(missionList)"
+    }
+
+    private func describeStoreCensus(in context: ModelContext, missionCount: Int) -> String {
+        let familyMemberCount = (try? context.fetch(FetchDescriptor<FamilyMember>()).count) ?? -1
+        let actionItemCount = (try? context.fetch(FetchDescriptor<ActionItem>()).count) ?? -1
+        let agentLogCount = (try? context.fetch(FetchDescriptor<AgentLog>()).count) ?? -1
+        let lifeContextCount = (try? context.fetch(FetchDescriptor<LifeContext>()).count) ?? -1
+        let inboundFileCount = (try? context.fetch(FetchDescriptor<InboundFile>()).count) ?? -1
+        let incomingEmailSummaryCount = (try? context.fetch(FetchDescriptor<IncomingEmailSummary>()).count) ?? -1
+        return "Store census: familyMembers=\(familyMemberCount), missions=\(missionCount), actionItems=\(actionItemCount), agentLogs=\(agentLogCount), lifeContexts=\(lifeContextCount), inboundFiles=\(inboundFileCount), emailSummaries=\(incomingEmailSummaryCount)."
     }
 
     private func freshContext() -> ModelContext {

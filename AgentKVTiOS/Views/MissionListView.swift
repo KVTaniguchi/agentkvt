@@ -9,6 +9,7 @@ struct MissionListView: View {
     @Query(sort: \MissionDefinition.updatedAt, order: .reverse) private var missions: [MissionDefinition]
     @Query(sort: \FamilyMember.createdAt, order: .forward) private var familyMembers: [FamilyMember]
     @State private var showAddMission = false
+    @State private var deletionErrorMessage: String?
 
     private static let knownToolIds = ["write_action_item", "web_search_and_fetch", "headless_browser_scout", "send_notification_email", "github_agent", "fetch_bee_ai_context", "incoming_email_trigger"]
 
@@ -23,13 +24,15 @@ struct MissionListView: View {
                             familyMembers: familyMembers,
                             defaultOwnerProfileId: profileStore.currentProfileId
                         ) { name, prompt, schedule, tools, ownerProfileId in
+                            IOSRuntimeLog.log("[MissionListView] Saving existing mission '\(name)' schedule=\(schedule) tools=\(tools.joined(separator: ",")) owner=\(ownerProfileId?.uuidString ?? "none")")
                             mission.missionName = name
                             mission.systemPrompt = prompt
                             mission.triggerSchedule = schedule
                             mission.allowedMCPTools = tools
                             mission.ownerProfileId = ownerProfileId
                             mission.updatedAt = Date()
-                            try? modelContext.save()
+                            try modelContext.save()
+                            IOSRuntimeLog.log("[MissionListView] Saved existing mission id=\(mission.id.uuidString)")
                         }
                     } label: {
                         MissionRow(
@@ -40,6 +43,7 @@ struct MissionListView: View {
                         )
                     }
                 }
+                .onDelete(perform: deleteMissions)
             }
             .navigationTitle("Missions")
             .toolbar {
@@ -61,11 +65,69 @@ struct MissionListView: View {
                         allowedMCPTools: tools,
                         ownerProfileId: ownerProfileId
                     )
+                    IOSRuntimeLog.log("[MissionListView] Creating mission '\(name)' schedule=\(schedule) tools=\(tools.joined(separator: ",")) owner=\(ownerProfileId?.uuidString ?? "none")")
                     modelContext.insert(m)
-                    try? modelContext.save()
+                    try modelContext.save()
+                    IOSRuntimeLog.log("[MissionListView] Created mission id=\(m.id.uuidString)")
                     showAddMission = false
                 }
             }
+        }
+        .alert("Delete Mission Failed", isPresented: Binding(
+            get: { deletionErrorMessage != nil },
+            set: { if !$0 { deletionErrorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {
+                deletionErrorMessage = nil
+            }
+        } message: {
+            Text(deletionErrorMessage ?? "The mission could not be deleted.")
+        }
+        .onAppear {
+            logMissionSnapshot(reason: "Appeared")
+        }
+        .onChange(of: missionVisibilitySignature) { _, _ in
+            logMissionSnapshot(reason: "Mission list changed")
+        }
+    }
+
+    private var missionVisibilitySignature: [String] {
+        missions.map {
+            "\($0.id.uuidString)|\($0.updatedAt.timeIntervalSince1970)|\($0.isEnabled)|\($0.triggerSchedule)"
+        }
+    }
+
+    private func logMissionSnapshot(reason: String) {
+        let missionList = missions
+            .map { mission in
+                "\(mission.missionName) [\(mission.triggerSchedule)] enabled=\(mission.isEnabled) owner=\(mission.ownerProfileId?.uuidString ?? "none")"
+            }
+            .joined(separator: "; ")
+        if missionList.isEmpty {
+            IOSRuntimeLog.log("[MissionListView] \(reason): 0 mission(s) visible on iOS.")
+        } else {
+            IOSRuntimeLog.log("[MissionListView] \(reason): \(missions.count) mission(s) visible on iOS. Visible: \(missionList)")
+        }
+    }
+
+    private func deleteMissions(at offsets: IndexSet) {
+        let missionsToDelete = offsets.map { missions[$0] }
+        guard !missionsToDelete.isEmpty else { return }
+
+        let deletedSummary = missionsToDelete
+            .map { "\($0.missionName) (\($0.id.uuidString))" }
+            .joined(separator: ", ")
+        IOSRuntimeLog.log("[MissionListView] Deleting \(missionsToDelete.count) mission(s): \(deletedSummary)")
+
+        do {
+            for mission in missionsToDelete {
+                modelContext.delete(mission)
+            }
+            try modelContext.save()
+            IOSRuntimeLog.log("[MissionListView] Deleted \(missionsToDelete.count) mission(s).")
+        } catch {
+            deletionErrorMessage = error.localizedDescription
+            IOSRuntimeLog.log("[MissionListView] Mission deletion failed: \(error)")
         }
     }
 }
@@ -98,7 +160,7 @@ struct MissionEditView: View {
     let toolIds: [String]
     let familyMembers: [FamilyMember]
     let defaultOwnerProfileId: UUID?
-    let onSave: (String, String, String, [String], UUID?) -> Void
+    let onSave: (String, String, String, [String], UUID?) throws -> Void
 
     @State private var name: String = ""
     @State private var systemPrompt: String = ""
@@ -185,10 +247,19 @@ struct MissionEditView: View {
                     Button("Save") {
                         guard isFormValid else {
                             validationMessage = validationError()
+                            IOSRuntimeLog.log("[MissionEditView] Validation failed for '\(trimmedName)': \(validationMessage ?? "Unknown validation error.")")
                             return
                         }
-                        onSave(trimmedName, trimmedPrompt, normalizedSchedule, Array(selectedToolIds).sorted(), ownerProfileId)
-                        dismiss()
+                        let sortedToolIds = Array(selectedToolIds).sorted()
+                        IOSRuntimeLog.log("[MissionEditView] Save tapped for '\(trimmedName)' schedule=\(normalizedSchedule) tools=\(sortedToolIds.joined(separator: ",")) owner=\(ownerProfileId?.uuidString ?? "none")")
+                        do {
+                            try onSave(trimmedName, trimmedPrompt, normalizedSchedule, sortedToolIds, ownerProfileId)
+                            validationMessage = nil
+                            dismiss()
+                        } catch {
+                            validationMessage = "Save failed: \(error.localizedDescription)"
+                            IOSRuntimeLog.log("[MissionEditView] Save failed for '\(trimmedName)': \(error)")
+                        }
                     }
                     .disabled(!isFormValid)
                 }
