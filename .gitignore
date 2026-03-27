@@ -8,6 +8,8 @@ DerivedData/
 server/.bundle/
 server/.env
 server/.env.local
+server/.kamal/secrets
+server/config/master.key
 server/log/*
 !server/log/.keep
 server/tmp/*
