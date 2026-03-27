@@ -60,35 +60,68 @@ Why this is the chosen path:
 
 ## What Is Already Done
 
-### Last pushed commit before backend pivot
+### Backend pivot commits already pushed
 
-Latest pushed CloudKit diagnostics commit:
+- `b0b23a7` - add Mac-hosted backend bootstrap plan
+- `a299bcc` - add generated Rails API app
+- `8f6db62` - add first backend API resources
+- `39fe2b5` - wire Mac runner to backend mission API
+- `02d9b7a` - wire iOS mission sync to backend API
+- `7634c2f` - configure iOS dev backend access
+
+Earlier CloudKit diagnostics work is still useful context:
 
 - `d0e85b6` - logs CloudKit account identity diagnostics on iOS and Mac
 
-### Local backend pivot scaffold created but not yet committed
+### What is fully standing now
 
-Current local changes:
+Backend foundation:
 
-- modified [`.gitignore`](/Users/kevintaniguchi/Development/agentkvt/.gitignore)
-- modified [`README.md`](/Users/kevintaniguchi/Development/agentkvt/README.md)
-- new [`MAC_BACKEND_PLAN.md`](/Users/kevintaniguchi/Development/agentkvt/Docs/MAC_BACKEND_PLAN.md)
-- new [`bootstrap_agentkvt_backend.sh`](/Users/kevintaniguchi/Development/agentkvt/bin/bootstrap_agentkvt_backend.sh)
-- new [`run_agentkvt_api.sh`](/Users/kevintaniguchi/Development/agentkvt/bin/run_agentkvt_api.sh)
-- new overlay templates under [`templates/server_overlay`](/Users/kevintaniguchi/Development/agentkvt/templates/server_overlay)
+- Rails API app exists in [`server/`](/Users/kevintaniguchi/Development/agentkvt/server)
+- Postgres-backed schema exists for:
+  - workspaces
+  - family members
+  - missions
+  - life context entries
+  - action items
+  - agent logs
+- `/healthz` is live
+- initial `v1` API resources exist
+- backend integration tests were added for the first API slice
 
-These files define:
+Mac runner:
 
-- where the Rails app should live in the repo
-- how Postgres should be created and started on the server Mac
-- the first schema for shared data
-- SSH-friendly commands to bootstrap and run the service
+- backend client exists in [BackendAPIClient.swift](/Users/kevintaniguchi/Development/agentkvt/AgentKVTMac/Sources/AgentKVTMac/BackendAPIClient.swift)
+- scheduler can fetch `GET /v1/agent/due_missions`
+- mission logs and `write_action_item` can post back to Rails
+- runner config supports:
+  - `AGENTKVT_API_BASE_URL`
+  - `AGENTKVT_WORKSPACE_SLUG`
+  - `AGENTKVT_AGENT_TOKEN`
 
-### Important unrelated local change
+iOS app:
 
-There is also an unrelated local modification that should stay out of backend commits unless intentionally included:
+- backend bootstrap/sync client exists in [IOSBackendAPIClient.swift](/Users/kevintaniguchi/Development/agentkvt/AgentKVTiOS/Services/IOSBackendAPIClient.swift)
+- iOS can now:
+  - bootstrap family members and missions from Rails
+  - create family members against Rails
+  - create, update, and delete missions against Rails
+  - mirror backend mission state into local SwiftData
+- dev iOS scheme is preconfigured to hit the server Mac at `http://192.168.4.144:3000`
+- debug iOS build has a dedicated [Info.Debug.plist](/Users/kevintaniguchi/Development/agentkvt/AgentKVTiOS/Info.Debug.plist) that allows plain HTTP during development
 
-- [ManagerCoreModelTests.swift](/Users/kevintaniguchi/Development/agentkvt/ManagerCore/Tests/ManagerCoreTests/ManagerCoreModelTests.swift)
+Server Mac runtime config:
+
+- `server/.env` now contains a real `AGENTKVT_AGENT_TOKEN`
+- `server/.env` now contains `BIND_IP=0.0.0.0`
+- Rails health check succeeded on `http://127.0.0.1:3000/healthz`
+- Rails is listening on `*:3000`
+- runner plist now exists at:
+  - `~/Library/Group Containers/group.com.agentkvt.shared/Library/Application Support/agentkvt-runner.plist`
+- runner plist is configured with:
+  - `AGENTKVT_API_BASE_URL=http://127.0.0.1:3000`
+  - `AGENTKVT_WORKSPACE_SLUG=default`
+  - `AGENTKVT_AGENT_TOKEN=<same token as server/.env>`
 
 ## Current Intended File Layout
 
@@ -132,16 +165,13 @@ The first migration template already exists here:
 
 User-facing:
 
-- `POST /v1/auth/apple`
 - `GET /v1/bootstrap`
 - `GET /v1/family_members`
 - `POST /v1/family_members`
-- `PATCH /v1/family_members/:id`
 - `GET /v1/missions`
 - `POST /v1/missions`
 - `PATCH /v1/missions/:id`
-- `GET /v1/life_context`
-- `PUT /v1/life_context/:key`
+- `DELETE /v1/missions/:id`
 - `GET /v1/action_items`
 - `POST /v1/action_items/:id/handle`
 - `GET /v1/agent_logs`
@@ -151,113 +181,49 @@ Mac agent-facing:
 - `GET /v1/agent/due_missions`
 - `POST /v1/agent/missions/:id/action_items`
 - `POST /v1/agent/missions/:id/logs`
+
+Planned but not yet implemented:
+
+- `POST /v1/auth/apple`
+- `PATCH /v1/family_members/:id`
+- `GET /v1/life_context`
+- `PUT /v1/life_context/:key`
 - `POST /v1/agent/heartbeats`
-
-## What Needs To Happen Next
-
-### 1. Commit the backend scaffold
-
-Commit only the backend pivot files, not unrelated test edits.
-
-Likely files to stage:
-
-- [`.gitignore`](/Users/kevintaniguchi/Development/agentkvt/.gitignore)
-- [`README.md`](/Users/kevintaniguchi/Development/agentkvt/README.md)
-- [`MAC_BACKEND_PLAN.md`](/Users/kevintaniguchi/Development/agentkvt/Docs/MAC_BACKEND_PLAN.md)
-- [`BACKEND_PIVOT_HANDOFF.md`](/Users/kevintaniguchi/Development/agentkvt/Docs/BACKEND_PIVOT_HANDOFF.md)
-- [`bootstrap_agentkvt_backend.sh`](/Users/kevintaniguchi/Development/agentkvt/bin/bootstrap_agentkvt_backend.sh)
-- [`run_agentkvt_api.sh`](/Users/kevintaniguchi/Development/agentkvt/bin/run_agentkvt_api.sh)
-- everything under [`templates/server_overlay`](/Users/kevintaniguchi/Development/agentkvt/templates/server_overlay)
-
-Do not stage:
-
-- [ManagerCoreModelTests.swift](/Users/kevintaniguchi/Development/agentkvt/ManagerCore/Tests/ManagerCoreTests/ManagerCoreModelTests.swift)
-
-### 2. Pull onto the server Mac
-
-On the server Mac:
-
-```bash
-cd /Users/familyagent/AgentKVTMac-or-repo-path
-git pull origin main
-```
-
-Adjust the path to the actual repo location on the server.
-
-### 3. Bootstrap the backend on the server Mac
-
-Run:
-
-```bash
-cd /Users/kevintaniguchi/Development/agentkvt
-./bin/bootstrap_agentkvt_backend.sh
-```
-
-What this should do:
-
-- ensure Homebrew Ruby and PostgreSQL 16 are installed
-- initialize `~/.agentkvt/postgres`
-- start Postgres
-- create development/test/production databases
-- generate `server/` as a Rails API app if it does not exist
-- overlay the first config and migrations
-- run `bundle install`
-- run `bin/rails db:prepare`
-
-### 4. Create env file
-
-After bootstrap:
-
-```bash
-cd /Users/kevintaniguchi/Development/agentkvt
-cp server/.env.example server/.env
-```
-
-For phase 1, a placeholder agent token is enough.
-
-### 5. Start the API from SSH
-
-Run:
-
-```bash
-cd /Users/kevintaniguchi/Development/agentkvt
-./bin/run_agentkvt_api.sh
-```
-
-This script:
-
-- ensures Postgres is running
-- loads `server/.env` if present
-- binds Rails to the Tailscale IP if available, else localhost
-
-### 6. Verify service health
-
-In another shell:
-
-```bash
-curl http://127.0.0.1:3000/healthz
-```
-
-Or use the Tailscale IP if Rails bound there.
 
 ## Suggested Follow-up Implementation Order
 
-### Milestone 1
+### Immediate next smoke test
 
-- get Rails API app booting
-- confirm `/healthz`
-- confirm DB tables exist
+1. Relaunch `AgentKVTMacApp` on the server Mac so it reloads the runner plist.
+2. Run the iOS app from Xcode on a physical iPad or iPhone.
+3. Create or edit a mission and tap `Save`.
+4. Verify in the Rails log that the mission mutation hit the backend.
+5. Verify in the Mac runtime log that the runner fetched missions from Rails.
+6. Set a due schedule and confirm the Mac agent executes it and writes logs/action items back.
 
-### Milestone 2
+### Immediate next product work
 
-- add Rails models
-- add `missions`, `action_items`, and `agent_logs` endpoints
-- add a simple shared token auth for Mac agent calls
+- add iOS reads for `action_items`, `agent_logs`, and `life_context`
+- add iOS writes for `life_context`
+- add a simple workspace bootstrap/seed flow if needed
+- verify Mac agent end-to-end against Ollama with one real due mission
 
-### Milestone 3
+### Outside-network rollout work
 
-- add `APIClient` to iOS
-- have iOS fetch missions and action items from Rails
+- choose the transport:
+  - Tailscale, or
+  - HTTPS/public reverse proxy
+- stop relying on the LAN IP `192.168.4.144`
+- add a production config/discovery story for iOS clients
+- add real user auth:
+  - Sign in with Apple
+  - app-issued session token
+
+### Cleanup and hardening
+
+- rewrite old CloudKit-centric docs in `Docs/SYNC.md` and `Docs/DATA_FLOW.md`
+- decide whether Mac production should use only backend mode for shared data
+- add better server observability around mission execution and API errors
 - have iOS write missions to Rails
 
 ### Milestone 4

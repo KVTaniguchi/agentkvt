@@ -10,6 +10,32 @@ Make the server Mac the source of truth for shared family data:
 - The Mac agent reads and writes the same canonical mission/action/log data.
 - Different Apple IDs are supported because identity is no longer coupled to CloudKit private databases.
 
+## Current Status
+
+Done:
+
+- Rails API app exists in [`server/`](/Users/kevintaniguchi/Development/agentkvt/server)
+- Postgres-backed schema is live
+- `/healthz` is healthy on the server Mac
+- first backend resources are implemented
+- Mac runner is wired to the backend mission API
+- iOS mission and family-member sync is wired to the backend API
+- server Mac is configured with:
+  - `AGENTKVT_AGENT_TOKEN`
+  - `BIND_IP=0.0.0.0`
+  - runner plist pointing at `http://127.0.0.1:3000`
+- iOS Debug dev runs are configured for:
+  - `AGENTKVT_API_BASE_URL=http://192.168.4.144:3000`
+  - `AGENTKVT_WORKSPACE_SLUG=default`
+  - debug-only HTTP allowance via [Info.Debug.plist](/Users/kevintaniguchi/Development/agentkvt/AgentKVTiOS/Info.Debug.plist)
+
+Not done yet:
+
+- end-to-end smoke test proving iOS save -> Rails -> Mac due mission -> Ollama -> Rails action/log writeback
+- iOS reads for action items, logs, and life context
+- outside-network access via Tailscale or HTTPS
+- real iOS user auth
+
 ## Physical Layout
 
 Repo-managed code:
@@ -35,8 +61,8 @@ Important boundary:
 Recommended phase-1 access model:
 
 - `Postgres` listens only on localhost.
-- `Rails` listens on the Mac's Tailscale IP.
-- iOS clients access the Rails API over Tailscale from outside the local network.
+- `Rails` initially listens on the Mac's LAN IP for dev, and should move to the Mac's Tailscale IP for outside-network access.
+- iOS clients access the Rails API over LAN during current dev smoke tests.
 - The Mac agent uses the same Rails API locally.
 
 Why this is the default:
@@ -162,16 +188,13 @@ CloudKit can remain optional for purely local Apple UX later, but it is no longe
 
 User-facing:
 
-- `POST /v1/auth/apple`
 - `GET /v1/bootstrap`
 - `GET /v1/family_members`
 - `POST /v1/family_members`
-- `PATCH /v1/family_members/:id`
 - `GET /v1/missions`
 - `POST /v1/missions`
 - `PATCH /v1/missions/:id`
-- `GET /v1/life_context`
-- `PUT /v1/life_context/:key`
+- `DELETE /v1/missions/:id`
 - `GET /v1/action_items`
 - `POST /v1/action_items/:id/handle`
 - `GET /v1/agent_logs`
@@ -181,6 +204,13 @@ Mac agent-facing:
 - `GET /v1/agent/due_missions`
 - `POST /v1/agent/missions/:id/action_items`
 - `POST /v1/agent/missions/:id/logs`
+
+Planned but not yet shipped:
+
+- `POST /v1/auth/apple`
+- `PATCH /v1/family_members/:id`
+- `GET /v1/life_context`
+- `PUT /v1/life_context/:key`
 - `POST /v1/agent/heartbeats`
 
 ## Repo Integration Plan
@@ -195,6 +225,11 @@ Replace CloudKit-as-bridge with an API client that can:
 - read and write life context
 - read action items and logs
 
+Status:
+
+- bootstrap, family members, and missions are wired now
+- action items, logs, and life context are next
+
 ### Mac
 
 Introduce storage protocols so the runner no longer directly assumes SwiftData for shared production state:
@@ -208,6 +243,11 @@ Implementations:
 
 - `SwiftData*Store` for local/dev compatibility
 - `Backend*Store` for Mac production use
+
+Status:
+
+- Mac runner currently uses backend integration directly in the scheduler/log/action paths
+- broader store abstraction cleanup can happen after the end-to-end smoke test
 
 ## SSH Workflow
 
@@ -224,6 +264,12 @@ Run the API:
 cd /Users/kevintaniguchi/Development/agentkvt
 ./bin/run_agentkvt_api.sh
 ```
+
+Current server config:
+
+- `server/.env` contains the agent token and `BIND_IP=0.0.0.0`
+- Rails is reachable on `http://192.168.4.144:3000` from devices on the same LAN
+- the Mac app runner plist points at `http://127.0.0.1:3000`
 
 Tail logs:
 
@@ -242,24 +288,37 @@ tail -f log/development.log
 - Apply core schema
 - Add `/healthz`
 
+Status: done
+
 ### Milestone 2
 
 - Mac agent reads missions from backend
 - Mac agent writes action items and agent logs to backend
+
+Status: code complete, live smoke test still needed
 
 ### Milestone 3
 
 - iOS reads backend missions, action items, and logs
 - iOS writes family members, missions, and life context
 
+Status: partially done
+
+- family members and missions: done
+- action items, logs, life context: not done yet
+
 ### Milestone 4
 
 - Add Sign in with Apple
 - Add device registration and push hooks
 
+Status: not started
+
 ### Milestone 5
 
 - Migrate chat, email summaries, work units, and resource health
+
+Status: not started
 
 ## Notes
 
