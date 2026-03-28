@@ -10,6 +10,15 @@ let iosCloudKitContainerIdentifier = "iCloud.AgentKVT"
 struct AgentKVTiOSApp: App {
     @StateObject private var familyProfileStore = FamilyProfileStore()
 
+    @State private var actionsStore: ActionsStore
+    @State private var objectivesStore: ObjectivesStore
+
+    init() {
+        let sync = IOSBackendSyncService()
+        _actionsStore = State(wrappedValue: ActionsStore(sync: sync))
+        _objectivesStore = State(wrappedValue: ObjectivesStore(sync: sync))
+    }
+
     var sharedModelContainer: ModelContainer = {
         let logFile = IOSRuntimeLog.bootstrap(processLabel: "AgentKVTiOSApp")
         IOSRuntimeLog.log("[Logging] Writing logs to \(logFile.path)")
@@ -80,6 +89,8 @@ struct AgentKVTiOSApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(familyProfileStore)
+                .environment(actionsStore)
+                .environment(objectivesStore)
         }
         .modelContainer(sharedModelContainer)
     }

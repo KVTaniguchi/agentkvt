@@ -92,6 +92,45 @@ module ApiSerialization
     }
   end
 
+  def serialize_objective(objective)
+    {
+      id: objective.id,
+      workspace_id: objective.workspace_id,
+      goal: objective.goal,
+      status: objective.status,
+      priority: objective.priority,
+      created_at: iso8601(objective.created_at),
+      updated_at: iso8601(objective.updated_at)
+    }
+  end
+
+  def serialize_task(task)
+    {
+      id: task.id,
+      objective_id: task.objective_id,
+      description: task.description,
+      status: task.status,
+      result_summary: task.result_summary,
+      created_at: iso8601(task.created_at),
+      updated_at: iso8601(task.updated_at)
+    }
+  end
+
+  def serialize_research_snapshot(snapshot)
+    {
+      id: snapshot.id,
+      objective_id: snapshot.objective_id,
+      task_id: snapshot.task_id,
+      key: snapshot.key,
+      value: snapshot.value,
+      previous_value: snapshot.previous_value,
+      delta_note: snapshot.delta_note,
+      checked_at: iso8601(snapshot.checked_at),
+      created_at: iso8601(snapshot.created_at),
+      updated_at: iso8601(snapshot.updated_at)
+    }
+  end
+
   def iso8601(value)
     value&.iso8601
   end

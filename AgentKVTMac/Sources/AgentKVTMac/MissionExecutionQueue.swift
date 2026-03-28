@@ -242,6 +242,16 @@ actor MissionExecutionQueue {
                 atomically: true,
                 encoding: .utf8
             )
+
+            // Dedicated handler for Rails TaskExecutorJob dispatches.
+            // Does not fall through to generic webhook missions — this is a
+            // structured task execution, not a free-form webhook trigger.
+            if let taskPayload = TaskSearchPayload(json: payload) {
+                print("[MissionExecutionQueue] Identified run_task_search for task=\(taskPayload.taskId)")
+                await runTaskSearch(taskPayload)
+                return
+            }
+
             if let backendClient {
                 let missions = try await backendClient.fetchMissions().map { $0.asRequest() }
                 let matching = missions.filter { $0.isEnabled && $0.triggerSchedule == "webhook" }
@@ -436,5 +446,72 @@ actor MissionExecutionQueue {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
         return formatter.string(from: date)
+    }
+
+    // MARK: - run_task_search
+
+    /// Synthesises and executes a focused research mission from a Rails TaskExecutorJob payload.
+    /// No user-configured webhook mission is required — the mission is built from the payload
+    /// and run directly. After the LLM calls write_objective_snapshot, Rails records the result
+    /// and marks the task completed.
+    private func runTaskSearch(_ payload: TaskSearchPayload) async {
+        let systemPrompt = """
+            You are a focused research agent executing a single task for the AgentKVT Objectives system.
+
+            Task: \(payload.description)
+            Objective ID: \(payload.objectiveId)
+            Task ID: \(payload.taskId)
+
+            Instructions:
+            1. Use multi_step_search to research the task thoroughly.
+            2. After gathering results, call write_objective_snapshot exactly once with:
+               - objective_id: \(payload.objectiveId)
+               - task_id: \(payload.taskId)
+               - key: a stable snake_case identifier for the metric (e.g. "cheapest_flight_sfo_san")
+               - value: the key finding as a concise string
+
+            Do not call write_objective_snapshot more than once.
+            """
+        let request = MissionRunner.Request(
+            id: UUID(),
+            missionName: "Task: \(payload.description.prefix(60))",
+            systemPrompt: systemPrompt,
+            triggerSchedule: "webhook",
+            allowedToolIds: ["multi_step_search", "write_objective_snapshot"],
+            ownerProfileId: nil,
+            isEnabled: true,
+            lastRunAt: nil
+        )
+        do {
+            try await missionRunner.run(request)
+            print("[MissionExecutionQueue] run_task_search completed for task=\(payload.taskId)")
+        } catch {
+            print("[MissionExecutionQueue] run_task_search failed for task=\(payload.taskId): \(error)")
+        }
+    }
+}
+
+// MARK: - TaskSearchPayload
+
+/// Decoded form of the JSON body that Rails TaskExecutorJob POSTs to the Mac webhook.
+struct TaskSearchPayload: Sendable {
+    let taskId: String
+    let objectiveId: String
+    let description: String
+
+    /// Returns nil if the body is not a valid run_task_search payload.
+    init?(json: String) {
+        guard let data = json.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              obj["agentkvt"] as? String == "run_task_search",
+              let taskId = obj["task_id"] as? String,
+              let objectiveId = obj["objective_id"] as? String,
+              let description = obj["description"] as? String,
+              !taskId.isEmpty, !objectiveId.isEmpty, !description.isEmpty
+        else { return nil }
+
+        self.taskId = taskId
+        self.objectiveId = objectiveId
+        self.description = description
     }
 }

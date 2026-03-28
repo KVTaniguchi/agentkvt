@@ -105,6 +105,23 @@ private struct BackendAgentLogsEnvelope: Codable {
     let agentLogs: [BackendAgentLog]
 }
 
+public struct BackendResearchSnapshot: Codable, Sendable {
+    public let id: UUID
+    public let objectiveId: UUID
+    public let taskId: UUID?
+    public let key: String
+    public let value: String
+    public let previousValue: String?
+    public let deltaNote: String?
+    public let checkedAt: Date
+    public let createdAt: Date
+    public let updatedAt: Date
+}
+
+private struct BackendResearchSnapshotEnvelope: Codable {
+    let researchSnapshot: BackendResearchSnapshot
+}
+
 public actor BackendAPIClient {
     public let baseURL: URL
     public let workspaceSlug: String
@@ -229,6 +246,30 @@ public actor BackendAPIClient {
             requiresAgentAuth: true
         )
         return try decoder.decode(BackendMissionEnvelope.self, from: data).mission
+    }
+
+    /// Write (upsert) a research snapshot for an objective. The server tracks the
+    /// previous value and sets `delta_note` automatically when the value changes.
+    /// Pass `taskId` to simultaneously mark the parent task as completed.
+    public func writeResearchSnapshot(
+        objectiveId: UUID,
+        taskId: UUID? = nil,
+        key: String,
+        value: String
+    ) async throws -> BackendResearchSnapshot {
+        var path = "v1/agent/objectives/\(objectiveId.uuidString)/research_snapshots"
+        var queryItems: [URLQueryItem] = []
+        if let taskId {
+            queryItems.append(URLQueryItem(name: "task_id", value: taskId.uuidString))
+        }
+        let data = try await performRequest(
+            path: path,
+            method: "POST",
+            queryItems: queryItems,
+            jsonBody: ["research_snapshot": ["key": key, "value": value]],
+            requiresAgentAuth: true
+        )
+        return try decoder.decode(BackendResearchSnapshotEnvelope.self, from: data).researchSnapshot
     }
 
     /// Poll after iOS `POST /v1/chat_wake`. Returns `true` when a wake was pending (and clears it server-side).

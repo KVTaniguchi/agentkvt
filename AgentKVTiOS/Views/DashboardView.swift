@@ -2,74 +2,43 @@ import SwiftUI
 import SwiftData
 import ManagerCore
 
-/// Dashboard: main iOS surface for actions, missions, logs, files, and chat.
+/// Dashboard: main iOS surface for objectives, actions, missions, logs, files, and chat.
 struct DashboardView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var profileStore: FamilyProfileStore
     @Query(sort: \FamilyMember.createdAt, order: .forward) private var familyMembers: [FamilyMember]
-    @Query(sort: \ActionItem.timestamp, order: .reverse) private var actionItems: [ActionItem]
     @Query(sort: \InboundFile.timestamp, order: .reverse) private var inboundFiles: [InboundFile]
     @State private var selectedTab = 0
     @State private var isImporterPresented = false
     @State private var importError: String?
-    @State private var showAddFamilyMember = false
-
-    private var currentProfileLabel: String {
-        guard let id = profileStore.currentProfileId,
-              let m = familyMembers.first(where: { $0.id == id }) else {
-            return "Profile"
-        }
-        return m.symbol.isEmpty ? m.displayName : "\(m.symbol) \(m.displayName)"
-    }
 
     var body: some View {
         TabView(selection: $selectedTab) {
-            ActionItemsList(items: actionItems)
-                .tabItem { Label("Actions", systemImage: "square.grid.2x2") }
+            ObjectivesDashboardView()
+                .tabItem { Label("Objectives", systemImage: "target") }
                 .tag(0)
+            ActionItemsList()
+                .tabItem { Label("Actions", systemImage: "square.grid.2x2") }
+                .tag(1)
             MissionListView()
                 .tabItem { Label("Missions", systemImage: "list.bullet") }
-                .tag(1)
+                .tag(2)
             LifeContextView()
                 .tabItem { Label("Context", systemImage: "person.crop.circle") }
-                .tag(2)
+                .tag(3)
             AgentLogView()
                 .tabItem { Label("Log", systemImage: "doc.text.magnifyingglass") }
-                .tag(3)
+                .tag(4)
             ChatView()
                 .tabItem { Label("Chat", systemImage: "message") }
-                .tag(4)
+                .tag(5)
             InboundFilesView(
                 files: inboundFiles,
                 familyMembers: familyMembers,
                 isImporterPresented: $isImporterPresented
             )
                 .tabItem { Label("Files", systemImage: "doc") }
-                .tag(5)
-        }
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Menu {
-                    ForEach(familyMembers, id: \.id) { m in
-                        Button {
-                            profileStore.selectProfile(m.id)
-                        } label: {
-                            if m.id == profileStore.currentProfileId {
-                                Label(m.displayName, systemImage: "checkmark")
-                            } else {
-                                Text(m.displayName)
-                            }
-                        }
-                    }
-                    Divider()
-                    Button("Add family member…") { showAddFamilyMember = true }
-                } label: {
-                    Label(currentProfileLabel, systemImage: "person.crop.circle")
-                }
-            }
-        }
-        .sheet(isPresented: $showAddFamilyMember) {
-            AddFamilyMemberSheet()
+                .tag(6)
         }
         .fileImporter(
             isPresented: $isImporterPresented,
@@ -112,36 +81,19 @@ struct DashboardView: View {
 }
 
 struct ActionItemsList: View {
-    let items: [ActionItem]
-    @Environment(\.modelContext) private var modelContext
-    @Query private var missions: [MissionDefinition]
+    @Environment(ActionsStore.self) private var store
     @State private var handleErrorMessage: String?
-
-    private let backendSync = IOSBackendSyncService()
-
-    private var missionsById: [UUID: MissionDefinition] {
-        Dictionary(uniqueKeysWithValues: missions.map { ($0.id, $0) })
-    }
-
-    private var visibleItems: [ActionItem] {
-        items.filter { !$0.isHandled }
-    }
 
     var body: some View {
         NavigationStack {
             List {
-                ForEach(visibleItems, id: \.id) { item in
+                ForEach(store.items, id: \.id) { item in
                     NavigationLink {
-                        ActionItemDetailView(
-                            item: item,
-                            mission: item.missionId.flatMap { missionsById[$0] }
-                        ) {
-                            Task { @MainActor in
-                                await markHandled(item)
-                            }
+                        RemoteActionItemDetailView(item: item) {
+                            Task { await markHandled(item) }
                         }
                     } label: {
-                        ActionItemRow(item: item, missionName: item.missionId.flatMap { missionsById[$0]?.missionName })
+                        RemoteActionItemRow(item: item)
                     }
                     .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                         Button {
@@ -161,49 +113,40 @@ struct ActionItemsList: View {
                 }
             }
             .navigationTitle("Actions")
-            .refreshable {
-                await backendSync.syncActionItems(modelContext: modelContext)
+            .refreshable { await store.refresh() }
+            .overlay {
+                if store.isLoading && store.items.isEmpty {
+                    ProgressView()
+                }
             }
-            .emptyState(visibleItems.isEmpty, message: "No action items. Missions on the Mac will create them.")
+            .emptyState(store.items.isEmpty && !store.isLoading,
+                        message: "No action items. Missions on the Mac will create them.")
             .familyProfileToolbar()
         }
-        .task {
-            await backendSync.syncActionItems(modelContext: modelContext)
-        }
+        .task { await store.refresh() }
         .alert("Could Not Mark Action Done", isPresented: Binding(
             get: { handleErrorMessage != nil },
             set: { if !$0 { handleErrorMessage = nil } }
         )) {
-            Button("OK", role: .cancel) {
-                handleErrorMessage = nil
-            }
+            Button("OK", role: .cancel) { handleErrorMessage = nil }
         } message: {
             Text(handleErrorMessage ?? "The action item could not be updated.")
         }
     }
 
     @MainActor
-    private func markHandled(_ item: ActionItem) async {
-        guard !item.isHandled else { return }
-
-        let originalValue = item.isHandled
-        item.isHandled = true
-        try? modelContext.save()
-
+    private func markHandled(_ item: IOSBackendActionItem) async {
         do {
-            try await backendSync.handleActionItem(item, modelContext: modelContext)
+            try await store.markHandled(item)
         } catch {
-            item.isHandled = originalValue
-            try? modelContext.save()
             handleErrorMessage = error.localizedDescription
-            IOSRuntimeLog.log("[ActionItemsList] Failed to mark action item \(item.id.uuidString) handled: \(error)")
+            IOSRuntimeLog.log("[ActionItemsList] markHandled failed for \(item.id): \(error)")
         }
     }
 }
 
-struct ActionItemRow: View {
-    let item: ActionItem
-    let missionName: String?
+struct RemoteActionItemRow: View {
+    let item: IOSBackendActionItem
 
     private var route: IntentRoute { IntentRoute.route(for: item) }
 
@@ -221,8 +164,8 @@ struct ActionItemRow: View {
                     .padding(.vertical, 3)
                     .background(route.badgeColor.opacity(0.85))
                     .clipShape(Capsule())
-                if let missionName {
-                    Text(missionName)
+                if let missionId = item.sourceMissionId {
+                    Text("Mission …\(missionId.uuidString.suffix(8))")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -236,30 +179,18 @@ struct ActionItemRow: View {
     }
 }
 
-struct ActionItemDetailView: View {
-    let item: ActionItem
-    let mission: MissionDefinition?
+struct RemoteActionItemDetailView: View {
+    let item: IOSBackendActionItem
     let onMarkHandled: () -> Void
 
     @Environment(\.dismiss) private var dismiss
 
     private var payloadText: String? {
-        guard let payloadData = item.payloadData, !payloadData.isEmpty else { return nil }
-        if let object = try? JSONSerialization.jsonObject(with: payloadData),
-           let prettyData = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted]),
-           let pretty = String(data: prettyData, encoding: .utf8) {
-            return pretty
-        }
-        return String(data: payloadData, encoding: .utf8)
-    }
-
-    private var missionStatus: String {
-        guard let mission else { return "Unknown mission" }
-        return mission.isEnabled ? "Enabled" : "Disabled"
-    }
-
-    private var createdAtText: String {
-        item.timestamp.formatted(date: .abbreviated, time: .shortened)
+        guard !item.payloadJson.isEmpty else { return nil }
+        let obj = item.payloadJson.mapValues { $0.foundationObject }
+        guard let data = try? JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted]),
+              let pretty = String(data: data, encoding: .utf8) else { return nil }
+        return pretty
     }
 
     var body: some View {
@@ -271,23 +202,19 @@ struct ActionItemDetailView: View {
                         .foregroundStyle(.primary)
                         .fixedSize(horizontal: false, vertical: true)
 
-                    if let mission {
+                    if let missionId = item.sourceMissionId {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("From Mission")
+                            Text("Source Mission")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                            Text(mission.missionName)
+                            Text("…\(missionId.uuidString.suffix(8))")
                                 .font(.headline)
                                 .foregroundStyle(.primary)
-                                .fixedSize(horizontal: false, vertical: true)
                         }
-                    } else {
-                        Text("Source mission unavailable")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
                     }
 
-                    Label(createdAtText, systemImage: "clock")
+                    Label(item.timestamp.formatted(date: .abbreviated, time: .shortened),
+                          systemImage: "clock")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -296,42 +223,18 @@ struct ActionItemDetailView: View {
 
             if !item.isHandled {
                 Section {
-                    DynamicIntentButton(item: item)
-                    .listRowInsets(.init(top: 12, leading: 16, bottom: 12, trailing: 16))
+                    RemoteDynamicIntentButton(item: item)
+                        .listRowInsets(.init(top: 12, leading: 16, bottom: 12, trailing: 16))
                 } footer: {
-                    Text("Use the action above to follow the agent's recommendation. Tap Done after you've handled it or want to clear it from the queue.")
+                    Text("Use the action above to follow the agent's recommendation. Tap Done after you've handled it.")
                 }
             }
 
             Section {
                 DisclosureGroup("Technical Details") {
                     LabeledContent("Intent", value: item.systemIntent)
-                    LabeledContent("Handled") {
-                        Text(item.isHandled ? "Yes" : "No")
-                    }
-
-                    if let mission {
-                        LabeledContent("Schedule", value: mission.triggerSchedule)
-                        LabeledContent("Status", value: missionStatus)
-                        if let lastRunAt = mission.lastRunAt {
-                            LabeledContent("Last Run") {
-                                Text(lastRunAt, style: .relative)
-                            }
-                        }
-                        if !mission.allowedMCPTools.isEmpty {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("Allowed Tools")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                Text(mission.allowedMCPTools.joined(separator: ", "))
-                                    .font(.body)
-                            }
-                            .padding(.vertical, 4)
-                        }
-                    } else {
-                        Text("This action is not currently linked to a loaded mission record.")
-                            .foregroundStyle(.secondary)
-                    }
+                    LabeledContent("Handled", value: item.isHandled ? "Yes" : "No")
+                    LabeledContent("Created by", value: item.createdBy ?? "agent")
 
                     if let payloadText {
                         VStack(alignment: .leading, spacing: 8) {
@@ -344,7 +247,6 @@ struct ActionItemDetailView: View {
                                     .textSelection(.enabled)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
-                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
                         .padding(.vertical, 4)
                     }

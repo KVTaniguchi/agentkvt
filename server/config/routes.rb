@@ -14,6 +14,7 @@ Rails.application.routes.draw do
       post :handle, on: :member
     end
     resources :agent_logs, only: [:index]
+    resources :objectives, only: [:index, :create, :show]
 
     namespace :agent do
       get :due_missions, to: "due_missions#index"
@@ -25,6 +26,10 @@ Rails.application.routes.draw do
         get :logs, to: "mission_logs#index"
         post :logs, to: "mission_logs#create"
         post :mark_run, to: "mission_runs#create"
+      end
+
+      resources :objectives, only: [] do
+        resources :research_snapshots, only: [:create]
       end
     end
   end

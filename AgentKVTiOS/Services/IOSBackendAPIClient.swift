@@ -164,6 +164,45 @@ struct IOSBackendLifeContextEntry: Codable, Sendable {
     let updatedAt: Date
 }
 
+struct IOSBackendObjective: Codable, Sendable, Identifiable {
+    let id: UUID
+    let workspaceId: UUID
+    let goal: String
+    let status: String   // "pending" | "active" | "completed" | "archived"
+    let priority: Int
+    let createdAt: Date
+    let updatedAt: Date
+}
+
+struct IOSBackendTask: Codable, Sendable, Identifiable {
+    let id: UUID
+    let objectiveId: UUID
+    let description: String
+    let status: String   // "pending" | "in_progress" | "completed" | "failed"
+    let resultSummary: String?
+    let createdAt: Date
+    let updatedAt: Date
+}
+
+struct IOSBackendResearchSnapshot: Codable, Sendable, Identifiable {
+    let id: UUID
+    let objectiveId: UUID
+    let taskId: UUID?
+    let key: String
+    let value: String
+    let previousValue: String?
+    let deltaNote: String?
+    let checkedAt: Date
+    let createdAt: Date
+    let updatedAt: Date
+}
+
+struct IOSBackendObjectiveDetail: Codable, Sendable {
+    let objective: IOSBackendObjective
+    let tasks: [IOSBackendTask]
+    let researchSnapshots: [IOSBackendResearchSnapshot]
+}
+
 struct IOSBackendBootstrap: Codable, Sendable {
     let familyMembers: [IOSBackendFamilyMember]
     let missions: [IOSBackendMission]
@@ -209,6 +248,14 @@ private struct IOSBackendLifeContextEntriesEnvelope: Codable {
 
 private struct IOSBackendLifeContextEntryEnvelope: Codable {
     let lifeContextEntry: IOSBackendLifeContextEntry
+}
+
+private struct IOSBackendObjectivesEnvelope: Codable {
+    let objectives: [IOSBackendObjective]
+}
+
+private struct IOSBackendObjectiveEnvelope: Codable {
+    let objective: IOSBackendObjective
 }
 
 actor IOSBackendAPIClient {
@@ -389,6 +436,25 @@ actor IOSBackendAPIClient {
     /// Nudges the Mac agent (via server poll) to process pending chat when not on LAN.
     func postChatWake() async throws {
         _ = try await performRequest(path: "v1/chat_wake", method: "POST", jsonBody: [:])
+    }
+
+    func fetchObjectives() async throws -> [IOSBackendObjective] {
+        let data = try await performRequest(path: "v1/objectives")
+        return try decoder.decode(IOSBackendObjectivesEnvelope.self, from: data).objectives
+    }
+
+    func createObjective(goal: String, status: String, priority: Int) async throws -> IOSBackendObjective {
+        let data = try await performRequest(
+            path: "v1/objectives",
+            method: "POST",
+            jsonBody: ["objective": ["goal": goal, "status": status, "priority": priority]]
+        )
+        return try decoder.decode(IOSBackendObjectiveEnvelope.self, from: data).objective
+    }
+
+    func fetchObjectiveDetail(id: UUID) async throws -> IOSBackendObjectiveDetail {
+        let data = try await performRequest(path: "v1/objectives/\(id.uuidString)")
+        return try decoder.decode(IOSBackendObjectiveDetail.self, from: data)
     }
 
     private func missionPayload(
@@ -1067,5 +1133,32 @@ final class IOSBackendSyncService {
     private func jsonData(from object: [String: IOSBackendJSONValue]) -> Data? {
         guard !object.isEmpty else { return nil }
         return try? JSONSerialization.data(withJSONObject: object.mapValues(\.foundationObject), options: [])
+    }
+
+    // MARK: - Remote passthrough (no SwiftData reconciliation)
+
+    func fetchActionItemsRemote() async throws -> [IOSBackendActionItem] {
+        guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
+        return try await client.fetchActionItems()
+    }
+
+    func handleActionItemRemote(id: UUID) async throws {
+        guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
+        _ = try await client.handleActionItem(id: id, handledAt: Date())
+    }
+
+    func fetchObjectivesRemote() async throws -> [IOSBackendObjective] {
+        guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
+        return try await client.fetchObjectives()
+    }
+
+    func createObjectiveRemote(goal: String, status: String = "active", priority: Int = 0) async throws -> IOSBackendObjective {
+        guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
+        return try await client.createObjective(goal: goal, status: status, priority: priority)
+    }
+
+    func fetchObjectiveDetailRemote(id: UUID) async throws -> IOSBackendObjectiveDetail {
+        guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
+        return try await client.fetchObjectiveDetail(id: id)
     }
 }

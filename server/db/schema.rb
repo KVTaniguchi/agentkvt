@@ -10,10 +10,47 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_03_28_130000) do
+ActiveRecord::Schema[8.0].define(version: 2026_03_28_145000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
+
+  create_table "objectives", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "workspace_id", null: false
+    t.text "goal", null: false
+    t.string "status", null: false, default: "pending"
+    t.integer "priority", null: false, default: 0
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["workspace_id", "status"], name: "index_objectives_on_workspace_id_and_status"
+    t.index ["workspace_id"], name: "index_objectives_on_workspace_id"
+  end
+
+  create_table "tasks", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "objective_id", null: false
+    t.text "description", null: false
+    t.string "status", null: false, default: "pending"
+    t.text "result_summary"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["objective_id", "status"], name: "index_tasks_on_objective_id_and_status"
+    t.index ["objective_id"], name: "index_tasks_on_objective_id"
+  end
+
+  create_table "research_snapshots", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "objective_id", null: false
+    t.uuid "task_id"
+    t.string "key", null: false
+    t.text "value", null: false
+    t.text "previous_value"
+    t.text "delta_note"
+    t.datetime "checked_at", null: false, default: -> { "CURRENT_TIMESTAMP" }
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["objective_id", "key"], name: "index_research_snapshots_on_objective_id_and_key", unique: true
+    t.index ["objective_id"], name: "index_research_snapshots_on_objective_id"
+    t.index ["task_id"], name: "index_research_snapshots_on_task_id"
+  end
 
   create_table "action_items", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.uuid "workspace_id", null: false
@@ -152,4 +189,8 @@ ActiveRecord::Schema[8.0].define(version: 2026_03_28_130000) do
   add_foreign_key "missions", "workspaces"
   add_foreign_key "workspace_memberships", "users"
   add_foreign_key "workspace_memberships", "workspaces"
+  add_foreign_key "objectives", "workspaces"
+  add_foreign_key "tasks", "objectives"
+  add_foreign_key "research_snapshots", "objectives"
+  add_foreign_key "research_snapshots", "tasks"
 end

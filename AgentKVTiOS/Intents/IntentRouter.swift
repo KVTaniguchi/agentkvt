@@ -28,11 +28,29 @@ enum IntentRoute {
         } ?? [:]
         let normalizedIntent = SystemIntent.normalizedRawValue(from: item.systemIntent)
 
+        return route(normalizedIntent: normalizedIntent, payload: payload, fallbackTitle: item.title, systemIntent: item.systemIntent)
+    }
+
+    /// Decodes a remote `IOSBackendActionItem` (fetched directly from Rails) into a typed route.
+    static func route(for item: IOSBackendActionItem) -> IntentRoute {
+        let payload = item.payloadJson.compactMapValues { $0.stringValue }
+        let normalizedIntent = SystemIntent.normalizedRawValue(from: item.systemIntent)
+
+        return route(normalizedIntent: normalizedIntent, payload: payload, fallbackTitle: item.title, systemIntent: item.systemIntent)
+    }
+
+    private static func route(
+        normalizedIntent: String,
+        payload: [String: Any],
+        fallbackTitle: String,
+        systemIntent: String
+    ) -> IntentRoute {
+
         switch normalizedIntent {
 
         case SystemIntent.calendarCreate.rawValue:
             let intent = CreateCalendarEventIntent()
-            intent.eventTitle = payload["eventTitle"] as? String ?? item.title
+            intent.eventTitle = payload["eventTitle"] as? String ?? fallbackTitle
             intent.startDate = (payload["startDate"] as? String).flatMap(parseISO8601) ?? Date()
             intent.durationMinutes = payload["durationMinutes"] as? Int ?? 60
             intent.notes = payload["notes"] as? String
@@ -41,28 +59,28 @@ enum IntentRoute {
         case SystemIntent.mailReply.rawValue:
             let intent = DraftMailReplyIntent()
             intent.toAddress = payload["toAddress"] as? String ?? ""
-            intent.subject = payload["subject"] as? String ?? item.title
+            intent.subject = payload["subject"] as? String ?? fallbackTitle
             intent.draftBody = payload["draftBody"] as? String ?? ""
             return .mailReply(intent)
 
         case SystemIntent.reminderAdd.rawValue:
             let intent = AddReminderIntent()
-            intent.reminderTitle = payload["reminderTitle"] as? String ?? item.title
+            intent.reminderTitle = payload["reminderTitle"] as? String ?? fallbackTitle
             intent.dueDate = (payload["dueDate"] as? String).flatMap(parseISO8601)
             intent.notes = payload["notes"] as? String
             return .reminder(intent)
 
         case SystemIntent.urlOpen.rawValue:
             guard let rawURL = payload["url"] as? String, let url = URL(string: rawURL) else {
-                return .unknown(systemIntent: item.systemIntent)
+                return .unknown(systemIntent: systemIntent)
             }
             let intent = OpenAgentURLIntent()
             intent.targetURL = url
-            intent.label = payload["label"] as? String ?? item.title
+            intent.label = payload["label"] as? String ?? fallbackTitle
             return .openURL(intent)
 
         default:
-            return .unknown(systemIntent: item.systemIntent)
+            return .unknown(systemIntent: systemIntent)
         }
     }
 
@@ -113,6 +131,7 @@ struct DynamicIntentButton: View {
 
     private var route: IntentRoute { IntentRoute.route(for: item) }
 
+
     var body: some View {
         switch route {
         case .calendar(let intent):
@@ -152,6 +171,52 @@ struct DynamicIntentButton: View {
                 Image(systemName: "questionmark.circle")
                 Text(si)
                     .font(.footnote)
+            }
+            .foregroundStyle(.secondary)
+            .padding(.vertical, 4)
+        }
+    }
+
+    @ViewBuilder
+    private var intentLabel: some View {
+        Label(route.label, systemImage: route.iconName)
+            .frame(maxWidth: .infinity)
+    }
+}
+
+// MARK: - Remote variant (IOSBackendActionItem)
+
+/// Same button logic as `DynamicIntentButton` but driven by a remote action item
+/// fetched directly from the Rails backend (no SwiftData dependency).
+struct RemoteDynamicIntentButton: View {
+    let item: IOSBackendActionItem
+
+    @Environment(\.openURL) private var openURL
+
+    private var route: IntentRoute { IntentRoute.route(for: item) }
+
+    var body: some View {
+        switch route {
+        case .calendar(let intent):
+            Button(intent: intent) { intentLabel }
+                .buttonStyle(.borderedProminent).tint(.blue)
+
+        case .mailReply(let intent):
+            Button(intent: intent) { intentLabel }
+                .buttonStyle(.borderedProminent).tint(.indigo)
+
+        case .reminder(let intent):
+            Button(intent: intent) { intentLabel }
+                .buttonStyle(.borderedProminent).tint(.orange)
+
+        case .openURL(let intent):
+            Button { openURL(intent.targetURL) } label: { intentLabel }
+                .buttonStyle(.borderedProminent).tint(.teal)
+
+        case .unknown(let si):
+            HStack {
+                Image(systemName: "questionmark.circle")
+                Text(si).font(.footnote)
             }
             .foregroundStyle(.secondary)
             .padding(.vertical, 4)
