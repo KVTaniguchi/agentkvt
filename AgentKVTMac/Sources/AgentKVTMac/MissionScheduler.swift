@@ -65,6 +65,11 @@ public struct MissionScheduler {
             guard let idx = weekdays.firstIndex(of: weekdayStr) else { return false }
             let comp = calendar.dateComponents([.weekday], from: date)
             return comp.weekday == idx + 1
+        case "interval":
+            guard parts.count == 2 else { return false }
+            let v = parts[1].lowercased()
+            guard v.hasSuffix("h"), let hours = Int(v.dropLast()), hours >= 1 else { return false }
+            return true  // actual gating is handled by isDue(_:MissionDefinition:at:) via lastRunAt
         default:
             return false
         }
@@ -102,6 +107,13 @@ public struct MissionScheduler {
             let currentWeekday = calendar.component(.weekday, from: startOfDay)
             let dayOffset = weekday - currentWeekday
             return calendar.date(byAdding: .day, value: dayOffset, to: startOfDay)
+        case "interval":
+            guard parts.count == 2 else { return nil }
+            let v = parts[1].lowercased()
+            guard v.hasSuffix("h"), let hours = Int(v.dropLast()), hours >= 1 else { return nil }
+            let secs = TimeInterval(hours * 3600)
+            let slot = floor(date.timeIntervalSince1970 / secs)
+            return Date(timeIntervalSince1970: slot * secs)
         default:
             return nil
         }

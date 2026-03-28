@@ -34,6 +34,7 @@ public func runAgentKVTMacRunner() async {
         EphemeralPin.self,
         ResourceHealth.self,
         FamilyMember.self,
+        ResearchSnapshot.self,
     ])
     var container: ModelContainer?
     let sharedPersistentConfig = ModelConfiguration(
@@ -127,6 +128,10 @@ public func runAgentKVTMacRunner() async {
     registry.register(makeListResourceHealthTool(modelContext: context))
     registry.register(makeReportResourceFailureTool(modelContext: context))
     registry.register(makeClearResourceHealthTool(modelContext: context))
+
+    registry.register(makeReadResearchSnapshotTool(modelContext: context))
+    registry.register(makeWriteResearchSnapshotTool(modelContext: context))
+    registry.register(makeMultiStepSearchTool(apiKey: settings.ollamaAPIKey))
 
     let client = OllamaClient(
         baseURL: settings.ollamaBaseURL,

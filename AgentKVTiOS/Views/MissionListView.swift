@@ -13,7 +13,7 @@ struct MissionListView: View {
     @State private var runNowErrorMessage: String?
     @State private var runNowConfirmationMessage: String?
 
-    private static let knownToolIds = ["write_action_item", "web_search_and_fetch", "headless_browser_scout", "send_notification_email", "github_agent", "fetch_bee_ai_context", "incoming_email_trigger"]
+    private static let knownToolIds = ["write_action_item", "web_search_and_fetch", "headless_browser_scout", "send_notification_email", "github_agent", "fetch_bee_ai_context", "incoming_email_trigger", "multi_step_search", "read_research_snapshot", "write_research_snapshot"]
     private let backendSync = IOSBackendSyncService()
 
     var body: some View {
@@ -267,6 +267,9 @@ struct MissionEditView: View {
         if normalizedSchedule.range(of: #"^weekly\|(sunday|monday|tuesday|wednesday|thursday|friday|saturday)$"#, options: .regularExpression) != nil {
             return true
         }
+        if normalizedSchedule.range(of: #"^interval\|([1-9]|[1-9][0-9]{1,2})h$"#, options: .regularExpression) != nil {
+            return true
+        }
         return false
     }
 
@@ -292,7 +295,7 @@ struct MissionEditView: View {
                 }
                 Section("Schedule") {
                     TextField("Trigger (e.g. daily|08:00, weekly|monday)", text: $triggerSchedule)
-                    Text("Supported: daily|HH:mm, weekly|weekday, or webhook")
+                    Text("Supported: daily|HH:mm, weekly|weekday, interval|Nh (e.g. interval|6h), or webhook")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

@@ -28,6 +28,7 @@ struct AgentKVTiOSApp: App {
             EphemeralPin.self,
             ResourceHealth.self,
             FamilyMember.self,
+            ResearchSnapshot.self,
         ])
         #if targetEnvironment(simulator)
         // Simulator: use app group container so SwiftData has a valid container (avoids loadIssueModelContainer).

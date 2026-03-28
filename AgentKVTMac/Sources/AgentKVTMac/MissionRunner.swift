@@ -65,7 +65,9 @@ public final class MissionRunner: @unchecked Sendable {
         "list_dropzone_files",
         "list_resource_health",
         "read_dropzone_file",
-        "web_search_and_fetch"
+        "web_search_and_fetch",
+        "multi_step_search",
+        "read_research_snapshot"
     ]
     private let deferredVisibleOutputToolIds: Set<String> = ["write_action_item"]
 
@@ -378,6 +380,25 @@ public final class MissionRunner: @unchecked Sendable {
             return """
             github_agent guidance:
             - Use this tool for read-only GitHub information that is relevant to the mission.
+            """
+        case "multi_step_search":
+            return """
+            multi_step_search guidance:
+            - Use this to run 2–5 related queries in one turn (e.g. compare hotel prices across 3 sites).
+            - Pass steps_json with type "search" for web queries or "browse" for specific URLs.
+            - Do not call write_action_item in the same response — review results first.
+            """
+        case "read_research_snapshot":
+            return """
+            read_research_snapshot guidance:
+            - Call at mission start to retrieve the last known tracked value for a key.
+            - If "first check" is returned, fetch the current value then call write_research_snapshot.
+            """
+        case "write_research_snapshot":
+            return """
+            write_research_snapshot guidance:
+            - Call after observing a current value to persist it and detect meaningful change.
+            - Only call write_action_item if the result starts with "changed:".
             """
         default:
             guard let description = registry.tool(id: toolId)?.description?.trimmingCharacters(in: .whitespacesAndNewlines),
