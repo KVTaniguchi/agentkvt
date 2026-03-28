@@ -33,9 +33,18 @@ enum IntentRoute {
 
     /// Decodes a remote `IOSBackendActionItem` (fetched directly from Rails) into a typed route.
     static func route(for item: IOSBackendActionItem) -> IntentRoute {
-        let payload = item.payloadJson.compactMapValues { $0.stringValue }
+        // Convert IOSBackendJSONValue to Foundation-native types so the shared helper's
+        // `as? String` / `as? Int` casts work correctly. Numbers are stored as Double
+        // internally; integer-valued doubles are converted back to Int.
+        let payload: [String: Any] = item.payloadJson.reduce(into: [:]) { result, kv in
+            switch kv.value {
+            case .string(let s): result[kv.key] = s
+            case .number(let n): result[kv.key] = n.truncatingRemainder(dividingBy: 1) == 0 ? Int(n) : n
+            case .bool(let b):   result[kv.key] = b
+            default:             break   // .null / .object / .array not used in intent payloads
+            }
+        }
         let normalizedIntent = SystemIntent.normalizedRawValue(from: item.systemIntent)
-
         return route(normalizedIntent: normalizedIntent, payload: payload, fallbackTitle: item.title, systemIntent: item.systemIntent)
     }
 
@@ -76,7 +85,7 @@ enum IntentRoute {
             }
             let intent = OpenAgentURLIntent()
             intent.targetURL = url
-            intent.label = payload["label"] as? String ?? fallbackTitle
+            intent.label = payload["label"] as? String
             return .openURL(intent)
 
         default:

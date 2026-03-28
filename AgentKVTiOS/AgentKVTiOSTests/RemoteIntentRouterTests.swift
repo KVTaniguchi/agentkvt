@@ -142,7 +142,7 @@ struct RemoteIntentRouterTests {
     func openURLInvalidURL() {
         let item = makeItem(
             systemIntent: "url.open",
-            payload: ["url": .string("not a url ☃")]
+            payload: ["url": .string("://bad url with spaces")]
         )
         guard case .unknown = IntentRoute.route(for: item) else {
             Issue.record("Expected .unknown for invalid url")
