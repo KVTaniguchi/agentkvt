@@ -148,8 +148,10 @@ public func runAgentKVTMacRunner() async {
     if settings.runScheduler {
         if let backendClient {
             registry.register(makeWriteActionItemTool(backendClient: backendClient))
+            registry.register(makeFetchAgentLogsTool(backendClient: backendClient))
         } else {
             registry.register(makeWriteActionItemTool(modelContext: context))
+            registry.register(makeFetchAgentLogsTool(modelContext: context))
         }
         await runScheduler(
             context: sharedModelContext,
@@ -165,8 +167,10 @@ public func runAgentKVTMacRunner() async {
     } else {
         if let backendClient {
             registry.register(makeWriteActionItemTool(backendClient: backendClient))
+            registry.register(makeFetchAgentLogsTool(backendClient: backendClient))
         } else {
             registry.register(makeWriteActionItemTool(modelContext: context))
+            registry.register(makeFetchAgentLogsTool(modelContext: context))
         }
         await runSingleTest(registry: registry, client: client)
     }

@@ -380,6 +380,14 @@ public final class MissionRunner: @unchecked Sendable {
             - Use this tool for current web information, recent facts, or anything that depends on live pages and matches the mission.
             - Do not call write_action_item in the same response as this search. Search first, then review the fetched results, then create the action item in a later response.
             """
+        case "fetch_agent_logs":
+            return """
+            fetch_agent_logs guidance:
+            - Use this tool to inspect recent execution history before drawing conclusions about failures or unexpected output.
+            - Filter by mission_name to focus on a specific mission, or omit it to see all recent activity.
+            - Use phases: "error,warning" to focus on problems, or "tool_call,tool_result" to trace what the agent actually fetched.
+            - After reviewing the logs, surface a write_action_item with a concrete diagnosis or recommended fix.
+            """
         case "headless_browser_scout":
             return """
             headless_browser_scout guidance:

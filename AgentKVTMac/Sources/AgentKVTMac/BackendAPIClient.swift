@@ -68,6 +68,7 @@ public struct BackendAgentLog: Codable, Sendable {
     public let id: UUID
     public let workspaceId: UUID
     public let missionId: UUID?
+    public let missionName: String?
     public let phase: String
     public let content: String
     public let metadataJson: [String: String]
@@ -98,6 +99,10 @@ private struct BackendActionItemsEnvelope: Codable {
 
 private struct BackendAgentLogEnvelope: Codable {
     let agentLog: BackendAgentLog
+}
+
+private struct BackendAgentLogsEnvelope: Codable {
+    let agentLogs: [BackendAgentLog]
 }
 
 public actor BackendAPIClient {
@@ -167,6 +172,27 @@ public actor BackendAPIClient {
             requiresAgentAuth: true
         )
         return try decoder.decode(BackendActionItemEnvelope.self, from: data).actionItem
+    }
+
+    public func fetchMissionLogs(
+        missionId: UUID,
+        phases: [String] = [],
+        sinceMinutes: Int? = nil,
+        limit: Int = 100
+    ) async throws -> [BackendAgentLog] {
+        var queryItems = [URLQueryItem(name: "limit", value: "\(min(limit, 200))")]
+        if !phases.isEmpty {
+            queryItems.append(URLQueryItem(name: "phases", value: phases.joined(separator: ",")))
+        }
+        if let sinceMinutes {
+            queryItems.append(URLQueryItem(name: "since_minutes", value: "\(sinceMinutes)"))
+        }
+        let data = try await performRequest(
+            path: "v1/agent/missions/\(missionId.uuidString)/logs",
+            queryItems: queryItems,
+            requiresAgentAuth: true
+        )
+        return try decoder.decode(BackendAgentLogsEnvelope.self, from: data).agentLogs
     }
 
     public func createLog(

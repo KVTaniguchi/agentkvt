@@ -19,6 +19,7 @@ Rails.application.routes.draw do
       resources :missions, only: [] do
         get :action_items, to: "mission_action_items#index"
         post :action_items, to: "mission_action_items#create"
+        get :logs, to: "mission_logs#index"
         post :logs, to: "mission_logs#create"
         post :mark_run, to: "mission_runs#create"
       end
