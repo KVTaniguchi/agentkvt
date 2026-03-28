@@ -251,29 +251,110 @@ public final class MissionRunner: @unchecked Sendable {
     }
 
     private func missionSystemPrompt(basePrompt: String, allowedTools: [String]) -> String {
-        guard allowedTools.contains("write_action_item") else {
-            return basePrompt
+        let trimmedPrompt = basePrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        let toolGuidance = runtimeToolGuidance(basePrompt: trimmedPrompt, allowedTools: allowedTools)
+        guard !toolGuidance.isEmpty else {
+            return trimmedPrompt
         }
-
-        let cardinalityInstruction: String
-        if basePrompt.localizedCaseInsensitiveContains("exactly one action item")
-            || basePrompt.localizedCaseInsensitiveContains("create one action item")
-            || basePrompt.localizedCaseInsensitiveContains("one action per") {
-            cardinalityInstruction = "Create exactly one action item unless the mission instructions explicitly require more."
-        } else {
-            cardinalityInstruction = "Create at least one action item before you finish."
+        guard !trimmedPrompt.isEmpty else {
+            return toolGuidance
         }
 
         return """
-        \(basePrompt)
+        \(trimmedPrompt)
 
-        Visible output requirement:
-        - This mission is only successful after you call write_action_item.
-        - \(cardinalityInstruction)
-        - Do not end with plain text only.
-        - If you found a concrete URL the user should review, prefer systemIntent "url.open" and include payloadJson with the required URL field.
-        - Keep the action item title short, specific, and user-facing.
+        \(toolGuidance)
         """
+    }
+
+    private func runtimeToolGuidance(basePrompt: String, allowedTools: [String]) -> String {
+        let normalizedToolIds = Array(NSOrderedSet(array: allowedTools)) as? [String] ?? allowedTools
+        guard !normalizedToolIds.isEmpty else {
+            return ""
+        }
+
+        var sections = [
+            """
+            Runtime tool permissions:
+            - The following tools are already authorized for this mission even if the user's prompt does not mention them by name: \(normalizedToolIds.joined(separator: ", ")).
+            - Use only tools from this list, and call them whenever they materially help complete the mission.
+            """
+        ]
+
+        for toolId in normalizedToolIds {
+            if let guidance = runtimeToolSection(for: toolId, basePrompt: basePrompt) {
+                sections.append(guidance)
+            }
+        }
+
+        return sections.joined(separator: "\n\n")
+    }
+
+    private func runtimeToolSection(for toolId: String, basePrompt: String) -> String? {
+        switch toolId {
+        case "write_action_item":
+            let cardinalityInstruction: String
+            if basePrompt.localizedCaseInsensitiveContains("exactly one action item")
+                || basePrompt.localizedCaseInsensitiveContains("create one action item")
+                || basePrompt.localizedCaseInsensitiveContains("one action per") {
+                cardinalityInstruction = "Create exactly one action item unless the mission instructions explicitly require more."
+            } else {
+                cardinalityInstruction = "Create at least one action item before you finish."
+            }
+
+            return """
+            write_action_item requirement:
+            - This mission is only successful after you call write_action_item.
+            - \(cardinalityInstruction)
+            - Do not end with plain text only.
+            - Use one of these systemIntent values only: calendar.create, mail.reply, reminder.add, url.open.
+            - If you found a concrete URL the user should review, prefer systemIntent "url.open" and include payloadJson with the required URL field.
+            - Keep the action item title short, specific, and user-facing.
+            """
+        case "web_search_and_fetch":
+            return """
+            web_search_and_fetch guidance:
+            - Use this tool for current web information, recent facts, or job/research searches that depend on live pages.
+            """
+        case "headless_browser_scout":
+            return """
+            headless_browser_scout guidance:
+            - Use this tool when a site needs a real browser, JavaScript execution, or click/fill interactions.
+            """
+        case "send_notification_email":
+            return """
+            send_notification_email guidance:
+            - Use this tool when the mission should deliver a concise alert or summary to the user by email.
+            """
+        case "fetch_bee_ai_context":
+            return """
+            fetch_bee_ai_context guidance:
+            - Use this tool when recent BEE AI notes or summaries would improve prioritization, personalization, or context.
+            """
+        case "incoming_email_trigger":
+            return """
+            incoming_email_trigger guidance:
+            - Start by reading the pending inbox trigger so your actions stay grounded in the incoming email context.
+            """
+        case "github_agent":
+            return """
+            github_agent guidance:
+            - Use this tool for read-only GitHub information that is relevant to the mission.
+            """
+        default:
+            guard let description = registry.tool(id: toolId)?.description?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !description.isEmpty else {
+                return nil
+            }
+            let normalizedDescription = description
+                .replacingOccurrences(of: "\r\n", with: "\n")
+                .replacingOccurrences(of: "\n", with: " ")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return """
+            \(toolId) guidance:
+            - \(normalizedDescription)
+            """
+        }
     }
 
     private func recoverySystemPrompt(for missionName: String) -> String {

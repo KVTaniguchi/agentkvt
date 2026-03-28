@@ -97,7 +97,7 @@ flowchart TB
 | **Schedule** | `weekly|sunday` (runs every Sunday) or `daily|09:00` (every morning) or `webhook` (only when triggered externally) |
 | **Allowed tools** | e.g. `write_action_item`, `web_search_and_fetch`, `headless_browser_scout`, `send_notification_email`, `fetch_bee_ai_context` |
 
-**Output contract:** If `write_action_item` is in the mission's allowed tools, the system prompt **must** explicitly instruct the agent to call it — otherwise the mission runs silently and produces no visible output on iOS. The iOS authoring UI shows the valid `systemIntent` values and a soft advisory if the prompt doesn't mention `write_action_item`. The backend also validates this before saving.
+**Output contract:** If `write_action_item` is in the mission's allowed tools, the Mac runner now appends runtime guidance telling the model that the tool is authorized and that the mission is not complete until it creates at least one visible action item. The iOS authoring UI explains this generated behavior, so the human-authored prompt can stay focused on the task itself. A mission that still never calls `write_action_item` will run silently on iOS and produce a `"warning"` phase `AgentLog` entry.
 
 **Payload schemas for write_action_item** (see `SystemIntent.payloadFields` in ManagerCore for the canonical definition):
 

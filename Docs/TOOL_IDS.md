@@ -21,6 +21,6 @@ For `write_action_item`, `systemIntent` must be one of the values below. Each in
 
 Legacy alias `open_url` is normalized to `url.open`, but new prompts/docs should use canonical values above.
 
-**Prompt requirement:** If `write_action_item` is in a mission's `allowed_mcp_tools`, the mission's `system_prompt` must explicitly mention `write_action_item` — both the iOS authoring UI and the backend enforce this. A mission that runs without ever calling this tool will produce a `"warning"` phase `AgentLog` entry and no visible output on iOS.
+**Runtime requirement:** If `write_action_item` is in a mission's `allowed_mcp_tools`, the Mac runner automatically appends runtime guidance telling the model that the tool is authorized and that the mission must create at least one visible action item before finishing. A mission that still never calls this tool will produce a `"warning"` phase `AgentLog` entry and no visible output on iOS.
 
 Example `allowedMCPTools`: `["write_action_item", "send_notification_email"]` for a mission that only needs to create buttons and email the user.

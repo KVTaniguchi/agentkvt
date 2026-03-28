@@ -4,9 +4,16 @@ import Foundation
 private actor MockOllamaState {
     let responses: [OllamaClient.Message]
     var callIndex: Int = 0
+    var recordedMessages: [[OllamaClient.Message]] = []
+    var recordedTools: [[OllamaClient.ToolDef]?] = []
 
     init(responses: [OllamaClient.Message]) {
         self.responses = responses
+    }
+
+    func record(messages: [OllamaClient.Message], tools: [OllamaClient.ToolDef]?) {
+        recordedMessages.append(messages)
+        recordedTools.append(tools)
     }
 
     func getNext() -> OllamaClient.Message {
@@ -16,6 +23,14 @@ private actor MockOllamaState {
         let response = responses[callIndex]
         callIndex += 1
         return response
+    }
+
+    func capturedMessages() -> [[OllamaClient.Message]] {
+        recordedMessages
+    }
+
+    func capturedTools() -> [[OllamaClient.ToolDef]?] {
+        recordedTools
     }
 }
 
@@ -28,7 +43,16 @@ public final class MockOllamaClient: OllamaClientProtocol {
     }
 
     public func chat(messages: [OllamaClient.Message], tools: [OllamaClient.ToolDef]?) async throws -> OllamaClient.Message {
-        await state.getNext()
+        await state.record(messages: messages, tools: tools)
+        return await state.getNext()
+    }
+
+    public func capturedMessages() async -> [[OllamaClient.Message]] {
+        await state.capturedMessages()
+    }
+
+    public func capturedTools() async -> [[OllamaClient.ToolDef]?] {
+        await state.capturedTools()
     }
 }
 

@@ -29,6 +29,7 @@ private func makeTestRegistry(
     modelContext: ModelContext,
     includeSendNotification: Bool = false,
     includeBeeAI: Bool = false,
+    includeWebSearch: Bool = false,
     notificationOutboxDir: URL? = nil
 ) -> ToolRegistry {
     let registry = ToolRegistry()
@@ -42,12 +43,55 @@ private func makeTestRegistry(
     if includeBeeAI {
         registry.register(makeFetchBeeAIContextTool(modelContext: modelContext))
     }
+    if includeWebSearch {
+        registry.register(makeWebSearchAndFetchTool(apiKey: "test-api-key"))
+    }
     return registry
 }
 
 // MARK: - 1. Job Scout Pipeline Test
 
 struct JobScoutPipelineTest {
+
+    @Test("MissionRunner injects selected tool guidance into the runtime prompt automatically")
+    func missionRunnerInjectsToolGuidance() async throws {
+        let (context, _) = try makeTestContainer()
+        let registry = makeTestRegistry(modelContext: context, includeWebSearch: true)
+
+        let mission = MissionDefinition(
+            missionName: "Tech Job Scout",
+            systemPrompt: "Search for iOS engineer roles at Series B startups and surface the strongest matches.",
+            triggerSchedule: "weekly|sunday",
+            allowedMCPTools: ["write_action_item", "web_search_and_fetch"]
+        )
+        mission.isEnabled = true
+        context.insert(mission)
+        try context.save()
+
+        let mockClient = MockOllamaClient(responses: [
+            .assistantWithToolCalls([
+                .writeActionItem(title: "Review: Acme Corp - Senior iOS Lead", systemIntent: "url.open", payloadJson: "{\"url\":\"https://jobs.example.com/1\"}")
+            ]),
+            .assistantFinal(content: "Found one high-match iOS role.")
+        ])
+
+        let runner = MissionRunner(modelContext: context, client: mockClient, registry: registry)
+        try await runner.run(mission)
+
+        let capturedMessages = await mockClient.capturedMessages()
+        let firstChat = capturedMessages.first
+        let runtimePrompt = firstChat?.first(where: { $0.role == "system" })?.content ?? ""
+        #expect(runtimePrompt.contains("Search for iOS engineer roles at Series B startups"))
+        #expect(runtimePrompt.contains("The following tools are already authorized for this mission"))
+        #expect(runtimePrompt.contains("write_action_item requirement"))
+        #expect(runtimePrompt.contains("web_search_and_fetch guidance"))
+
+        let capturedTools = await mockClient.capturedTools()
+        let firstTools = capturedTools.first ?? nil
+        let firstToolNames = firstTools?.map(\.function.name) ?? []
+        #expect(firstToolNames.contains("write_action_item"))
+        #expect(firstToolNames.contains("web_search_and_fetch"))
+    }
 
     @Test("When a job mission is due, agent creates exactly one Review ActionItem and outcome log")
     func jobScoutCreatesReviewActionAndOutcomeLog() async throws {
