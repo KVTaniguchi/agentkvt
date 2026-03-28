@@ -30,6 +30,7 @@ private func makeTestRegistry(
     includeSendNotification: Bool = false,
     includeBeeAI: Bool = false,
     includeWebSearch: Bool = false,
+    webSearchResult: String? = nil,
     notificationOutboxDir: URL? = nil
 ) -> ToolRegistry {
     let registry = ToolRegistry()
@@ -43,10 +44,29 @@ private func makeTestRegistry(
     if includeBeeAI {
         registry.register(makeFetchBeeAIContextTool(modelContext: modelContext))
     }
-    if includeWebSearch {
+    if let webSearchResult {
+        registry.register(makeStubWebSearchAndFetchTool(result: webSearchResult))
+    } else if includeWebSearch {
         registry.register(makeWebSearchAndFetchTool(apiKey: "test-api-key"))
     }
     return registry
+}
+
+private func makeStubWebSearchAndFetchTool(result: String) -> ToolRegistry.Tool {
+    ToolRegistry.Tool(
+        id: "web_search_and_fetch",
+        name: "web_search_and_fetch",
+        description: "Stubbed web search tool for integration tests.",
+        parameters: .init(
+            type: "object",
+            properties: [
+                "query": .init(type: "string", description: "Search query."),
+                "max_results": .init(type: "string", description: "Optional max result count.")
+            ],
+            required: ["query"]
+        ),
+        handler: { _ in result }
+    )
 }
 
 // MARK: - 1. Job Scout Pipeline Test
@@ -85,12 +105,90 @@ struct JobScoutPipelineTest {
         #expect(runtimePrompt.contains("The following tools are already authorized for this mission"))
         #expect(runtimePrompt.contains("write_action_item requirement"))
         #expect(runtimePrompt.contains("web_search_and_fetch guidance"))
+        #expect(runtimePrompt.contains("Do not call write_action_item in the same response as this search"))
+        #expect(runtimePrompt.contains("only then call write_action_item in a later response"))
 
         let capturedTools = await mockClient.capturedTools()
         let firstTools = capturedTools.first ?? nil
         let firstToolNames = firstTools?.map(\.function.name) ?? []
         #expect(firstToolNames.contains("write_action_item"))
         #expect(firstToolNames.contains("web_search_and_fetch"))
+    }
+
+    @Test("MissionRunner defers write_action_item when it is batched with a fresh web search")
+    func missionRunnerDefersVisibleActionUntilAfterSearchResults() async throws {
+        let (context, _) = try makeTestContainer()
+        let registry = makeTestRegistry(
+            modelContext: context,
+            webSearchResult: """
+            ## [1] Universal Orlando Resort Vacation Packages
+            URL: https://www.universalorlando.com/web/en/us/tickets-packages/vacation-packages
+
+            July 11-15 vacation packages include hotel bundles, early park admission, and checkout links for package comparison.
+            """
+        )
+
+        let mission = MissionDefinition(
+            missionName: "Universal Studios, Orlando trip",
+            systemPrompt: "Research the strongest Universal Orlando package option for July 11-15 and create one clear next step.",
+            triggerSchedule: "once",
+            allowedMCPTools: ["web_search_and_fetch", "write_action_item"]
+        )
+        mission.isEnabled = true
+        context.insert(mission)
+        try context.save()
+
+        let mockClient = MockOllamaClient(responses: [
+            .assistantWithToolCalls([
+                .webSearch(query: "Universal Orlando Resort vacation packages for July 11-15", maxResults: "3"),
+                .writeActionItem(
+                    title: "Book Now",
+                    systemIntent: "url.open",
+                    payloadJson: #"{"url":"https://www.universalorlando.com/hotels-specials/today-only-deals/"}"#
+                )
+            ]),
+            .assistantWithToolCalls([
+                .writeActionItem(
+                    title: "Compare July 11-15 Universal packages",
+                    systemIntent: "url.open",
+                    payloadJson: #"{"url":"https://www.universalorlando.com/web/en/us/tickets-packages/vacation-packages"}"#
+                )
+            ]),
+            .assistantFinal(content: "Reviewed the fetched package details and created one focused next step.")
+        ])
+
+        let runner = MissionRunner(modelContext: context, client: mockClient, registry: registry)
+        try await runner.run(mission)
+
+        let items = try context.fetch(FetchDescriptor<ActionItem>())
+        #expect(items.count == 1, "Expected exactly one ActionItem after the deferred write_action_item flow.")
+        #expect(items[0].title == "Compare July 11-15 Universal packages")
+
+        let logs = try context.fetch(FetchDescriptor<AgentLog>())
+        #expect(logs.contains {
+            $0.phase == "tool_result"
+                && $0.toolName == "write_action_item"
+                && $0.content.contains("Deferred:")
+        })
+        #expect(logs.contains {
+            $0.phase == "tool_result"
+                && $0.toolName == "web_search_and_fetch"
+                && $0.content.contains("Universal Orlando Resort Vacation Packages")
+        })
+
+        let capturedMessages = await mockClient.capturedMessages()
+        #expect(capturedMessages.count >= 2)
+        let secondChatMessages = try #require(capturedMessages.dropFirst().first)
+        #expect(secondChatMessages.contains {
+            $0.role == "tool"
+                && $0.name == "web_search_and_fetch"
+                && ($0.content ?? "").contains("Universal Orlando Resort Vacation Packages")
+        })
+        #expect(secondChatMessages.contains {
+            $0.role == "tool"
+                && $0.name == "write_action_item"
+                && ($0.content ?? "").contains("Deferred:")
+        })
     }
 
     @Test("When a job mission is due, agent creates exactly one Review ActionItem and outcome log")

@@ -53,6 +53,21 @@ public final class MissionRunner: @unchecked Sendable {
     private let client: any OllamaClientProtocol
     private let registry: ToolRegistry
     private let logWriter: any MissionLogWriting
+    private let freshDataToolIds: Set<String> = [
+        "fetch_bee_ai_context",
+        "fetch_email_summaries",
+        "fetch_mission_status",
+        "fetch_work_units",
+        "get_life_context",
+        "github_agent",
+        "headless_browser_scout",
+        "incoming_email_trigger",
+        "list_dropzone_files",
+        "list_resource_health",
+        "read_dropzone_file",
+        "web_search_and_fetch"
+    ]
+    private let deferredVisibleOutputToolIds: Set<String> = ["write_action_item"]
 
     private final class ActionItemCounter: @unchecked Sendable {
         var count = 0
@@ -207,7 +222,12 @@ public final class MissionRunner: @unchecked Sendable {
         actionItemsCounter: ActionItemCounter,
         toolTranscript: ToolTranscriptRecorder
     ) async throws -> String {
-        let loop = AgentLoop(client: client, registry: registry, allowedToolIds: allowedToolIds)
+        let loop = AgentLoop(
+            client: client,
+            registry: registry,
+            allowedToolIds: allowedToolIds,
+            toolBatchExecutionPolicy: missionToolBatchExecutionPolicy()
+        )
         let context = MissionExecutionContext.Context(missionId: request.id, missionName: request.missionName)
         return try await MissionExecutionContext.$current.withValue(context) {
             try await loop.run(systemPrompt: systemPrompt, userMessage: userMessage, maxRounds: maxRounds) { event in
@@ -224,12 +244,12 @@ public final class MissionRunner: @unchecked Sendable {
                     content = arguments
                     toolName = name
                     toolTranscript.append(self.toolTranscriptLine(prefix: "tool_call", name: name, content: arguments))
-                case .toolCallCompleted(let name, let toolResult):
+                case .toolCallCompleted(let name, let toolResult, let wasDeferred):
                     phase = "tool_result"
                     content = toolResult
                     toolName = name
                     toolTranscript.append(self.toolTranscriptLine(prefix: "tool_result", name: name, content: toolResult))
-                    if name == "write_action_item" { actionItemsCounter.count += 1 }
+                    if name == "write_action_item" && !wasDeferred { actionItemsCounter.count += 1 }
                 case .finalResponse(let responseContent):
                     phase = "assistant_final"
                     content = responseContent
@@ -247,6 +267,21 @@ public final class MissionRunner: @unchecked Sendable {
                     toolName: toolName
                 )
             }
+        }
+    }
+
+    private func missionToolBatchExecutionPolicy() -> AgentLoop.ToolBatchExecutionPolicy {
+        AgentLoop.ToolBatchExecutionPolicy { [freshDataToolIds = self.freshDataToolIds, deferredVisibleOutputToolIds = self.deferredVisibleOutputToolIds] requestedToolName, batchToolNames in
+            guard deferredVisibleOutputToolIds.contains(requestedToolName) else {
+                return nil
+            }
+            let batchToolSet = Set(batchToolNames)
+            guard !batchToolSet.isDisjoint(with: freshDataToolIds) else {
+                return nil
+            }
+            return """
+            Deferred: \(requestedToolName) was skipped because this same response also requested fresh data-gathering tools. Review the new tool results and then call \(requestedToolName) in a later response.
+            """
         }
     }
 
@@ -310,16 +345,19 @@ public final class MissionRunner: @unchecked Sendable {
             - Use one of these systemIntent values only: calendar.create, mail.reply, reminder.add, url.open.
             - If you found a concrete URL the user should review, prefer systemIntent "url.open" and include payloadJson with the required URL field.
             - Keep the action item title short, specific, and user-facing.
+            - If you need fresh information from tools such as web_search_and_fetch or headless_browser_scout, call those tools first, review their results, and only then call write_action_item in a later response.
             """
         case "web_search_and_fetch":
             return """
             web_search_and_fetch guidance:
             - Use this tool for current web information, recent facts, or job/research searches that depend on live pages.
+            - Do not call write_action_item in the same response as this search. Search first, then review the fetched results, then create the action item in a later response.
             """
         case "headless_browser_scout":
             return """
             headless_browser_scout guidance:
             - Use this tool when a site needs a real browser, JavaScript execution, or click/fill interactions.
+            - When this tool gathers fresh information, wait for its results before calling write_action_item.
             """
         case "send_notification_email":
             return """

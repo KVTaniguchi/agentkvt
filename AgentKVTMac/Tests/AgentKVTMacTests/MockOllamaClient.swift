@@ -69,6 +69,20 @@ extension OllamaClient.Message {
 }
 
 extension OllamaClient.ToolCall {
+    public static func webSearch(query: String, maxResults: String? = nil) -> OllamaClient.ToolCall {
+        var dict: [String: String] = ["query": query]
+        if let maxResults {
+            dict["max_results"] = maxResults
+        }
+        let data = try! JSONSerialization.data(withJSONObject: dict)
+        let args = String(data: data, encoding: .utf8)!
+        return .init(
+            id: nil,
+            type: "function",
+            function: .init(name: "web_search_and_fetch", arguments: args)
+        )
+    }
+
     public static func writeActionItem(title: String, systemIntent: String, payloadJson: String = "{}") -> OllamaClient.ToolCall {
         let dict: [String: String] = ["title": title, "systemIntent": systemIntent, "payloadJson": payloadJson]
         let data = try! JSONSerialization.data(withJSONObject: dict)

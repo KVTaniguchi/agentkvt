@@ -122,7 +122,7 @@ public final class ChatRunner: @unchecked Sendable {
                 content: arguments,
                 toolName: name
             )
-        case .toolCallCompleted(let name, let result):
+        case .toolCallCompleted(let name, let result, _):
             return AgentLog(
                 missionName: "Chat: \(thread.title)",
                 phase: "tool_result",
