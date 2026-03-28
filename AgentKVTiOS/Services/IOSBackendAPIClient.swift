@@ -17,6 +17,11 @@ enum IOSBackendAPIError: Error, LocalizedError {
             return "Invalid backend payload: \(message)"
         }
     }
+
+    var isNotFound: Bool {
+        guard case .requestFailed(let statusCode, _) = self else { return false }
+        return statusCode == 404
+    }
 }
 
 struct IOSBackendFamilyMember: Codable, Sendable {
@@ -588,19 +593,39 @@ final class IOSBackendSyncService {
         let sourceUpdatedAt = Date()
 
         if let client {
+            let resolvedOwnerProfileId = try await ensureMissionOwnerExists(
+                ownerProfileId: ownerProfileId,
+                modelContext: modelContext,
+                client: client
+            )
             let mission: IOSBackendMission
             if let existingMission {
-                mission = try await client.updateMission(
-                    id: existingMission.id,
-                    missionName: normalizedName,
-                    systemPrompt: normalizedPrompt,
-                    triggerSchedule: normalizedSchedule,
-                    allowedMcpTools: tools,
-                    ownerProfileId: ownerProfileId,
-                    isEnabled: existingMission.isEnabled,
-                    lastRunAt: existingMission.lastRunAt,
-                    sourceUpdatedAt: sourceUpdatedAt
-                )
+                do {
+                    mission = try await client.updateMission(
+                        id: existingMission.id,
+                        missionName: normalizedName,
+                        systemPrompt: normalizedPrompt,
+                        triggerSchedule: normalizedSchedule,
+                        allowedMcpTools: tools,
+                        ownerProfileId: resolvedOwnerProfileId,
+                        isEnabled: existingMission.isEnabled,
+                        lastRunAt: existingMission.lastRunAt,
+                        sourceUpdatedAt: sourceUpdatedAt
+                    )
+                } catch let error as IOSBackendAPIError where error.isNotFound {
+                    IOSRuntimeLog.log("[IOSBackendSync] Mission id=\(existingMission.id.uuidString) missing on backend during save; creating it instead.")
+                    mission = try await client.createMission(
+                        id: existingMission.id,
+                        missionName: normalizedName,
+                        systemPrompt: normalizedPrompt,
+                        triggerSchedule: normalizedSchedule,
+                        allowedMcpTools: tools,
+                        ownerProfileId: resolvedOwnerProfileId,
+                        isEnabled: existingMission.isEnabled,
+                        lastRunAt: existingMission.lastRunAt,
+                        sourceUpdatedAt: sourceUpdatedAt
+                    )
+                }
             } else {
                 mission = try await client.createMission(
                     id: UUID(),
@@ -608,7 +633,7 @@ final class IOSBackendSyncService {
                     systemPrompt: normalizedPrompt,
                     triggerSchedule: normalizedSchedule,
                     allowedMcpTools: tools,
-                    ownerProfileId: ownerProfileId,
+                    ownerProfileId: resolvedOwnerProfileId,
                     isEnabled: true,
                     lastRunAt: nil,
                     sourceUpdatedAt: sourceUpdatedAt
@@ -642,12 +667,49 @@ final class IOSBackendSyncService {
     }
 
     @MainActor
-    func runMissionNow(_ mission: MissionDefinition) async throws {
+    func runMissionNow(_ mission: MissionDefinition, modelContext: ModelContext? = nil) async throws {
         guard let client else {
             IOSRuntimeLog.log("[IOSBackendSync] runMissionNow skipped: no backend client configured.")
             return
         }
-        _ = try await client.runMissionNow(id: mission.id)
+        let remoteMission: IOSBackendMission
+        do {
+            remoteMission = try await client.runMissionNow(id: mission.id)
+        } catch let error as IOSBackendAPIError where error.isNotFound {
+            IOSRuntimeLog.log("[IOSBackendSync] Mission id=\(mission.id.uuidString) missing on backend during run_now; creating it and retrying.")
+            let resolvedOwnerProfileId = try await ensureMissionOwnerExists(
+                ownerProfileId: mission.ownerProfileId,
+                modelContext: modelContext,
+                client: client
+            )
+            _ = try await client.createMission(
+                id: mission.id,
+                missionName: mission.missionName,
+                systemPrompt: mission.systemPrompt,
+                triggerSchedule: mission.triggerSchedule,
+                allowedMcpTools: mission.allowedMCPTools,
+                ownerProfileId: resolvedOwnerProfileId,
+                isEnabled: mission.isEnabled,
+                lastRunAt: mission.lastRunAt,
+                sourceUpdatedAt: mission.updatedAt
+            )
+            remoteMission = try await client.runMissionNow(id: mission.id)
+        }
+        if let modelContext {
+            _ = upsertMission(remoteMission, into: modelContext)
+            try modelContext.save()
+        } else {
+            mission.missionName = remoteMission.missionName
+            mission.systemPrompt = remoteMission.systemPrompt
+            mission.triggerSchedule = remoteMission.triggerSchedule
+            mission.allowedMCPTools = remoteMission.allowedMcpTools
+            mission.ownerProfileId = remoteMission.ownerProfileId
+            mission.isEnabled = remoteMission.isEnabled
+            mission.lastRunAt = remoteMission.lastRunAt
+            mission.runRequestedAt = remoteMission.runRequestedAt
+            mission.createdAt = remoteMission.createdAt
+            mission.updatedAt = remoteMission.updatedAt
+        }
         IOSRuntimeLog.log("[IOSBackendSync] Run requested for mission id=\(mission.id.uuidString) '\(mission.missionName)'.")
     }
 
@@ -749,6 +811,36 @@ final class IOSBackendSyncService {
             _ = upsertLifeContextEntry(remoteEntry, into: modelContext)
         }
         try pruneLifeContextEntries(excluding: Set(remoteEntries.map(\.id)), in: modelContext)
+    }
+
+    @MainActor
+    private func ensureMissionOwnerExists(
+        ownerProfileId: UUID?,
+        modelContext: ModelContext?,
+        client: IOSBackendAPIClient
+    ) async throws -> UUID? {
+        guard let ownerProfileId else { return nil }
+
+        let remoteMembers = try await client.fetchFamilyMembers()
+        if remoteMembers.contains(where: { $0.id == ownerProfileId }) {
+            return ownerProfileId
+        }
+
+        guard let modelContext,
+              let localOwner = familyMember(id: ownerProfileId, in: modelContext) else {
+            IOSRuntimeLog.log("[IOSBackendSync] Owner profile id=\(ownerProfileId.uuidString) missing locally; saving mission without owner.")
+            return nil
+        }
+
+        let remoteOwner = try await client.createFamilyMember(
+            id: localOwner.id,
+            displayName: localOwner.displayName,
+            symbol: localOwner.symbol
+        )
+        _ = upsertFamilyMember(remoteOwner, into: modelContext)
+        try modelContext.save()
+        IOSRuntimeLog.log("[IOSBackendSync] Seeded backend family member id=\(remoteOwner.id.uuidString) for mission sync.")
+        return remoteOwner.id
     }
 
     @discardableResult
