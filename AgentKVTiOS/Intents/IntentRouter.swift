@@ -109,6 +109,8 @@ enum IntentRoute {
 struct DynamicIntentButton: View {
     let item: ActionItem
 
+    @Environment(\.openURL) private var openURL
+
     private var route: IntentRoute { IntentRoute.route(for: item) }
 
     var body: some View {
@@ -135,7 +137,11 @@ struct DynamicIntentButton: View {
             .tint(.orange)
 
         case .openURL(let intent):
-            Button(intent: intent) {
+            // Button(intent:) + OpensIntent silently no-ops when triggered in-app.
+            // Use openURL environment action directly instead.
+            Button {
+                openURL(intent.targetURL)
+            } label: {
                 intentLabel
             }
             .buttonStyle(.borderedProminent)
