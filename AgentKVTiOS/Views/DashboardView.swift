@@ -137,6 +137,21 @@ struct ActionItemsList: View {
                     } label: {
                         ActionItemRow(item: item, missionName: item.missionId.flatMap { missionsById[$0]?.missionName })
                     }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                        Button {
+                            Task { await markHandled(item) }
+                        } label: {
+                            Label("Mark Done", systemImage: "checkmark.circle.fill")
+                        }
+                        .tint(.green)
+                    }
+                    .contextMenu {
+                        Button {
+                            Task { await markHandled(item) }
+                        } label: {
+                            Label("Mark Done", systemImage: "checkmark.circle")
+                        }
+                    }
                 }
             }
             .navigationTitle("Actions")
