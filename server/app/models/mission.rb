@@ -8,17 +8,7 @@ class Mission < ApplicationRecord
   validates :mission_name, presence: true
   validates :system_prompt, presence: true
   validates :trigger_schedule, presence: true
-  validate :prompt_references_write_action_item_if_required
 
   scope :enabled, -> { where(is_enabled: true) }
   scope :recent_first, -> { order(updated_at: :desc, created_at: :desc) }
-
-  private
-
-  def prompt_references_write_action_item_if_required
-    return unless Array(allowed_mcp_tools).include?("write_action_item")
-    return if system_prompt.to_s.include?("write_action_item")
-
-    errors.add(:system_prompt, "should mention write_action_item since it is in allowed_mcp_tools — without it the agent may produce no visible output on iOS")
-  end
 end

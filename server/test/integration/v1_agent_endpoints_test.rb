@@ -19,27 +19,15 @@ class V1AgentEndpointsTest < ActionDispatch::IntegrationTest
     ENV["AGENTKVT_AGENT_TOKEN"] = @previous_agent_token
   end
 
-  test "mission with write_action_item in tools must mention it in the prompt" do
-    bad_mission = @workspace.missions.build(
-      mission_name: "Silent Mission",
-      system_prompt: "Search for jobs and report back.",
-      trigger_schedule: "daily|09:00",
-      allowed_mcp_tools: ["write_action_item"],
-      is_enabled: true
-    )
-    assert_not bad_mission.valid?
-    assert_includes bad_mission.errors[:system_prompt].join, "write_action_item"
-  end
-
-  test "mission with write_action_item in tools saves when prompt references it" do
-    good_mission = @workspace.missions.build(
+  test "mission with write_action_item in tools saves without repeating the tool name in the prompt" do
+    mission = @workspace.missions.build(
       mission_name: "Good Mission",
-      system_prompt: "Search for jobs and call write_action_item with systemIntent url.open for each lead.",
+      system_prompt: "Search for jobs and surface the best leads.",
       trigger_schedule: "daily|09:00",
       allowed_mcp_tools: ["write_action_item"],
       is_enabled: true
     )
-    assert good_mission.valid?
+    assert mission.valid?
   end
 
   test "mission without write_action_item in tools saves regardless of prompt" do
