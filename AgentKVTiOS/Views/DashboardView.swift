@@ -147,6 +147,7 @@ struct ActionItemsList: View {
                 await backendSync.syncActionItems(modelContext: modelContext)
             }
             .emptyState(visibleItems.isEmpty, message: "No action items. Missions on the Mac will create them.")
+            .familyProfileToolbar()
         }
         .task {
             await backendSync.syncActionItems(modelContext: modelContext)
@@ -372,7 +373,64 @@ struct InboundFilesView: View {
             }
             .navigationTitle("Inbound Files")
             .emptyState(files.isEmpty, message: "Upload PDFs, TXTs, or CSVs to share with your Mac agent.")
+            .familyProfileToolbar()
         }
+    }
+}
+
+struct FamilyProfileToolbarMenu: View {
+    @EnvironmentObject private var profileStore: FamilyProfileStore
+    @Query(sort: \FamilyMember.createdAt, order: .forward) private var familyMembers: [FamilyMember]
+
+    let onAddFamilyMember: () -> Void
+
+    private var currentProfileLabel: String {
+        guard let id = profileStore.currentProfileId,
+              let member = familyMembers.first(where: { $0.id == id }) else {
+            return "Profile"
+        }
+        return member.symbol.isEmpty ? member.displayName : "\(member.symbol) \(member.displayName)"
+    }
+
+    var body: some View {
+        Menu {
+            ForEach(familyMembers, id: \.id) { member in
+                Button {
+                    profileStore.selectProfile(member.id)
+                } label: {
+                    if member.id == profileStore.currentProfileId {
+                        Label(member.displayName, systemImage: "checkmark")
+                    } else {
+                        Text(member.displayName)
+                    }
+                }
+            }
+            Divider()
+            Button("Add family member…") {
+                onAddFamilyMember()
+            }
+        } label: {
+            Label(currentProfileLabel, systemImage: "person.crop.circle")
+        }
+        .accessibilityIdentifier("family-profile-menu")
+    }
+}
+
+struct FamilyProfileToolbarModifier: ViewModifier {
+    @State private var showAddFamilyMember = false
+
+    func body(content: Content) -> some View {
+        content
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    FamilyProfileToolbarMenu {
+                        showAddFamilyMember = true
+                    }
+                }
+            }
+            .sheet(isPresented: $showAddFamilyMember) {
+                AddFamilyMemberSheet()
+            }
     }
 }
 
@@ -384,5 +442,9 @@ extension View {
         } else {
             self
         }
+    }
+
+    func familyProfileToolbar() -> some View {
+        modifier(FamilyProfileToolbarModifier())
     }
 }

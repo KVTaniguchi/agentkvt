@@ -35,6 +35,7 @@ struct ChatView: View {
                     }
                 }
             }
+            .familyProfileToolbar()
         }
     }
 

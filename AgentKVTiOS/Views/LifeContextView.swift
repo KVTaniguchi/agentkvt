@@ -37,6 +37,7 @@ struct LifeContextView: View {
                     Button("Add", systemImage: "plus") { showAdd = true }
                 }
             }
+            .familyProfileToolbar()
             .sheet(isPresented: $showAdd) {
                 LifeContextEditView(context: nil) {
                     showAdd = false

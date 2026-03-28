@@ -68,6 +68,7 @@ struct MissionListView: View {
                     Button("Add", systemImage: "plus") { showAddMission = true }
                 }
             }
+            .familyProfileToolbar()
             .sheet(isPresented: $showAddMission) {
                 MissionEditView(
                     mission: nil,
@@ -237,12 +238,11 @@ struct MissionEditView: View {
     @State private var runNowMessage: String?
     @Environment(\.dismiss) private var dismiss
 
-    private var outputContractAdvisory: String? {
-        guard selectedToolIds.contains("write_action_item"),
-              !trimmedPrompt.lowercased().contains("write_action_item") else {
-            return nil
+    private var runtimeToolingNote: String {
+        if selectedToolIds.contains("write_action_item") {
+            return "Selected tools are injected automatically at runtime. With write_action_item enabled, the runner will require at least one visible action using calendar.create, mail.reply, reminder.add, or url.open."
         }
-        return "write_action_item is enabled but not mentioned in the prompt. The agent may run and produce no visible output."
+        return "Selected tools are injected automatically at runtime, so your prompt can stay focused on the job to be done."
     }
 
     private var trimmedName: String {
@@ -282,18 +282,13 @@ struct MissionEditView: View {
                     TextField(
                         "System prompt",
                         text: $systemPrompt,
-                        prompt: Text("e.g. Search for iOS engineer roles at Series B startups. For each lead, call write_action_item with systemIntent url.open and payloadJson {\"url\": \"...\", \"label\": \"...\"}"),
+                        prompt: Text("e.g. Search for iOS engineer roles at Series B startups and surface the strongest matches."),
                         axis: .vertical
                     )
                     .lineLimit(4...8)
-                    Text("To surface results on the dashboard, your prompt must instruct the agent to call write_action_item with one of: calendar.create, mail.reply, reminder.add, url.open.")
+                    Text(runtimeToolingNote)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    if let advisory = outputContractAdvisory {
-                        Text(advisory)
-                            .font(.caption)
-                            .foregroundStyle(.orange)
-                    }
                 }
                 Section("Schedule") {
                     TextField("Trigger (e.g. daily|08:00, weekly|monday)", text: $triggerSchedule)

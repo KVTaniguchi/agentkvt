@@ -66,6 +66,7 @@ struct AgentLogView: View {
                     }
                 }
             }
+            .familyProfileToolbar()
         }
         .task {
             await backendSync.syncAgentLogs(modelContext: modelContext)
