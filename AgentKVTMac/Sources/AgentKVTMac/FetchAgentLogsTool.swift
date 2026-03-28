@@ -16,7 +16,7 @@ public func makeFetchAgentLogsTool(backendClient: BackendAPIClient) -> ToolRegis
     }
 }
 
-private func makeAgentLogsTool(handler: @Sendable @escaping ([String: Any]) async -> String) -> ToolRegistry.Tool {
+private func makeAgentLogsTool(handler: @escaping ([String: Any]) async -> String) -> ToolRegistry.Tool {
     ToolRegistry.Tool(
         id: "fetch_agent_logs",
         name: "fetch_agent_logs",
