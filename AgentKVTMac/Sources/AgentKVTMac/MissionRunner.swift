@@ -385,6 +385,7 @@ public final class MissionRunner: @unchecked Sendable {
             headless_browser_scout guidance:
             - Use this tool when a site needs a real browser, JavaScript execution, or click/fill interactions.
             - When this tool gathers fresh information, wait for its results before calling write_action_item.
+            - Only browse URLs that are directly relevant to the mission's stated topic. If a search result is a job listing, career page, social media profile, news article, or any other page unrelated to the mission's goal, skip it entirely — do not call this tool on it.
             """
         case "send_notification_email":
             return """
