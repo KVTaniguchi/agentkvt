@@ -1,0 +1,6 @@
+// Copy to AgentKVTiOS.release.local.xcconfig (gitignored) and set your reachable server URL.
+// Example Tailscale MagicDNS:
+// AGENTKVT_API_BASE_URL = http:/$()/your-mac.tail-xxxxx.ts.net:3000
+
+AGENTKVT_API_BASE_URL = http:/$()/192.168.4.144:3000
+AGENTKVT_WORKSPACE_SLUG = default

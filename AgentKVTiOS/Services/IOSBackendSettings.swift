@@ -36,7 +36,12 @@ struct IOSBackendSettings: Sendable {
             .appending(path: "agentkvt-runner.plist", directoryHint: .notDirectory)
 
         let configValues = configFileURL.flatMap(loadConfigDictionary(at:)) ?? [:]
-        let resolver = IOSBackendValueResolver(environment: source.environment, configValues: configValues)
+        let bundleInfo = Bundle.main.infoDictionary ?? [:]
+        let resolver = IOSBackendValueResolver(
+            environment: source.environment,
+            configValues: configValues,
+            bundleInfo: bundleInfo
+        )
         let apiBaseURL = resolver.string(for: "AGENTKVT_API_BASE_URL").flatMap(URL.init(string:))
         let workspaceSlug = resolver.string(for: "AGENTKVT_WORKSPACE_SLUG") ?? (apiBaseURL == nil ? nil : "default")
 
@@ -66,6 +71,7 @@ struct IOSBackendSettings: Sendable {
 private struct IOSBackendValueResolver {
     let environment: [String: String]
     let configValues: [String: Any]
+    let bundleInfo: [String: Any]
 
     func string(for key: String) -> String? {
         if let value = environment[key], !value.isEmpty {
@@ -75,6 +81,16 @@ private struct IOSBackendValueResolver {
         switch configValues[key] {
         case let string as String:
             return string.trimmingCharacters(in: .whitespacesAndNewlines)
+        case let number as NSNumber:
+            return number.stringValue
+        default:
+            break
+        }
+
+        switch bundleInfo[key] {
+        case let string as String:
+            let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
         case let number as NSNumber:
             return number.stringValue
         default:

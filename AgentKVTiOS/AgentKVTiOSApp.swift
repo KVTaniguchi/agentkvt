@@ -129,6 +129,7 @@ enum IOSRuntimeLog {
     private static var isConfigured = false
     private static var logHandle: FileHandle?
     private static var configuredProcessLabel = "AgentKVTiOSApp"
+    private static let clientBuildMetadata = resolvedClientBuildMetadata()
 
     @discardableResult
     static func bootstrap(processLabel: String = "AgentKVTiOSApp") -> URL {
@@ -143,7 +144,7 @@ enum IOSRuntimeLog {
             writeUnlocked(
                 """
 
-                ===== AgentKVT session started \(timestamp()) [\(processLabel)] pid=\(ProcessInfo.processInfo.processIdentifier) =====
+                ===== AgentKVT session started \(timestamp()) [\(processLabel)] [\(clientBuildMetadata)] pid=\(ProcessInfo.processInfo.processIdentifier) =====
                 """
             )
             isConfigured = true
@@ -153,11 +154,11 @@ enum IOSRuntimeLog {
 
     static func log(_ message: String) {
         let _ = bootstrap(processLabel: configuredProcessLabel)
-        let payload = "[\(timestamp())] \(message)"
+        let payload = "[\(timestamp())] [\(clientBuildMetadata)] \(message)"
         queue.async {
             writeUnlocked(payload)
         }
-        print(message)
+        print(payload)
     }
 
     static var availableLogFileURL: URL? {
@@ -194,5 +195,24 @@ enum IOSRuntimeLog {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter.string(from: Date())
+    }
+
+    private static func resolvedClientBuildMetadata() -> String {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let version = (info["CFBundleShortVersionString"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let build = (info["CFBundleVersion"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        switch (version, build) {
+        case let (.some(version), .some(build)) where !version.isEmpty && !build.isEmpty:
+            return "client \(version) build \(build)"
+        case let (_, .some(build)) where !build.isEmpty:
+            return "client build \(build)"
+        case let (.some(version), _) where !version.isEmpty:
+            return "client \(version)"
+        default:
+            return "client build unknown"
+        }
     }
 }

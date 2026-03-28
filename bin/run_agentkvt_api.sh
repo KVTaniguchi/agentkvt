@@ -40,8 +40,22 @@ if [ -f "${SERVER_DIR}/.env" ]; then
   set +a
 fi
 
-BIND_IP="${BIND_IP:-${TAILSCALE_IP:-127.0.0.1}}"
+# Binding: explicit BIND_IP wins. Otherwise AGENTKVT_BIND_ALL_INTERFACES=1 listens on 0.0.0.0
+# (LAN + Tailscale). If unset, prefer Tailscale IPv4 when available; else localhost only.
+if [ -n "${BIND_IP:-}" ]; then
+  :
+elif [ "${AGENTKVT_BIND_ALL_INTERFACES:-0}" = "1" ]; then
+  BIND_IP="0.0.0.0"
+elif [ -n "${TAILSCALE_IP:-}" ]; then
+  BIND_IP="${TAILSCALE_IP}"
+else
+  BIND_IP="127.0.0.1"
+fi
+
 PORT="${PORT:-3000}"
+RAILS_ENV_EFFECTIVE="${RAILS_ENV:-development}"
+
+echo "AgentKVT API: RAILS_ENV=${RAILS_ENV_EFFECTIVE} bind=${BIND_IP} port=${PORT}" >&2
 
 cd "${SERVER_DIR}"
 exec bundle exec rails server -b "${BIND_IP}" -p "${PORT}"

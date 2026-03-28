@@ -71,7 +71,7 @@ if ! pg_ctl -D "${PGDATA}" status >/dev/null 2>&1; then
   pg_ctl -D "${PGDATA}" -l "${PGLOG}" start
 fi
 
-for db_name in agentkvt_development agentkvt_test agentkvt_production; do
+for db_name in agentkvt_development agentkvt_test agentkvt_production agentkvt_production_cache agentkvt_production_queue agentkvt_production_cable; do
   if ! psql postgres -tAc "SELECT 1 FROM pg_database WHERE datname='${db_name}'" | grep -q 1; then
     createdb "${db_name}"
   fi

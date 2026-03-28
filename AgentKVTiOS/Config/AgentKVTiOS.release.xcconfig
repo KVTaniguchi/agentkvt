@@ -1,0 +1,6 @@
+#include? "AgentKVTiOS.release.local.xcconfig"
+
+// Default API base for Release / TestFlight. Prefer Tailscale URL for off-LAN devices.
+// Override without editing the repo: create AgentKVTiOS.release.local.xcconfig beside this file.
+AGENTKVT_API_BASE_URL = http:/$()/192.168.4.144:3000
+AGENTKVT_WORKSPACE_SLUG = default
