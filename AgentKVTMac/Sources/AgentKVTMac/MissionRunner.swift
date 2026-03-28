@@ -319,14 +319,32 @@ public final class MissionRunner: @unchecked Sendable {
         if !trimmedPrompt.isEmpty { sections.append(trimmedPrompt) }
         if !toolGuidance.isEmpty { sections.append(toolGuidance) }
         if !existingActionItemSummaries.isEmpty {
-            let list = existingActionItemSummaries.map { "  - \($0)" }.joined(separator: "\n")
-            sections.append("""
-            Already-pending actions from this mission (the user has not handled these yet — do not create duplicates):
-            \(list)
-            Only call write_action_item if you have something meaningfully different to surface.
-            """)
+            let list = existingActionItemSummaries
+                .map { Self.sanitizeActionItemTitle($0) }
+                .filter { !$0.isEmpty }
+                .map { "  - \($0)" }
+                .joined(separator: "\n")
+            if !list.isEmpty {
+                sections.append("""
+                Already-pending actions from this mission (the user has not handled these yet — do not create duplicates):
+                \(list)
+                Only call write_action_item if you have something meaningfully different to surface.
+                """)
+            }
         }
         return sections.joined(separator: "\n\n")
+    }
+
+    /// Strip characters that could be used to inject instructions into the system prompt.
+    /// Allows printable ASCII except newlines, carriage returns, and null bytes, then caps length.
+    /// This prevents stored action item titles from acting as prompt injection vectors.
+    private static func sanitizeActionItemTitle(_ raw: String) -> String {
+        let allowed = raw.unicodeScalars.filter { scalar in
+            scalar.value >= 0x20 && scalar.value < 0x7F && scalar != "\\"
+        }
+        let cleaned = String(String.UnicodeScalarView(allowed))
+            .trimmingCharacters(in: .whitespaces)
+        return String(cleaned.prefix(120))
     }
 
     private func runtimeToolGuidance(basePrompt: String, allowedTools: [String]) -> String {
