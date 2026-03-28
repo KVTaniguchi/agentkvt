@@ -22,6 +22,12 @@
 		A1000013 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A2000012 /* Assets.xcassets */; };
 		A1000014 /* IOSBackendAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000013 /* IOSBackendAPIClient.swift */; };
 		A1000015 /* IOSBackendSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000014 /* IOSBackendSettings.swift */; };
+		A1000016 /* ActionsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000015 /* ActionsStore.swift */; };
+		A1000017 /* ObjectivesStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000016 /* ObjectivesStore.swift */; };
+		A1000018 /* ObjectivesDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000017 /* ObjectivesDashboardView.swift */; };
+		A1000019 /* ObjectiveDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000018 /* ObjectiveDetailView.swift */; };
+		B1000004 /* RemoteModelsDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000004 /* RemoteModelsDecodingTests.swift */; };
+		B1000005 /* RemoteIntentRouterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000005 /* RemoteIntentRouterTests.swift */; };
 		B1000001 /* ManagerCore in Frameworks */ = {isa = PBXBuildFile; productRef = A3000001 /* ManagerCore */; };
 		B1000002 /* ManagerCoreIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000002 /* ManagerCoreIntegrationTests.swift */; };
 		B1000003 /* InboundFilesImportUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000003 /* InboundFilesImportUITests.swift */; };
@@ -58,6 +64,12 @@
 		A2000012 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A2000013 /* IOSBackendAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSBackendAPIClient.swift; sourceTree = "<group>"; };
 		A2000014 /* IOSBackendSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSBackendSettings.swift; sourceTree = "<group>"; };
+		A2000015 /* ActionsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionsStore.swift; sourceTree = "<group>"; };
+		A2000016 /* ObjectivesStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ObjectivesStore.swift; sourceTree = "<group>"; };
+		A2000017 /* ObjectivesDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ObjectivesDashboardView.swift; sourceTree = "<group>"; };
+		A2000018 /* ObjectiveDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ObjectiveDetailView.swift; sourceTree = "<group>"; };
+		B2000004 /* RemoteModelsDecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteModelsDecodingTests.swift; sourceTree = "<group>"; };
+		B2000005 /* RemoteIntentRouterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteIntentRouterTests.swift; sourceTree = "<group>"; };
 		B2000001 /* AgentKVTiOSTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AgentKVTiOSTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B2000002 /* ManagerCoreIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManagerCoreIntegrationTests.swift; sourceTree = "<group>"; };
 		B2000003 /* InboundFilesImportUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboundFilesImportUITests.swift; sourceTree = "<group>"; };
@@ -117,10 +129,20 @@
 				A2000012 /* Assets.xcassets */,
 				A5000004 /* Intents */,
 				A5000005 /* Services */,
+				A5000006 /* Stores */,
 				A5000002 /* Views */,
 			);
 			path = AgentKVTiOS;
 			sourceTree = SOURCE_ROOT;
+		};
+		A5000006 /* Stores */ = {
+			isa = PBXGroup;
+			children = (
+				A2000015 /* ActionsStore.swift */,
+				A2000016 /* ObjectivesStore.swift */,
+			);
+			path = Stores;
+			sourceTree = "<group>";
 		};
 		E1000003 /* Config */ = {
 			isa = PBXGroup;
@@ -141,6 +163,8 @@
 				A2000004 /* LifeContextView.swift */,
 				A2000005 /* AgentLogView.swift */,
 				A2000006 /* ChatView.swift */,
+				A2000017 /* ObjectivesDashboardView.swift */,
+				A2000018 /* ObjectiveDetailView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -178,6 +202,8 @@
 			children = (
 				B2000002 /* ManagerCoreIntegrationTests.swift */,
 				B2000003 /* InboundFilesImportUITests.swift */,
+				B2000004 /* RemoteModelsDecodingTests.swift */,
+				B2000005 /* RemoteIntentRouterTests.swift */,
 			);
 			path = AgentKVTiOS/AgentKVTiOSTests;
 			sourceTree = SOURCE_ROOT;
@@ -342,6 +368,10 @@
 				A1000007 /* ChatView.swift in Sources */,
 				A1000014 /* IOSBackendAPIClient.swift in Sources */,
 				A1000015 /* IOSBackendSettings.swift in Sources */,
+				A1000016 /* ActionsStore.swift in Sources */,
+				A1000017 /* ObjectivesStore.swift in Sources */,
+				A1000018 /* ObjectivesDashboardView.swift in Sources */,
+				A1000019 /* ObjectiveDetailView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -351,6 +381,8 @@
 			files = (
 				B1000002 /* ManagerCoreIntegrationTests.swift in Sources */,
 				B1000003 /* InboundFilesImportUITests.swift in Sources */,
+				B1000004 /* RemoteModelsDecodingTests.swift in Sources */,
+				B1000005 /* RemoteIntentRouterTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
