@@ -20,3 +20,6 @@ server/vendor/bundle/
 
 # Release API URL overrides (optional Tailscale / HTTPS base URL for TestFlight)
 AgentKVTiOS/Config/AgentKVTiOS.release.local.xcconfig
+
+# Local deployment backups (may contain secrets)
+backups/
