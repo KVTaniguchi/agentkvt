@@ -285,7 +285,7 @@ struct MissionEditView: View {
                     TextField(
                         "System prompt",
                         text: $systemPrompt,
-                        prompt: Text("e.g. Search for iOS engineer roles at Series B startups and surface the strongest matches."),
+                        prompt: Text("Describe what this mission should do on each run (goals, constraints, and desired outcome)."),
                         axis: .vertical
                     )
                     .lineLimit(4...8)

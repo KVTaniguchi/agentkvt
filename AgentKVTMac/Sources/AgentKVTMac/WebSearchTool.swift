@@ -12,13 +12,13 @@ public func makeWebSearchAndFetchTool(apiKey: String? = nil) -> ToolRegistry.Too
         name: "web_search_and_fetch",
         description: """
             Search the web for up-to-date information and fetch full page content as clean Markdown.
-            Use for job searches, research, or any mission that needs current web data (e.g. "iOS roles in Philly").
+            Use when the mission needs current facts from the web (schedules, directions, news, product pages, etc.).
             Returns combined Markdown from search results; ads, footers, and scripts are stripped to save context.
             """,
         parameters: .init(
             type: "object",
             properties: [
-                "query": .init(type: "string", description: "Search query (e.g. 'Senior iOS developer jobs Philadelphia')"),
+                "query": .init(type: "string", description: "Web search query: derive the exact string from the mission prompt and any life context—do not substitute unrelated example text."),
                 "max_results": .init(type: "string", description: "Optional. Max pages to fetch (default 3, max 5). Pass as string e.g. '3'.")
             ],
             required: ["query"]

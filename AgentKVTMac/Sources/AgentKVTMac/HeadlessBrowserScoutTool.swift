@@ -17,7 +17,7 @@ public func makeHeadlessBrowserScoutTool() -> ToolRegistry.Tool {
         parameters: .init(
             type: "object",
             properties: [
-                "url": .init(type: "string", description: "Full URL to load (e.g. https://linkedin.com/jobs)"),
+                "url": .init(type: "string", description: "Full HTTPS URL to load (must match the mission—e.g. a page the user asked you to open or scrape)."),
                 "actions_json": .init(type: "string", description: "Optional. JSON array of actions: [{\"type\":\"click\",\"selector\":\"button.primary\"}, {\"type\":\"fill\",\"selector\":\"#email\",\"value\":\"user@example.com\"}]")
             ],
             required: ["url"]

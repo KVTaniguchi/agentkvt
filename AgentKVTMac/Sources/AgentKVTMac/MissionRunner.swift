@@ -352,7 +352,7 @@ public final class MissionRunner: @unchecked Sendable {
         case "web_search_and_fetch":
             return """
             web_search_and_fetch guidance:
-            - Use this tool for current web information, recent facts, or job/research searches that depend on live pages.
+            - Use this tool for current web information, recent facts, or anything that depends on live pages and matches the mission.
             - Do not call write_action_item in the same response as this search. Search first, then review the fetched results, then create the action item in a later response.
             """
         case "headless_browser_scout":

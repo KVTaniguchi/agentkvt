@@ -68,11 +68,11 @@ public func makeWriteActionItemTool(actionItemWriter: any ActionItemWriting) -> 
     return ToolRegistry.Tool(
         id: "write_action_item",
         name: "write_action_item",
-        description: "Write a dynamic action item (button) for the iOS dashboard. Call this tool whenever the mission needs a visible user-facing result, recommendation, or report. Missions about jobs, reviews, and follow-ups should usually end by calling this tool. Choose the systemIntent that best fits the output, then populate payloadJson with the required fields for that intent. Prefer systemIntent url.open when you found a concrete link the user should review.",
+        description: "Write a dynamic action item (button) for the iOS dashboard. Call this tool whenever the mission needs a visible user-facing result, recommendation, or report. Most missions that produce something for the user should end by calling this tool. Choose the systemIntent that best fits the output, then populate payloadJson with the required fields for that intent. Prefer systemIntent url.open when you found a concrete link the user should review.",
         parameters: .init(
             type: "object",
             properties: [
-                "title": .init(type: "string", description: "Short button label, e.g. 'Review New Job Leads'"),
+                "title": .init(type: "string", description: "Short button label describing the outcome for the user."),
                 "systemIntent": .init(
                     type: "string",
                     description: "Intent identifier for the button. Determines which native iOS action is triggered.",
