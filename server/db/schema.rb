@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_03_27_001000) do
+ActiveRecord::Schema[8.0].define(version: 2026_03_28_000000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -27,10 +27,12 @@ ActiveRecord::Schema[8.0].define(version: 2026_03_27_001000) do
     t.datetime "handled_at"
     t.datetime "timestamp", default: -> { "CURRENT_TIMESTAMP" }, null: false
     t.string "created_by", default: "mac_agent", null: false
+    t.string "content_hash"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["owner_profile_id"], name: "index_action_items_on_owner_profile_id"
     t.index ["source_mission_id"], name: "index_action_items_on_source_mission_id"
+    t.index ["workspace_id", "content_hash"], name: "idx_action_items_workspace_content_hash_unhandled", unique: true, where: "is_handled = false"
     t.index ["workspace_id", "is_handled", "timestamp"], name: "idx_on_workspace_id_is_handled_timestamp_51f72a0818"
     t.index ["workspace_id"], name: "index_action_items_on_workspace_id"
   end

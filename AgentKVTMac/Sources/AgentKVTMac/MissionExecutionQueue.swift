@@ -149,9 +149,9 @@ actor MissionExecutionQueue {
                     mission.lastRunAt = Date()
                     mission.updatedAt = Date()
                     try fetchContext.save()
-                    let request = MissionRunner.Request(mission)
+                    let summaries = existingActionSummaries(for: mission.id, in: fetchContext)
                     do {
-                        try await missionRunner.run(request)
+                        try await missionRunner.run(MissionRunner.Request(mission).with(existingActionItemSummaries: summaries))
                         print("[MissionExecutionQueue] Ran work unit board mission: \(mission.missionName)")
                     } catch {
                         print("[MissionExecutionQueue] Work unit board mission '\(mission.missionName)' failed: \(error)")
@@ -163,9 +163,9 @@ actor MissionExecutionQueue {
                 mission.lastRunAt = Date()
                 mission.updatedAt = Date()
                 try fetchContext.save()
-                let request = MissionRunner.Request(mission)
+                let summaries = existingActionSummaries(for: mission.id, in: fetchContext)
                 do {
-                    try await missionRunner.run(request)
+                    try await missionRunner.run(MissionRunner.Request(mission).with(existingActionItemSummaries: summaries))
                     print("[MissionExecutionQueue] Ran scheduled mission: \(mission.missionName)")
                 } catch {
                     print("[MissionExecutionQueue] Scheduled mission '\(mission.missionName)' failed: \(error)")
@@ -189,9 +189,9 @@ actor MissionExecutionQueue {
                 mission.lastRunAt = Date()
                 mission.updatedAt = Date()
                 try fetchContext.save()
-                let request = MissionRunner.Request(mission)
+                let summaries = existingActionSummaries(for: mission.id, in: fetchContext)
                 do {
-                    try await missionRunner.run(request)
+                    try await missionRunner.run(MissionRunner.Request(mission).with(existingActionItemSummaries: summaries))
                     print("[MissionExecutionQueue] Ran email mission: \(mission.missionName)")
                 } catch {
                     print("[MissionExecutionQueue] Email mission '\(mission.missionName)' failed: \(error)")
@@ -220,9 +220,9 @@ actor MissionExecutionQueue {
                 mission.lastRunAt = Date()
                 mission.updatedAt = Date()
                 try fetchContext.save()
-                let request = MissionRunner.Request(mission)
+                let summaries = existingActionSummaries(for: mission.id, in: fetchContext)
                 do {
-                    try await missionRunner.run(request)
+                    try await missionRunner.run(MissionRunner.Request(mission).with(existingActionItemSummaries: summaries))
                     print("[MissionExecutionQueue] Ran inbound file mission: \(mission.missionName)")
                 } catch {
                     print("[MissionExecutionQueue] Inbound file mission '\(mission.missionName)' failed: \(error)")
@@ -253,9 +253,9 @@ actor MissionExecutionQueue {
                 mission.lastRunAt = Date()
                 mission.updatedAt = Date()
                 try fetchContext.save()
-                let request = MissionRunner.Request(mission)
+                let summaries = existingActionSummaries(for: mission.id, in: fetchContext)
                 do {
-                    try await missionRunner.run(request)
+                    try await missionRunner.run(MissionRunner.Request(mission).with(existingActionItemSummaries: summaries))
                     print("[MissionExecutionQueue] Ran webhook mission: \(mission.missionName)")
                 } catch {
                     print("[MissionExecutionQueue] Webhook mission '\(mission.missionName)' failed: \(error)")
@@ -289,9 +289,9 @@ actor MissionExecutionQueue {
                 mission.lastRunAt = Date()
                 mission.updatedAt = Date()
                 try fetchContext.save()
-                let request = MissionRunner.Request(mission)
+                let summaries = existingActionSummaries(for: mission.id, in: fetchContext)
                 do {
-                    try await missionRunner.run(request)
+                    try await missionRunner.run(MissionRunner.Request(mission).with(existingActionItemSummaries: summaries))
                     print("[MissionExecutionQueue] Ran CloudKit summary mission: \(mission.missionName)")
                 } catch {
                     print("[MissionExecutionQueue] CloudKit summary mission '\(mission.missionName)' failed: \(error)")
@@ -347,13 +347,45 @@ actor MissionExecutionQueue {
         for mission in missions {
             let runTimestamp = Date()
             _ = try await backendClient.markMissionRun(missionId: mission.id, at: runTimestamp)
+
+            let existingSummaries: [String]
             do {
-                try await missionRunner.run(mission)
+                let existing = try await backendClient.fetchUnhandledActionItems(missionId: mission.id)
+                existingSummaries = existing.map { item in
+                    "\"\(item.title)\" [\(item.systemIntent)] — created \(Self.relativeAge(of: item.timestamp))"
+                }
+            } catch {
+                existingSummaries = []
+                print("[MissionExecutionQueue] Could not fetch existing actions for '\(mission.missionName)': \(error)")
+            }
+
+            do {
+                try await missionRunner.run(mission.with(existingActionItemSummaries: existingSummaries))
                 print("[MissionExecutionQueue] Ran \(reason): \(mission.missionName)")
             } catch {
                 print("[MissionExecutionQueue] \(reason.capitalized) '\(mission.missionName)' failed: \(error)")
             }
         }
+    }
+
+    private func existingActionSummaries(for missionId: UUID, in context: ModelContext) -> [String] {
+        let descriptor = FetchDescriptor<ActionItem>(
+            predicate: #Predicate<ActionItem> { !$0.isHandled }
+        )
+        guard let items = try? context.fetch(descriptor) else { return [] }
+        let missionItems = items.filter { $0.missionId == missionId }
+        guard !missionItems.isEmpty else { return [] }
+        return missionItems.map { item in
+            "\"\(item.title)\" [\(item.systemIntent)] — created \(Self.relativeAge(of: item.timestamp))"
+        }
+    }
+
+    private static func relativeAge(of date: Date) -> String {
+        let seconds = Int(Date().timeIntervalSince(date))
+        if seconds < 60 { return "just now" }
+        if seconds < 3600 { return "\(seconds / 60) min ago" }
+        if seconds < 86400 { return "\(seconds / 3600) hr ago" }
+        return "\(seconds / 86400) day(s) ago"
     }
 
     private func describeRemoteMissionSnapshot(

@@ -14,6 +14,9 @@ public final class MissionRunner: @unchecked Sendable {
         public let ownerProfileId: UUID?
         public let isEnabled: Bool
         public let lastRunAt: Date?
+        /// Summaries of unhandled actions already created by this mission. Injected into the
+        /// system prompt so the LLM avoids creating duplicate suggestions on repeated runs.
+        public let existingActionItemSummaries: [String]
 
         public init(
             id: UUID,
@@ -23,7 +26,8 @@ public final class MissionRunner: @unchecked Sendable {
             allowedToolIds: [String],
             ownerProfileId: UUID?,
             isEnabled: Bool = true,
-            lastRunAt: Date? = nil
+            lastRunAt: Date? = nil,
+            existingActionItemSummaries: [String] = []
         ) {
             self.id = id
             self.missionName = missionName
@@ -33,6 +37,7 @@ public final class MissionRunner: @unchecked Sendable {
             self.ownerProfileId = ownerProfileId
             self.isEnabled = isEnabled
             self.lastRunAt = lastRunAt
+            self.existingActionItemSummaries = existingActionItemSummaries
         }
 
         init(_ mission: MissionDefinition) {
@@ -45,6 +50,20 @@ public final class MissionRunner: @unchecked Sendable {
                 ownerProfileId: mission.ownerProfileId,
                 isEnabled: mission.isEnabled,
                 lastRunAt: mission.lastRunAt
+            )
+        }
+
+        func with(existingActionItemSummaries: [String]) -> Request {
+            Request(
+                id: id,
+                missionName: missionName,
+                systemPrompt: systemPrompt,
+                triggerSchedule: triggerSchedule,
+                allowedToolIds: allowedToolIds,
+                ownerProfileId: ownerProfileId,
+                isEnabled: isEnabled,
+                lastRunAt: lastRunAt,
+                existingActionItemSummaries: existingActionItemSummaries
             )
         }
     }
@@ -102,7 +121,8 @@ public final class MissionRunner: @unchecked Sendable {
         let allowedTools = request.allowedToolIds
         let systemPrompt = missionSystemPrompt(
             basePrompt: request.systemPrompt,
-            allowedTools: allowedTools
+            allowedTools: allowedTools,
+            existingActionItemSummaries: request.existingActionItemSummaries
         )
         let userMessage = missionUserMessage(ownerProfileId: request.ownerProfileId)
         await logWriter.writeLog(
@@ -287,21 +307,26 @@ public final class MissionRunner: @unchecked Sendable {
         }
     }
 
-    private func missionSystemPrompt(basePrompt: String, allowedTools: [String]) -> String {
+    private func missionSystemPrompt(
+        basePrompt: String,
+        allowedTools: [String],
+        existingActionItemSummaries: [String] = []
+    ) -> String {
         let trimmedPrompt = basePrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let toolGuidance = runtimeToolGuidance(basePrompt: trimmedPrompt, allowedTools: allowedTools)
-        guard !toolGuidance.isEmpty else {
-            return trimmedPrompt
-        }
-        guard !trimmedPrompt.isEmpty else {
-            return toolGuidance
-        }
 
-        return """
-        \(trimmedPrompt)
-
-        \(toolGuidance)
-        """
+        var sections: [String] = []
+        if !trimmedPrompt.isEmpty { sections.append(trimmedPrompt) }
+        if !toolGuidance.isEmpty { sections.append(toolGuidance) }
+        if !existingActionItemSummaries.isEmpty {
+            let list = existingActionItemSummaries.map { "  - \($0)" }.joined(separator: "\n")
+            sections.append("""
+            Already-pending actions from this mission (the user has not handled these yet — do not create duplicates):
+            \(list)
+            Only call write_action_item if you have something meaningfully different to surface.
+            """)
+        }
+        return sections.joined(separator: "\n\n")
     }
 
     private func runtimeToolGuidance(basePrompt: String, allowedTools: [String]) -> String {

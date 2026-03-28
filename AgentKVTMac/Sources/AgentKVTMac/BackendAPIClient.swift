@@ -92,6 +92,10 @@ private struct BackendActionItemEnvelope: Codable {
     let actionItem: BackendActionItem
 }
 
+private struct BackendActionItemsEnvelope: Codable {
+    let actionItems: [BackendActionItem]
+}
+
 private struct BackendAgentLogEnvelope: Codable {
     let agentLog: BackendAgentLog
 }
@@ -134,6 +138,14 @@ public actor BackendAPIClient {
             requiresAgentAuth: true
         )
         return try decoder.decode(BackendDueMissionsEnvelope.self, from: data).dueMissions
+    }
+
+    public func fetchUnhandledActionItems(missionId: UUID) async throws -> [BackendActionItem] {
+        let data = try await performRequest(
+            path: "v1/agent/missions/\(missionId.uuidString)/action_items",
+            requiresAgentAuth: true
+        )
+        return try decoder.decode(BackendActionItemsEnvelope.self, from: data).actionItems
     }
 
     public func createActionItem(

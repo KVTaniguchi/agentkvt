@@ -18,6 +18,27 @@ struct SwiftDataActionItemWriter: ActionItemWriting, @unchecked Sendable {
         systemIntent: String,
         payloadJson: String?
     ) async throws -> String {
+        let missionId = MissionExecutionContext.current?.missionId
+        let contentKey = Self.contentKey(systemIntent: systemIntent, payloadJson: payloadJson)
+
+        // Dedup: skip if an identical unhandled action already exists for this mission.
+        let descriptor = FetchDescriptor<ActionItem>(
+            predicate: #Predicate<ActionItem> { !$0.isHandled }
+        )
+        if let existing = try? modelContext.fetch(descriptor) {
+            let duplicate = existing.contains { item in
+                guard item.missionId == missionId else { return false }
+                let itemKey = Self.contentKey(
+                    systemIntent: item.systemIntent,
+                    payloadJson: item.payloadData.flatMap { String(data: $0, encoding: .utf8) }
+                )
+                return itemKey == contentKey
+            }
+            if duplicate {
+                return "Skipped: identical unhandled action already exists — \(title.trimmingCharacters(in: .whitespacesAndNewlines)) (\(systemIntent))"
+            }
+        }
+
         let payloadData: Data? = payloadJson.flatMap { s in
             guard !s.isEmpty, let data = s.data(using: .utf8) else { return nil }
             return data
@@ -27,10 +48,25 @@ struct SwiftDataActionItemWriter: ActionItemWriting, @unchecked Sendable {
             systemIntent: systemIntent,
             payloadData: payloadData
         )
-        item.missionId = MissionExecutionContext.current?.missionId
+        item.missionId = missionId
         modelContext.insert(item)
         try modelContext.save()
         return "Created ActionItem: \(item.title) (\(item.systemIntent))"
+    }
+
+    /// Normalized content key used to detect duplicate actions.
+    /// The payload is normalized by sorting keys so {"b":"2","a":"1"} == {"a":"1","b":"2"}.
+    private static func contentKey(systemIntent: String, payloadJson: String?) -> String {
+        let normalizedPayload: String
+        if let json = payloadJson,
+           !json.isEmpty,
+           let data = json.data(using: .utf8),
+           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            normalizedPayload = obj.keys.sorted().map { "\($0)=\(obj[$0] ?? "")" }.joined(separator: ",")
+        } else {
+            normalizedPayload = ""
+        }
+        return "\(systemIntent)|\(normalizedPayload)"
     }
 }
 
