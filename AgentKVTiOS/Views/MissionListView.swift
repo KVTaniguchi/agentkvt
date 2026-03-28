@@ -10,6 +10,8 @@ struct MissionListView: View {
     @Query(sort: \FamilyMember.createdAt, order: .forward) private var familyMembers: [FamilyMember]
     @State private var showAddMission = false
     @State private var deletionErrorMessage: String?
+    @State private var runNowErrorMessage: String?
+    @State private var runNowConfirmationMessage: String?
 
     private static let knownToolIds = ["write_action_item", "web_search_and_fetch", "headless_browser_scout", "send_notification_email", "github_agent", "fetch_bee_ai_context", "incoming_email_trigger"]
     private let backendSync = IOSBackendSyncService()
@@ -23,20 +25,24 @@ struct MissionListView: View {
                             mission: mission,
                             toolIds: Self.knownToolIds,
                             familyMembers: familyMembers,
-                            defaultOwnerProfileId: profileStore.currentProfileId
-                        ) { name, prompt, schedule, tools, ownerProfileId in
-                            IOSRuntimeLog.log("[MissionListView] Saving existing mission '\(name)' schedule=\(schedule) tools=\(tools.joined(separator: ",")) owner=\(ownerProfileId?.uuidString ?? "none")")
-                            try await backendSync.saveMission(
-                                existingMission: mission,
-                                name: name,
-                                prompt: prompt,
-                                schedule: schedule,
-                                tools: tools,
-                                ownerProfileId: ownerProfileId,
-                                modelContext: modelContext
-                            )
-                            IOSRuntimeLog.log("[MissionListView] Saved existing mission id=\(mission.id.uuidString)")
-                        }
+                            defaultOwnerProfileId: profileStore.currentProfileId,
+                            onSave: { name, prompt, schedule, tools, ownerProfileId in
+                                IOSRuntimeLog.log("[MissionListView] Saving existing mission '\(name)' schedule=\(schedule) tools=\(tools.joined(separator: ",")) owner=\(ownerProfileId?.uuidString ?? "none")")
+                                try await backendSync.saveMission(
+                                    existingMission: mission,
+                                    name: name,
+                                    prompt: prompt,
+                                    schedule: schedule,
+                                    tools: tools,
+                                    ownerProfileId: ownerProfileId,
+                                    modelContext: modelContext
+                                )
+                                IOSRuntimeLog.log("[MissionListView] Saved existing mission id=\(mission.id.uuidString)")
+                            },
+                            onRunNow: {
+                                try await backendSync.runMissionNow(mission)
+                            }
+                        )
                     } label: {
                         MissionRow(
                             mission: mission,
@@ -44,6 +50,14 @@ struct MissionListView: View {
                                 familyMembers.first(where: { $0.id == id })?.displayName
                             }
                         )
+                    }
+                    .swipeActions(edge: .leading) {
+                        Button {
+                            requestRunNow(mission)
+                        } label: {
+                            Label("Run Now", systemImage: "play.fill")
+                        }
+                        .tint(.blue)
                     }
                 }
                 .onDelete(perform: deleteMissions)
@@ -83,11 +97,25 @@ struct MissionListView: View {
             get: { deletionErrorMessage != nil },
             set: { if !$0 { deletionErrorMessage = nil } }
         )) {
-            Button("OK", role: .cancel) {
-                deletionErrorMessage = nil
-            }
+            Button("OK", role: .cancel) { deletionErrorMessage = nil }
         } message: {
             Text(deletionErrorMessage ?? "The mission could not be deleted.")
+        }
+        .alert("Run Now Failed", isPresented: Binding(
+            get: { runNowErrorMessage != nil },
+            set: { if !$0 { runNowErrorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) { runNowErrorMessage = nil }
+        } message: {
+            Text(runNowErrorMessage ?? "Could not request a run.")
+        }
+        .alert("Run Requested", isPresented: Binding(
+            get: { runNowConfirmationMessage != nil },
+            set: { if !$0 { runNowConfirmationMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) { runNowConfirmationMessage = nil }
+        } message: {
+            Text(runNowConfirmationMessage ?? "The mission will run on the next scheduler tick.")
         }
         .onAppear {
             logMissionSnapshot(reason: "Appeared")
@@ -119,6 +147,19 @@ struct MissionListView: View {
         }
     }
 
+    private func requestRunNow(_ mission: MissionDefinition) {
+        IOSRuntimeLog.log("[MissionListView] Run Now tapped for '\(mission.missionName)' id=\(mission.id.uuidString)")
+        Task { @MainActor in
+            do {
+                try await backendSync.runMissionNow(mission)
+                runNowConfirmationMessage = "'\(mission.missionName)' queued. It will run on the next scheduler tick (within ~30 seconds)."
+            } catch {
+                runNowErrorMessage = error.localizedDescription
+                IOSRuntimeLog.log("[MissionListView] Run Now failed for '\(mission.missionName)': \(error)")
+            }
+        }
+    }
+
     private func deleteMissions(at offsets: IndexSet) {
         let missionsToDelete = offsets.map { missions[$0] }
         guard !missionsToDelete.isEmpty else { return }
@@ -144,21 +185,35 @@ struct MissionRow: View {
     let mission: MissionDefinition
     let ownerName: String?
 
+    private var isPending: Bool {
+        guard let requested = mission.runRequestedAt else { return false }
+        guard let lastRun = mission.lastRunAt else { return true }
+        return requested > lastRun
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(mission.missionName)
-                .font(.headline)
-            Text(mission.triggerSchedule)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            if let ownerName {
-                Text("Owner: \(ownerName)")
-                    .font(.caption2)
+        HStack(alignment: .center) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(mission.missionName)
+                    .font(.headline)
+                Text(mission.triggerSchedule)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
+                if let ownerName {
+                    Text("Owner: \(ownerName)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Text(mission.isEnabled ? "On" : "Off")
+                    .font(.caption2)
+                    .foregroundStyle(mission.isEnabled ? .green : .secondary)
             }
-            Text(mission.isEnabled ? "On" : "Off")
-                .font(.caption2)
-                .foregroundStyle(mission.isEnabled ? .green : .secondary)
+            Spacer()
+            if isPending {
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(.blue)
+            }
         }
     }
 }
@@ -169,6 +224,7 @@ struct MissionEditView: View {
     let familyMembers: [FamilyMember]
     let defaultOwnerProfileId: UUID?
     let onSave: @MainActor (String, String, String, [String], UUID?) async throws -> Void
+    var onRunNow: (@MainActor () async throws -> Void)? = nil
 
     @State private var name: String = ""
     @State private var systemPrompt: String = ""
@@ -177,6 +233,8 @@ struct MissionEditView: View {
     @State private var ownerProfileId: UUID?
     @State private var validationMessage: String?
     @State private var isSaving = false
+    @State private var isRunningNow = false
+    @State private var runNowMessage: String?
     @Environment(\.dismiss) private var dismiss
 
     private var outputContractAdvisory: String? {
@@ -273,6 +331,29 @@ struct MissionEditView: View {
             .navigationTitle(mission == nil ? "New Mission" : "Edit Mission")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                if let onRunNow, mission != nil {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button {
+                            isRunningNow = true
+                            Task { @MainActor in
+                                do {
+                                    try await onRunNow()
+                                    runNowMessage = "Run requested. The Mac will pick it up on the next scheduler tick."
+                                } catch {
+                                    runNowMessage = "Run failed: \(error.localizedDescription)"
+                                }
+                                isRunningNow = false
+                            }
+                        } label: {
+                            if isRunningNow {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Label("Run Now", systemImage: "play.fill")
+                            }
+                        }
+                        .disabled(isRunningNow)
+                    }
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(isSaving ? "Saving…" : "Save") {
                         guard isFormValid else {
@@ -313,6 +394,14 @@ struct MissionEditView: View {
             .onChange(of: systemPrompt) { _, _ in validationMessage = nil }
             .onChange(of: triggerSchedule) { _, _ in validationMessage = nil }
             .onChange(of: selectedToolIds) { _, _ in validationMessage = nil }
+            .alert("Run Now", isPresented: Binding(
+                get: { runNowMessage != nil },
+                set: { if !$0 { runNowMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) { runNowMessage = nil }
+            } message: {
+                Text(runNowMessage ?? "")
+            }
         }
     }
 

@@ -3,8 +3,9 @@ module V1
     class DueMissionsController < BaseController
       def index
         reference_time = parsed_time(params[:at]) || Time.current
-        due_missions = current_workspace.missions.enabled.recent_first.select do |mission|
-          MissionSchedule.due?(mission, at: reference_time)
+        all_enabled = current_workspace.missions.enabled.recent_first
+        due_missions = all_enabled.select do |mission|
+          MissionSchedule.due?(mission, at: reference_time) || mission.run_requested_at.present?
         end
 
         render json: {

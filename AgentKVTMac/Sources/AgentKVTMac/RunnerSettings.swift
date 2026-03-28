@@ -32,6 +32,7 @@ struct RunnerSettings: Sendable {
     let schedulerIntervalSeconds: Int
     let ollamaBaseURL: URL
     let ollamaModel: String
+    let ollamaAPIKey: String?
     let backendBaseURL: URL?
     let backendWorkspaceSlug: String?
     let backendAgentToken: String?
@@ -79,6 +80,7 @@ struct RunnerSettings: Sendable {
         let baseURLString = resolver.string(for: "OLLAMA_BASE_URL") ?? "http://localhost:11434"
         let ollamaBaseURL = URL(string: baseURLString) ?? URL(string: "http://localhost:11434")!
         let ollamaModel = resolver.string(for: "OLLAMA_MODEL") ?? "llama3.2"
+        let ollamaAPIKey = resolver.string(for: "OLLAMA_API_KEY")
         let backendBaseURL = resolver.string(for: "AGENTKVT_API_BASE_URL").flatMap(URL.init(string:))
         let backendWorkspaceSlug = resolver.string(for: "AGENTKVT_WORKSPACE_SLUG") ?? (backendBaseURL == nil ? nil : "default")
         let backendAgentToken = resolver.string(for: "AGENTKVT_AGENT_TOKEN")
@@ -100,6 +102,7 @@ struct RunnerSettings: Sendable {
             schedulerIntervalSeconds: schedulerIntervalSeconds,
             ollamaBaseURL: ollamaBaseURL,
             ollamaModel: ollamaModel,
+            ollamaAPIKey: ollamaAPIKey,
             backendBaseURL: backendBaseURL,
             backendWorkspaceSlug: backendWorkspaceSlug,
             backendAgentToken: backendAgentToken,

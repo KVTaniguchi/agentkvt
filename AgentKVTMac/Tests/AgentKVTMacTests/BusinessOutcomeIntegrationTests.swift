@@ -92,6 +92,49 @@ struct JobScoutPipelineTest {
         #expect(toolLogs.contains { $0.toolName == "write_action_item" && $0.phase == "tool_call" })
         #expect(toolLogs.contains { $0.toolName == "write_action_item" && $0.phase == "tool_result" })
     }
+
+    @Test("MissionRunner recovers a missing write_action_item by creating one from the final report")
+    func missionRunnerRecoversMissingActionItem() async throws {
+        let (context, _) = try makeTestContainer()
+        let registry = makeTestRegistry(modelContext: context)
+
+        let mission = MissionDefinition(
+            missionName: "Tech Job Scout",
+            systemPrompt: "Investigate iOS jobs in Philadelphia and create one action item with the best lead.",
+            triggerSchedule: "weekly|sunday",
+            allowedMCPTools: ["write_action_item"]
+        )
+        mission.isEnabled = true
+        context.insert(mission)
+        try context.save()
+
+        let mockClient = MockOllamaClient(responses: [
+            .assistantFinal(content: "Senior iOS Developer at Penn Interactive. Best lead: https://jobs.example.com/philly-ios"),
+            .assistantWithToolCalls([
+                .writeActionItem(
+                    title: "Review: Penn Interactive iOS role",
+                    systemIntent: "url.open",
+                    payloadJson: "{\"url\":\"https://jobs.example.com/philly-ios\",\"label\":\"Open Penn Interactive role\"}"
+                )
+            ]),
+            .assistantFinal(content: "Created one action item for the best Philly lead.")
+        ])
+
+        let runner = MissionRunner(modelContext: context, client: mockClient, registry: registry)
+        try await runner.run(mission)
+
+        let itemDesc = FetchDescriptor<ActionItem>()
+        let items = try context.fetch(itemDesc)
+        #expect(items.count == 1, "Expected recovery path to create exactly one ActionItem.")
+        #expect(items[0].systemIntent == "url.open")
+        #expect(items[0].title.contains("Penn Interactive"))
+
+        let logs = try context.fetch(FetchDescriptor<AgentLog>())
+        #expect(logs.contains { $0.phase == "warning" && $0.content.contains("Attempting one recovery pass") })
+        #expect(!logs.contains { $0.phase == "warning" && $0.content.contains("even after recovery") })
+        #expect(logs.contains { $0.phase == "tool_call" && $0.toolName == "write_action_item" })
+        #expect(logs.contains { $0.phase == "tool_result" && $0.toolName == "write_action_item" })
+    }
 }
 
 // MARK: - 2. Impulsive Expense Guard Test

@@ -87,6 +87,16 @@ enum IntentRoute {
         case .unknown(let si):       return si
         }
     }
+
+    var badgeColor: Color {
+        switch self {
+        case .calendar:   return .blue
+        case .mailReply:  return .indigo
+        case .reminder:   return .orange
+        case .openURL:    return .teal
+        case .unknown:    return .gray
+        }
+    }
 }
 
 // MARK: - DynamicIntentButton

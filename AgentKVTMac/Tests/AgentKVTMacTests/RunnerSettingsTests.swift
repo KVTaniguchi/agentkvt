@@ -36,6 +36,7 @@ struct RunnerSettingsTests {
             "RUN_SCHEDULER": false,
             "OLLAMA_MODEL": "llama3.2:latest",
             "OLLAMA_BASE_URL": "http://127.0.0.1:11434",
+            "OLLAMA_API_KEY": "ollama-test-key",
             "AGENTKVT_API_BASE_URL": "http://127.0.0.1:3000",
             "AGENTKVT_WORKSPACE_SLUG": "family",
             "AGENTKVT_AGENT_TOKEN": "secret-token",
@@ -58,6 +59,7 @@ struct RunnerSettingsTests {
         #expect(settings.runScheduler == false)
         #expect(settings.ollamaModel == "llama3.2:latest")
         #expect(settings.ollamaBaseURL.absoluteString == "http://127.0.0.1:11434")
+        #expect(settings.ollamaAPIKey == "ollama-test-key")
         #expect(settings.backendBaseURL?.absoluteString == "http://127.0.0.1:3000")
         #expect(settings.backendWorkspaceSlug == "family")
         #expect(settings.backendAgentToken == "secret-token")
@@ -72,6 +74,7 @@ struct RunnerSettingsTests {
         let plist: [String: Any] = [
             "RUN_SCHEDULER": false,
             "OLLAMA_MODEL": "llama4:latest",
+            "OLLAMA_API_KEY": "config-key",
             "SCHEDULER_INTERVAL_SECONDS": 45
         ]
         let data = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
@@ -82,6 +85,7 @@ struct RunnerSettingsTests {
                 "AGENTKVT_CONFIG_FILE": configFile.path,
                 "RUN_SCHEDULER": "1",
                 "OLLAMA_MODEL": "llama3.2:latest",
+                "OLLAMA_API_KEY": "env-key",
                 "SCHEDULER_INTERVAL_SECONDS": "10",
                 "AGENTKVT_API_BASE_URL": "http://127.0.0.1:3000",
                 "AGENTKVT_WORKSPACE_SLUG": "override-workspace"
@@ -95,6 +99,7 @@ struct RunnerSettingsTests {
 
         #expect(settings.runScheduler)
         #expect(settings.ollamaModel == "llama3.2:latest")
+        #expect(settings.ollamaAPIKey == "env-key")
         #expect(settings.schedulerIntervalSeconds == 10)
         #expect(settings.backendBaseURL?.absoluteString == "http://127.0.0.1:3000")
         #expect(settings.backendWorkspaceSlug == "override-workspace")

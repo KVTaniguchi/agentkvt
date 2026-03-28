@@ -85,7 +85,7 @@ public func runAgentKVTMacRunner() async {
     let context = ModelContext(container)
     let sharedModelContext = SharedModelContext(context)
     let registry = ToolRegistry()
-    registry.register(makeWebSearchAndFetchTool())
+    registry.register(makeWebSearchAndFetchTool(apiKey: settings.ollamaAPIKey))
     registry.register(makeHeadlessBrowserScoutTool())
     registry.register(makeFetchBeeAIContextTool(modelContext: context))
     if let email = settings.notificationEmail, !email.isEmpty {

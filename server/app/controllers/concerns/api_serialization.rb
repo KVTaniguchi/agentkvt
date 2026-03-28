@@ -39,6 +39,7 @@ module ApiSerialization
       allowed_mcp_tools: mission.allowed_mcp_tools,
       is_enabled: mission.is_enabled,
       last_run_at: iso8601(mission.last_run_at),
+      run_requested_at: iso8601(mission.run_requested_at),
       source_updated_at: iso8601(mission.source_updated_at),
       created_at: iso8601(mission.created_at),
       updated_at: iso8601(mission.updated_at)

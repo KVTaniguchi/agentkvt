@@ -3,7 +3,7 @@ module V1
     class MissionRunsController < BaseController
       def create
         mission = current_workspace.missions.find(params[:mission_id] || params[:id])
-        mission.update!(last_run_at: parsed_time(params[:ran_at]) || Time.current)
+        mission.update!(last_run_at: parsed_time(params[:ran_at]) || Time.current, run_requested_at: nil)
 
         render json: { mission: serialize_mission(mission) }
       end

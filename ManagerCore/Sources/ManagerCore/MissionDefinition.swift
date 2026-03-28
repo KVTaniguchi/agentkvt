@@ -14,6 +14,7 @@ public final class MissionDefinition {
     public var ownerProfileId: UUID?
     public var isEnabled: Bool = true
     public var lastRunAt: Date?
+    public var runRequestedAt: Date?
     public var createdAt: Date = Date()
     public var updatedAt: Date = Date()
 
@@ -26,6 +27,7 @@ public final class MissionDefinition {
         ownerProfileId: UUID? = nil,
         isEnabled: Bool = true,
         lastRunAt: Date? = nil,
+        runRequestedAt: Date? = nil,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -37,6 +39,7 @@ public final class MissionDefinition {
         self.ownerProfileId = ownerProfileId
         self.isEnabled = isEnabled
         self.lastRunAt = lastRunAt
+        self.runRequestedAt = runRequestedAt
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }

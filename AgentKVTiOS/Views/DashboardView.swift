@@ -189,29 +189,31 @@ struct ActionItemRow: View {
     private var route: IntentRoute { IntentRoute.route(for: item) }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: route.iconName)
-                .foregroundStyle(.tint)
-                .frame(width: 22)
-                .padding(.top, 2)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(item.title)
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                if let missionName {
-                    Label(missionName, systemImage: "sparkles.rectangle.stack")
-                        .font(.caption)
-                        .foregroundStyle(.blue)
-                }
-                Text(item.systemIntent)
+        VStack(alignment: .leading, spacing: 6) {
+            Text(item.title)
+                .font(.headline)
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 6) {
+                Label(route.label, systemImage: route.iconName)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text(item.timestamp, style: .relative)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(route.badgeColor.opacity(0.85))
+                    .clipShape(Capsule())
+                if let missionName {
+                    Text(missionName)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            Text(item.timestamp, style: .relative)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
         }
+        .padding(.vertical, 4)
     }
 }
 

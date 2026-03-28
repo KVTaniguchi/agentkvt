@@ -29,6 +29,13 @@ module V1
       head :no_content
     end
 
+    def run_now
+      mission = current_workspace.missions.find(params[:id])
+      mission.update!(run_requested_at: Time.current)
+
+      render json: { mission: serialize_mission(mission) }
+    end
+
     private
 
     def mission_params

@@ -28,6 +28,7 @@ public struct BackendMission: Codable, Sendable {
     public let allowedMcpTools: [String]
     public let isEnabled: Bool
     public let lastRunAt: Date?
+    public let runRequestedAt: Date?
     public let sourceUpdatedAt: Date?
     public let createdAt: Date
     public let updatedAt: Date

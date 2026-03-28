@@ -6,7 +6,7 @@ import Foundation
 ///
 /// Requires OLLAMA_API_KEY (from https://ollama.com/settings/keys).
 /// APIs: https://ollama.com/api/web_search, https://ollama.com/api/web_fetch
-public func makeWebSearchAndFetchTool() -> ToolRegistry.Tool {
+public func makeWebSearchAndFetchTool(apiKey: String? = nil) -> ToolRegistry.Tool {
     ToolRegistry.Tool(
         id: "web_search_and_fetch",
         name: "web_search_and_fetch",
@@ -28,7 +28,11 @@ public func makeWebSearchAndFetchTool() -> ToolRegistry.Tool {
                 return "Error: query is required and must be non-empty."
             }
             let maxResults = (args["max_results"] as? String).flatMap(Int.init).map { min(max($0, 1), 5) } ?? 3
-            return await WebSearchTool.searchAndFetch(query: query.trimmingCharacters(in: .whitespacesAndNewlines), maxResults: maxResults)
+            return await WebSearchTool.searchAndFetch(
+                query: query.trimmingCharacters(in: .whitespacesAndNewlines),
+                maxResults: maxResults,
+                apiKeyOverride: apiKey
+            )
         }
     )
 }
@@ -38,8 +42,10 @@ enum WebSearchTool {
     private static let webFetchURL = URL(string: "https://ollama.com/api/web_fetch")!
 
     /// Run web_search, then web_fetch for each result URL; return combined clean Markdown.
-    static func searchAndFetch(query: String, maxResults: Int) async -> String {
-        guard let apiKey = ProcessInfo.processInfo.environment["OLLAMA_API_KEY"], !apiKey.isEmpty else {
+    static func searchAndFetch(query: String, maxResults: Int, apiKeyOverride: String? = nil) async -> String {
+        let resolvedAPIKey = apiKeyOverride?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let environmentAPIKey = ProcessInfo.processInfo.environment["OLLAMA_API_KEY"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let apiKey = [resolvedAPIKey, environmentAPIKey].compactMap({ $0 }).first(where: { !$0.isEmpty }) else {
             return "Error: OLLAMA_API_KEY must be set for web search. Get a key at https://ollama.com/settings/keys"
         }
 

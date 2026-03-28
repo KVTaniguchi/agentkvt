@@ -41,6 +41,7 @@ struct IOSBackendMission: Codable, Sendable {
     let allowedMcpTools: [String]
     let isEnabled: Bool
     let lastRunAt: Date?
+    let runRequestedAt: Date?
     let sourceUpdatedAt: Date?
     let createdAt: Date
     let updatedAt: Date
@@ -375,6 +376,11 @@ actor IOSBackendAPIClient {
         _ = try await performRequest(path: "v1/missions/\(id.uuidString)", method: "DELETE")
     }
 
+    func runMissionNow(id: UUID) async throws -> IOSBackendMission {
+        let data = try await performRequest(path: "v1/missions/\(id.uuidString)/run_now", method: "POST")
+        return try decoder.decode(IOSBackendMissionEnvelope.self, from: data).mission
+    }
+
     private func missionPayload(
         id: UUID,
         missionName: String,
@@ -636,6 +642,16 @@ final class IOSBackendSyncService {
     }
 
     @MainActor
+    func runMissionNow(_ mission: MissionDefinition) async throws {
+        guard let client else {
+            IOSRuntimeLog.log("[IOSBackendSync] runMissionNow skipped: no backend client configured.")
+            return
+        }
+        _ = try await client.runMissionNow(id: mission.id)
+        IOSRuntimeLog.log("[IOSBackendSync] Run requested for mission id=\(mission.id.uuidString) '\(mission.missionName)'.")
+    }
+
+    @MainActor
     func deleteMissions(_ missions: [MissionDefinition], modelContext: ModelContext) async throws {
         if let client {
             for mission in missions {
@@ -765,6 +781,7 @@ final class IOSBackendSyncService {
             existing.ownerProfileId = remoteMission.ownerProfileId
             existing.isEnabled = remoteMission.isEnabled
             existing.lastRunAt = remoteMission.lastRunAt
+            existing.runRequestedAt = remoteMission.runRequestedAt
             existing.createdAt = remoteMission.createdAt
             existing.updatedAt = remoteMission.updatedAt
             return existing
@@ -779,6 +796,7 @@ final class IOSBackendSyncService {
             ownerProfileId: remoteMission.ownerProfileId,
             isEnabled: remoteMission.isEnabled,
             lastRunAt: remoteMission.lastRunAt,
+            runRequestedAt: remoteMission.runRequestedAt,
             createdAt: remoteMission.createdAt,
             updatedAt: remoteMission.updatedAt
         )
