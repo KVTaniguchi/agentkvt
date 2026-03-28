@@ -108,7 +108,6 @@ enum IntentRoute {
 /// exposure. Falls back to a disabled row for unknown intents.
 struct DynamicIntentButton: View {
     let item: ActionItem
-    var onHandled: (() -> Void)? = nil
 
     private var route: IntentRoute { IntentRoute.route(for: item) }
 
@@ -120,7 +119,6 @@ struct DynamicIntentButton: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(.blue)
-            .onChange(of: item.isHandled) { _, _ in onHandled?() }
 
         case .mailReply(let intent):
             Button(intent: intent) {

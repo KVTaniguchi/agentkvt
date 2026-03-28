@@ -240,72 +240,105 @@ struct ActionItemDetailView: View {
         return mission.isEnabled ? "Enabled" : "Disabled"
     }
 
+    private var createdAtText: String {
+        item.timestamp.formatted(date: .abbreviated, time: .shortened)
+    }
+
     var body: some View {
         List {
-            if !item.isHandled {
-                Section {
-                    DynamicIntentButton(item: item) {
-                        onMarkHandled()
-                        dismiss()
-                    }
-                    .listRowInsets(.init(top: 12, leading: 16, bottom: 12, trailing: 16))
-                }
-            }
+            Section {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text(item.title)
+                        .font(.title2.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
 
-            Section("Action") {
-                LabeledContent("Title", value: item.title)
-                LabeledContent("Intent", value: item.systemIntent)
-                LabeledContent("Created") {
-                    Text(item.timestamp, style: .date)
-                }
-                LabeledContent("Handled") {
-                    Text(item.isHandled ? "Yes" : "No")
-                }
-            }
-
-            Section("Mission") {
-                if let mission {
-                    LabeledContent("Name", value: mission.missionName)
-                    LabeledContent("Schedule", value: mission.triggerSchedule)
-                    LabeledContent("Status", value: missionStatus)
-                    if let lastRunAt = mission.lastRunAt {
-                        LabeledContent("Last Run") {
-                            Text(lastRunAt, style: .relative)
-                        }
-                    }
-                    if !mission.allowedMCPTools.isEmpty {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Allowed Tools")
+                    if let mission {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("From Mission")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                            Text(mission.allowedMCPTools.joined(separator: ", "))
-                                .font(.body)
+                            Text(mission.missionName)
+                                .font(.headline)
+                                .foregroundStyle(.primary)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
-                        .padding(.vertical, 4)
+                    } else {
+                        Text("Source mission unavailable")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
                     }
-                } else {
-                    Text("This action is not currently linked to a loaded mission record.")
+
+                    Label(createdAtText, systemImage: "clock")
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 8)
+            }
+
+            if !item.isHandled {
+                Section {
+                    DynamicIntentButton(item: item)
+                    .listRowInsets(.init(top: 12, leading: 16, bottom: 12, trailing: 16))
+                } footer: {
+                    Text("Use the action above to follow the agent's recommendation. Tap Done after you've handled it or want to clear it from the queue.")
                 }
             }
 
-            if let payloadText {
-                Section("Payload") {
-                    ScrollView(.horizontal) {
-                        Text(payloadText)
-                            .font(.system(.body, design: .monospaced))
-                            .textSelection(.enabled)
+            Section {
+                DisclosureGroup("Technical Details") {
+                    LabeledContent("Intent", value: item.systemIntent)
+                    LabeledContent("Handled") {
+                        Text(item.isHandled ? "Yes" : "No")
+                    }
+
+                    if let mission {
+                        LabeledContent("Schedule", value: mission.triggerSchedule)
+                        LabeledContent("Status", value: missionStatus)
+                        if let lastRunAt = mission.lastRunAt {
+                            LabeledContent("Last Run") {
+                                Text(lastRunAt, style: .relative)
+                            }
+                        }
+                        if !mission.allowedMCPTools.isEmpty {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Allowed Tools")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Text(mission.allowedMCPTools.joined(separator: ", "))
+                                    .font(.body)
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    } else {
+                        Text("This action is not currently linked to a loaded mission record.")
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if let payloadText {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Payload")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            ScrollView(.horizontal) {
+                                Text(payloadText)
+                                    .font(.system(.body, design: .monospaced))
+                                    .textSelection(.enabled)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
                             .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .padding(.vertical, 4)
                     }
                 }
             }
         }
-        .navigationTitle("Action Detail")
+        .navigationTitle("Review Action")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 if !item.isHandled {
-                    Button("Mark Done") {
+                    Button("Done") {
                         onMarkHandled()
                         dismiss()
                     }
