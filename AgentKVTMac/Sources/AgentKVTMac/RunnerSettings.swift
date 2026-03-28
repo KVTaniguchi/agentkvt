@@ -43,6 +43,14 @@ struct RunnerSettings: Sendable {
     let inboundDirectory: URL?
     let webhookPort: UInt16
     let disableCloudKit: Bool
+    let imapHost: String?
+    let imapPort: Int
+    let imapUsername: String?
+    let imapPassword: String?
+    let imapMailbox: String
+    let imapPollSeconds: Int
+
+    var imapEnabled: Bool { imapHost != nil && imapUsername != nil && imapPassword != nil }
 
     var isAppBundle: Bool {
         source.isAppBundle
@@ -92,6 +100,12 @@ struct RunnerSettings: Sendable {
         let configuredWebhookPort = resolver.int(for: "WEBHOOK_PORT") ?? 8765
         let webhookPort = UInt16(clamping: configuredWebhookPort)
         let disableCloudKit = resolver.bool(for: "AGENTKVT_DISABLE_CLOUDKIT") ?? false
+        let imapHost = resolver.string(for: "AGENTKVT_IMAP_HOST")
+        let imapPort = resolver.int(for: "AGENTKVT_IMAP_PORT") ?? 993
+        let imapUsername = resolver.string(for: "AGENTKVT_IMAP_USERNAME")
+        let imapPassword = resolver.string(for: "AGENTKVT_IMAP_PASSWORD")
+        let imapMailbox = resolver.string(for: "AGENTKVT_IMAP_MAILBOX") ?? "INBOX"
+        let imapPollSeconds = max(60, resolver.int(for: "AGENTKVT_IMAP_POLL_SECONDS") ?? 300)
 
         return RunnerSettings(
             source: source,
@@ -112,7 +126,13 @@ struct RunnerSettings: Sendable {
             inboxDirectory: inboxDirectory,
             inboundDirectory: inboundDirectory,
             webhookPort: webhookPort,
-            disableCloudKit: disableCloudKit
+            disableCloudKit: disableCloudKit,
+            imapHost: imapHost,
+            imapPort: imapPort,
+            imapUsername: imapUsername,
+            imapPassword: imapPassword,
+            imapMailbox: imapMailbox,
+            imapPollSeconds: imapPollSeconds
         )
     }
 

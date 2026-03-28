@@ -163,7 +163,8 @@ public func runAgentKVTMacRunner() async {
             emailIngestor: emailIngestor,
             dropzoneDir: dropzoneDir,
             webhookPort: settings.webhookPort,
-            clockIntervalSeconds: settings.schedulerIntervalSeconds
+            clockIntervalSeconds: settings.schedulerIntervalSeconds,
+            settings: settings
         )
     } else {
         if let backendClient {
@@ -250,7 +251,8 @@ private func runScheduler(
     emailIngestor: EmailIngestor,
     dropzoneDir: URL,
     webhookPort: UInt16,
-    clockIntervalSeconds: Int
+    clockIntervalSeconds: Int,
+    settings: RunnerSettings
 ) async {
     // ── Build the strict serial execution queue ──────────────────────────────────
     // All triggers funnel here. The actor's `run()` loop processes them one at a
@@ -269,6 +271,12 @@ private func runScheduler(
     // Ensure directories exist before starting watchers.
     DropzoneService(directory: dropzoneDir).ensureDirectory()
     emailIngestor.ensureDirectory()
+
+    // ── IMAP poller (optional — only when credentials are configured) ────────────
+    if settings.imapEnabled {
+        let imapPoller = IMAPEmailPoller(settings: settings, inboxDir: emailIngestor.directory)
+        await imapPoller.start()
+    }
 
     // ── FSEvents: inbox (.eml files) ─────────────────────────────────────────────
     let inboxWatcher = DirectoryWatcher(directory: emailIngestor.directory) { url in
