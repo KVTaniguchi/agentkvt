@@ -1,0 +1,44 @@
+{
+  "name": "agentkvt-production-logs",
+  "version": "0.1.0",
+  "description": "Analyze live AgentKVT production logs over SSH from the repo-local production host.",
+  "author": {
+    "name": "Kevin Taniguchi",
+    "email": "kv.taniguchi@icloud.com",
+    "url": "https://github.com/KVTaniguchi"
+  },
+  "homepage": "https://github.com/KVTaniguchi/agentkvt",
+  "repository": "https://github.com/KVTaniguchi/agentkvt",
+  "license": "UNLICENSED",
+  "keywords": [
+    "agentkvt",
+    "logs",
+    "production",
+    "ssh",
+    "operations"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "AgentKVT Production Logs",
+    "shortDescription": "Pull and summarize live production logs",
+    "longDescription": "Use the repo-local production log analyzer to inspect the live AgentKVT app, Rails API, Postgres, and launchd logs on the production SSH host and summarize the latest failures.",
+    "developerName": "Kevin Taniguchi",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/KVTaniguchi/agentkvt",
+    "privacyPolicyURL": "https://github.com/KVTaniguchi/agentkvt",
+    "termsOfServiceURL": "https://github.com/KVTaniguchi/agentkvt",
+    "defaultPrompt": [
+      "Analyze current AgentKVT production logs on familyagent@192.168.4.144",
+      "Pull raw production log excerpts and summarize the latest failures",
+      "Check whether the AgentKVT production stack is healthy"
+    ],
+    "brandColor": "#0F766E",
+    "composerIcon": "./assets/agentkvt-production-logs.svg",
+    "logo": "./assets/agentkvt-production-logs.svg",
+    "screenshots": []
+  }
+}

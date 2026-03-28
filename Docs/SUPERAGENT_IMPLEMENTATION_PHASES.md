@@ -92,8 +92,8 @@ flowchart TB
   - Swift MCP tool; destination email fixed (env/keychain); only `subject` and `body` from LLM. No way for the agent to specify recipient.
 - **github_agent** (implemented):
   - Auth via dedicated Bot PAT; configuration that restricts the token to designated agent-only repos (e.g. list issues). See [TOOL_IDS.md](TOOL_IDS.md).
-- **fetch_bee_ai_context** (implemented):
-  - Fetches transcriptions/insights from BEE AI wristband API; stores summaries in LifeContext or AgentLog. Env: `BEE_AI_BASE_URL`, `BEE_AI_API_KEY`.
+- **fetch_bee_ai_context** (implemented; API alignment in progress):
+  - HTTP fetch to a Bee-compatible base URL (typically local [`bee proxy`](https://docs.bee.computer/docs/proxy)); stores summaries in LifeContext or AgentLog. Env: `BEE_AI_BASE_URL`, `BEE_AI_API_KEY`. See [BEE_AI_INTEGRATION_PLAN.md](BEE_AI_INTEGRATION_PLAN.md) for mapping to official Bee `/v1/*` endpoints.
 - **incoming_email_trigger** (implemented):
   - Returns next pending email from Agent Inbox (intent + sanitized content; PII stripped). Requires EmailIngestor; inbox dir `~/.agentkvt/inbox` or `AGENTKVT_INBOX_DIR`. See [EMAIL_INGESTOR.md](EMAIL_INGESTOR.md).
 - **web_search_and_fetch** (implemented):

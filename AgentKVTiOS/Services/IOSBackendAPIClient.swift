@@ -386,6 +386,11 @@ actor IOSBackendAPIClient {
         return try decoder.decode(IOSBackendMissionEnvelope.self, from: data).mission
     }
 
+    /// Nudges the Mac agent (via server poll) to process pending chat when not on LAN.
+    func postChatWake() async throws {
+        _ = try await performRequest(path: "v1/chat_wake", method: "POST", jsonBody: [:])
+    }
+
     private func missionPayload(
         id: UUID,
         missionName: String,
@@ -473,6 +478,16 @@ final class IOSBackendSyncService {
 
     var isEnabled: Bool {
         client != nil
+    }
+
+    /// Signals the deployed API so the Mac agent can poll and process pending chat (cellular / off-LAN).
+    func notifyChatWakeIfNeeded() async {
+        guard let client else { return }
+        do {
+            try await client.postChatWake()
+        } catch {
+            IOSRuntimeLog.log("[IOSBackendSync] chat_wake failed: \(error)")
+        }
     }
 
     @MainActor

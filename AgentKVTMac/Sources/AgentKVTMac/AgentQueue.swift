@@ -34,7 +34,9 @@ actor AgentQueue {
         case inboundFile(URL)
         /// A POST payload arrived on the local webhook listener.
         case webhook(String)
-        /// CloudKit remote change: one or more IncomingEmailSummary records arrived from iOS.
+        /// LAN-only: JSON body `{"agentkvt":"process_chat"}` on the webhook port — drain pending chat only.
+        case processPendingChat
+        /// CloudKit remote change: iOS synced SwiftData (chat, email summaries, etc.).
         case cloudKitSync
     }
 

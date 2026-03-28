@@ -227,9 +227,50 @@ struct MissionEditView: View {
     let onSave: @MainActor (String, String, String, [String], UUID?) async throws -> Void
     var onRunNow: (@MainActor () async throws -> Void)? = nil
 
+    private enum ScheduleKind: String, CaseIterable {
+        case daily
+        case weekly
+        case interval
+        case webhook
+
+        var pickerLabel: String {
+            switch self {
+            case .daily: return "Daily"
+            case .weekly: return "Weekly"
+            case .interval: return "Interval"
+            case .webhook: return "Webhook"
+            }
+        }
+    }
+
+    /// Lowercase weekday names matching `MissionScheduler` / server expectations.
+    private static let weekdayNames = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
+
+    private static func displayLabel(forToolId id: String) -> String {
+        switch id {
+        case "write_action_item": return "Write Action Item"
+        case "web_search_and_fetch": return "Web Search & Fetch"
+        case "headless_browser_scout": return "Headless Browser Scout"
+        case "send_notification_email": return "Send Notification Email"
+        case "github_agent": return "GitHub Agent"
+        case "fetch_bee_ai_context": return "Fetch Bee Context"
+        case "incoming_email_trigger": return "Incoming Email Trigger"
+        case "multi_step_search": return "Multi-Step Search"
+        case "read_research_snapshot": return "Read Research Snapshot"
+        case "write_research_snapshot": return "Write Research Snapshot"
+        default:
+            return id.replacingOccurrences(of: "_", with: " ").capitalized
+        }
+    }
+
     @State private var name: String = ""
     @State private var systemPrompt: String = ""
-    @State private var triggerSchedule: String = "daily|08:00"
+    @State private var scheduleKind: ScheduleKind = .daily
+    /// Time-of-day for `daily|HH:mm` (only hour and minute are used).
+    @State private var dailyRunTime: Date = Calendar.current.date(from: DateComponents(hour: 8, minute: 0)) ?? Date()
+    /// Any calendar date on the chosen weekday for `weekly|weekday` (only weekday is encoded).
+    @State private var weeklyPickDate: Date = Date()
+    @State private var intervalHours: Int = 6
     @State private var selectedToolIds: Set<String> = []
     @State private var ownerProfileId: UUID?
     @State private var validationMessage: String?
@@ -240,7 +281,7 @@ struct MissionEditView: View {
 
     private var runtimeToolingNote: String {
         if selectedToolIds.contains("write_action_item") {
-            return "Selected tools are injected automatically at runtime. With write_action_item enabled, the runner will require at least one visible action using calendar.create, mail.reply, reminder.add, or url.open."
+            return "Selected tools are injected automatically at runtime. With Write Action Item enabled, the runner will require at least one visible action using calendar.create, mail.reply, reminder.add, or url.open."
         }
         return "Selected tools are injected automatically at runtime, so your prompt can stay focused on the job to be done."
     }
@@ -254,7 +295,22 @@ struct MissionEditView: View {
     }
 
     private var normalizedSchedule: String {
-        triggerSchedule.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch scheduleKind {
+        case .daily:
+            let cal = Calendar.current
+            let h = cal.component(.hour, from: dailyRunTime)
+            let m = cal.component(.minute, from: dailyRunTime)
+            return String(format: "daily|%02d:%02d", h, m)
+        case .weekly:
+            let cal = Calendar.current
+            let weekday = cal.component(.weekday, from: weeklyPickDate)
+            let name = Self.weekdayNames[weekday - 1]
+            return "weekly|\(name)"
+        case .interval:
+            return "interval|\(intervalHours)h"
+        case .webhook:
+            return "webhook"
+        }
     }
 
     private var isScheduleValid: Bool {
@@ -294,10 +350,34 @@ struct MissionEditView: View {
                         .foregroundStyle(.secondary)
                 }
                 Section("Schedule") {
-                    TextField("Trigger (e.g. daily|08:00, weekly|monday)", text: $triggerSchedule)
-                    Text("Supported: daily|HH:mm, weekly|weekday, interval|Nh (e.g. interval|6h), or webhook")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Picker("Schedule type", selection: $scheduleKind) {
+                        ForEach(ScheduleKind.allCases, id: \.self) { kind in
+                            Text(kind.pickerLabel).tag(kind)
+                        }
+                    }
+                    switch scheduleKind {
+                    case .daily:
+                        DatePicker("Run at", selection: $dailyRunTime, displayedComponents: .hourAndMinute)
+                        Text("Runs every day at this time.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    case .weekly:
+                        DatePicker("On weekday", selection: $weeklyPickDate, displayedComponents: .date)
+                        Text("Runs once each week on the weekday of the date you pick.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    case .interval:
+                        Stepper(value: $intervalHours, in: 1...999) {
+                            Text("Every \(intervalHours) hour\(intervalHours == 1 ? "" : "s")")
+                        }
+                        Text("Encoded as interval|\(intervalHours)h.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    case .webhook:
+                        Text("Runs only when triggered externally (not on a timer).")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 Section("Owner Profile") {
                     Picker("Owner", selection: Binding<UUID?>(
@@ -312,7 +392,7 @@ struct MissionEditView: View {
                 }
                 Section("Allowed tools") {
                     ForEach(toolIds, id: \.self) { id in
-                        Toggle(id, isOn: Binding(
+                        Toggle(Self.displayLabel(forToolId: id), isOn: Binding(
                             get: { selectedToolIds.contains(id) },
                             set: { if $0 { selectedToolIds.insert(id) } else { selectedToolIds.remove(id) } }
                         ))
@@ -381,7 +461,7 @@ struct MissionEditView: View {
                 if let m = mission {
                     name = m.missionName
                     systemPrompt = m.systemPrompt
-                    triggerSchedule = m.triggerSchedule
+                    applyScheduleFromString(m.triggerSchedule)
                     selectedToolIds = Set(m.allowedMCPTools)
                     ownerProfileId = m.ownerProfileId
                 } else {
@@ -390,7 +470,10 @@ struct MissionEditView: View {
             }
             .onChange(of: name) { _, _ in validationMessage = nil }
             .onChange(of: systemPrompt) { _, _ in validationMessage = nil }
-            .onChange(of: triggerSchedule) { _, _ in validationMessage = nil }
+            .onChange(of: scheduleKind) { _, _ in validationMessage = nil }
+            .onChange(of: dailyRunTime) { _, _ in validationMessage = nil }
+            .onChange(of: weeklyPickDate) { _, _ in validationMessage = nil }
+            .onChange(of: intervalHours) { _, _ in validationMessage = nil }
             .onChange(of: selectedToolIds) { _, _ in validationMessage = nil }
             .alert("Run Now", isPresented: Binding(
                 get: { runNowMessage != nil },
@@ -414,8 +497,59 @@ struct MissionEditView: View {
             return "Select at least one allowed tool."
         }
         if !isScheduleValid {
-            return "Schedule must be daily|HH:mm, weekly|weekday, or webhook."
+            return "Schedule is invalid."
         }
         return "Mission is invalid."
+    }
+
+    private func applyScheduleFromString(_ raw: String) {
+        let s = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if s == "webhook" {
+            scheduleKind = .webhook
+            return
+        }
+        let parts = s.split(separator: "|", maxSplits: 1).map(String.init)
+        guard parts.count == 2 else {
+            scheduleKind = .daily
+            return
+        }
+        switch parts[0] {
+        case "daily":
+            scheduleKind = .daily
+            let hm = parts[1].split(separator: ":")
+            if let h = Int(hm[0]), (0..<24).contains(h) {
+                let minute = hm.count > 1 ? (Int(hm[1]) ?? 0) : 0
+                if (0..<60).contains(minute), let d = Calendar.current.date(from: DateComponents(hour: h, minute: minute)) {
+                    dailyRunTime = d
+                }
+            }
+        case "weekly":
+            scheduleKind = .weekly
+            let day = parts[1]
+            if let idx = Self.weekdayNames.firstIndex(of: day) {
+                weeklyPickDate = Self.referenceDate(forWeekdayIndex: idx, calendar: .current)
+            }
+        case "interval":
+            scheduleKind = .interval
+            let v = parts[1].lowercased()
+            if v.hasSuffix("h"), let h = Int(v.dropLast()), (1...999).contains(h) {
+                intervalHours = h
+            }
+        default:
+            scheduleKind = .daily
+        }
+    }
+
+    /// A calendar date whose weekday matches `weekdayNames[index]` (0 = Sunday).
+    private static func referenceDate(forWeekdayIndex index: Int, calendar: Calendar) -> Date {
+        let targetWeekday = index + 1
+        var date = Date()
+        for _ in 0..<14 {
+            if calendar.component(.weekday, from: date) == targetWeekday {
+                return calendar.startOfDay(for: date)
+            }
+            date = calendar.date(byAdding: .day, value: 1, to: date) ?? date
+        }
+        return Date()
     }
 }

@@ -72,7 +72,7 @@ All major components are implemented with real business logic. This is no longer
 - **Dual sync path complexity** — backend API is primary, but CloudKit/SwiftData remain as a secondary path; this creates two sync surfaces to keep aligned
 - **Inbound data sanitization** — email and dropzone ingestion tools exist, but privacy hardening and normalization before LLM exposure appear incomplete
 - **Mission quality** — no flagship mission has been tuned for repeatable, real-world usefulness
-- **`fetch_bee_ai_context` tool** — registered in the tool registry but likely a stub
+- **`fetch_bee_ai_context` tool** — HTTP client exists, but default path/shape predates [Bee’s documented `/v1/*` API](https://docs.bee.computer/docs/proxy); alignment is tracked in [BEE_AI_INTEGRATION_PLAN.md](BEE_AI_INTEGRATION_PLAN.md)
 
 ### Recently completed
 

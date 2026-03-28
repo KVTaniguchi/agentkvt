@@ -55,6 +55,12 @@ iOS → shared SwiftData store → Mac scheduler → MissionRunner → AgentLoop
 3. **Mac scheduler:** `RUN_SCHEDULER=1 swift run AgentKVTMacRunner` (polls missions; set env for notification/GitHub tools if needed).
 4. **iOS:** Open `AgentKVTiOS/AgentKVTiOS.xcodeproj` in Xcode, set Development Team, build and run.
 
+## Operations
+
+- **Analyze production logs over SSH:** `./bin/analyze_production_logs.sh`
+- Defaults to `familyagent@192.168.4.144`; override with `--host` or `AGENTKVT_PROD_HOST`.
+- Add `--raw` to print the sampled log excerpts after the summary.
+
 ## Planning
 
 - [Docs/SOVEREIGN_PLANNER_VISION.md](Docs/SOVEREIGN_PLANNER_VISION.md) - Product vision and north-star direction for AgentKVT as "The Sovereign Planner".

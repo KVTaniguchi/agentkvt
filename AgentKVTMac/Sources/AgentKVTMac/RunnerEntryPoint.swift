@@ -289,17 +289,20 @@ private func runScheduler(
 
     // ── Webhook listener (highest priority — explicit external intent) ────────────
     let webhookListener = WebhookListener(port: webhookPort) { payload in
-        executionQueue.enqueue(.webhook(payload), priority: .high)
+        if WebhookChatSignal.matches(payload) {
+            executionQueue.enqueue(.processPendingChat, priority: .high)
+        } else {
+            executionQueue.enqueue(.webhook(payload), priority: .high)
+        }
     }
     webhookListener.start()
 
     // ── CloudKit observer (reactive iOS→Mac bridge) ──────────────────────────────
-    // Fires when CloudKit delivers IncomingEmailSummary records inserted by the
-    // iPhone's EdgeSummarizationService. No ModelContext access here — the fetch
-    // happens inside MissionExecutionQueue.dispatch(.cloudKitSync) on the actor's
-    // serial executor.
+    // Fires on any remote SwiftData change (chat messages, IncomingEmailSummary, etc.).
+    // High priority so pending chat is processed promptly instead of waiting behind the
+    // 60s clock tick. No ModelContext access here — work runs in dispatch(.cloudKitSync).
     let cloudKitObserver = CloudKitObserver {
-        executionQueue.enqueue(.cloudKitSync, priority: .normal)
+        executionQueue.enqueue(.cloudKitSync, priority: .high)
     }
     cloudKitObserver.start()
 
@@ -313,14 +316,35 @@ private func runScheduler(
     }
     clockTimer.resume()
 
+    // Off-LAN: iOS POSTs `/v1/chat_wake` to the deployed API; we poll the agent endpoint
+    // and enqueue the same work as the LAN JSON webhook (`processPendingChat`).
+    if let backendClient {
+        Task(priority: .utility) {
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(nanoseconds: 15_000_000_000)
+                    let pending = try await backendClient.consumeChatWakeIfPending()
+                    if pending {
+                        executionQueue.enqueue(.processPendingChat, priority: .high)
+                    }
+                } catch {
+                    print("[Scheduler] chat_wake poll failed: \(error)")
+                }
+            }
+        }
+    }
+
     print("""
         [Scheduler] Event-driven scheduler started.
           Inbox:    \(emailIngestor.directory.path)
           Inbound:  \(dropzoneDir.path)
-          Webhook:  port \(webhookPort)
+          Webhook:  port \(webhookPort) (chat wake: POST JSON {"agentkvt":"process_chat"})
           Clock:    every \(clockIntervalSeconds)s
           CloudKit: listening for NSPersistentStoreRemoteChangeNotification
         """)
+    if backendClient != nil {
+        print("  Remote:   backend chat_wake poll every 15s (iOS POST /v1/chat_wake when API is configured)")
+    }
 
     // ── Run forever — drain loop blocks (async suspends) until the process exits ──
     await executionQueue.run()

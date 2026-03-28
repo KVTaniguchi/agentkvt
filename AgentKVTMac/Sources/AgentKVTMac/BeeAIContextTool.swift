@@ -2,13 +2,15 @@ import Foundation
 import ManagerCore
 import SwiftData
 
-/// MCP tool: fetch recent transcriptions or insights from the BEE AI wristband/app API,
-/// store summaries in LifeContext or AgentLog, and return context for the agent.
+/// MCP tool: fetch personal context from a Bee-compatible HTTP API (see Bee docs:
+/// https://docs.bee.computer/docs/proxy — typically `bee proxy` on localhost).
+/// Summaries go to LifeContext or AgentLog. Default path `v1/insights` is legacy until
+/// responses match official Bee `/v1/*` JSON (see Docs/BEE_AI_INTEGRATION_PLAN.md).
 public func makeFetchBeeAIContextTool(modelContext: ModelContext) -> ToolRegistry.Tool {
     ToolRegistry.Tool(
         id: "fetch_bee_ai_context",
         name: "fetch_bee_ai_context",
-        description: "Fetch recent transcriptions or insights from the BEE AI API. Use this to inform missions (e.g. detect new goals from band data). Results are stored in LifeContext or AgentLog.",
+        description: "Fetch personal context from the Bee HTTP API (typically local bee proxy). Use to ground missions on recent conversations, daily briefs, or notes. Results are stored in LifeContext or AgentLog.",
         parameters: .init(
             type: "object",
             properties: [
@@ -44,11 +46,11 @@ enum BeeAIContextTool {
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse else { return "Error: invalid response." }
             guard http.statusCode == 200 else {
-                return "BEE AI API error: status \(http.statusCode). Check base URL and API key."
+                return "Bee API error: status \(http.statusCode). Check base URL and API key."
             }
             return processBeeAIResponse(data: data, modelContext: modelContext, lifeContextKey: lifeContextKey)
         } catch {
-            return "Error fetching BEE AI: \(error)"
+            return "Error fetching Bee API: \(error)"
         }
     }
 
@@ -68,7 +70,7 @@ enum BeeAIContextTool {
             }
         }
         try? modelContext.save()
-        return "Stored BEE AI context. Summary: \(summary.prefix(500))\(summary.count > 500 ? "…" : "")."
+        return "Stored Bee context. Summary: \(summary.prefix(500))\(summary.count > 500 ? "…" : "")."
     }
 
     private static func parseAndSummarize(data: Data) -> String {
@@ -94,7 +96,7 @@ enum BeeAIContextTool {
         if parts.isEmpty {
             return "No insights or transcriptions in response. Keys: \(json.keys.joined(separator: ", "))."
         }
-        return "BEE AI recent:\n" + parts.joined(separator: "\n")
+            return "Bee context (recent):\n" + parts.joined(separator: "\n")
     }
 
     private static func formatInsight(_ item: [String: Any], index: Int) -> String {

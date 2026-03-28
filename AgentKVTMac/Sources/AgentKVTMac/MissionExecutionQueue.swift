@@ -16,7 +16,9 @@ import SwiftData
 /// | Source                     | Priority |
 /// |----------------------------|----------|
 /// | Webhook (user intent)      | .high    |
-/// | Email / inbound file / CloudKit | .normal |
+/// | Chat wake (`process_chat`) | .high    |
+/// | CloudKit (iOS sync)        | .high    |
+/// | Email / inbound file       | .normal  |
 /// | 60-second clock tick       | .low     |
 ///
 /// When multiple triggers accumulate while the LLM is busy, they are drained in
@@ -262,21 +264,37 @@ actor MissionExecutionQueue {
                 }
             }
 
-        // ── CloudKit sync: IncomingEmailSummary records from iOS ─────────────────
-        // The iOS EdgeSummarizationService ran Apple Intelligence on an email and
-        // pushed a compact IncomingEmailSummary via CloudKit. Find missions that
-        // declare fetch_email_summaries in their allowed tools and run them.
+        // ── Chat wake webhook (LAN POST `{"agentkvt":"process_chat"}`) ─────────────
+        case .processPendingChat:
+            print("[MissionExecutionQueue] processPendingChat: draining pending chat.")
+            do {
+                while try await chatRunner.processNextPendingMessage() {}
+            } catch {
+                print("[MissionExecutionQueue] processPendingChat failed: \(error)")
+            }
+
+        // ── CloudKit sync: iOS→Mac SwiftData changes (chat, email summaries, etc.) ─
+        // Remote changes fire for any synced model. Always drain pending chat first so
+        // user messages are answered as soon as CloudKit delivers them — not only on
+        // the low-priority 60s clock tick (which previously made chat feel stuck when
+        // there were no IncomingEmailSummary rows).
         case .cloudKitSync:
+            do {
+                while try await chatRunner.processNextPendingMessage() {}
+            } catch {
+                print("[MissionExecutionQueue] CloudKit sync: chat processing failed: \(error)")
+            }
+
             let fetchContext = freshContext()
             let descriptor = FetchDescriptor<IncomingEmailSummary>(
                 predicate: #Predicate { !$0.processedByMac }
             )
             let pending = (try? fetchContext.fetch(descriptor)) ?? []
             guard !pending.isEmpty else {
-                print("[MissionExecutionQueue] CloudKit sync: no pending summaries.")
+                print("[MissionExecutionQueue] CloudKit sync: no pending email summaries.")
                 return
             }
-            print("[MissionExecutionQueue] CloudKit sync: \(pending.count) pending summary(ies).")
+            print("[MissionExecutionQueue] CloudKit sync: \(pending.count) pending email summary(ies).")
             if let backendClient {
                 let missions = try await backendClient.fetchMissions().map { $0.asRequest() }
                 let matching = missions.filter { $0.isEnabled && $0.allowedToolIds.contains("fetch_email_summaries") }

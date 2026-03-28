@@ -7,7 +7,7 @@ Use these IDs in `MissionDefinition.allowedMCPTools` to grant a mission access t
 | `write_action_item` | Write a dynamic action item (button) for the iOS dashboard. Title and systemIntent from LLM; payload optional. |
 | `send_notification_email` | Send a notification email to the user. Destination is fixed (env/keychain); only subject and body from LLM. |
 | `github_agent` | Read-only GitHub operations on allowed repositories (list issues). PAT and repo allowlist configured at startup. |
-| `fetch_bee_ai_context` | Fetch recent transcriptions/insights from BEE AI wristband API; store summaries in LifeContext or AgentLog. Set BEE_AI_BASE_URL, BEE_AI_API_KEY (optional BEE_AI_INSIGHTS_PATH). |
+| `fetch_bee_ai_context` | Fetch personal context from [Bee Computer](https://docs.bee.computer/docs) (via local [`bee proxy`](https://docs.bee.computer/docs/proxy) or compatible base URL); store summaries in LifeContext or AgentLog. Set `BEE_AI_BASE_URL` (e.g. `http://127.0.0.1:8787`), `BEE_AI_API_KEY` (Bearer token). Default path `v1/insights` is a legacy placeholder until the client maps real `/v1/*` routes—see [BEE_AI_INTEGRATION_PLAN.md](BEE_AI_INTEGRATION_PLAN.md). |
 | `incoming_email_trigger` | Get next pending email from Agent Inbox (intent + sanitized content only; PII stripped). Requires EmailIngestor; inbox dir: ~/.agentkvt/inbox or AGENTKVT_INBOX_DIR. |
 
 For `write_action_item`, `systemIntent` must be one of the values below. Each intent requires specific keys in `payloadJson` — the canonical schema is defined in `ManagerCore/Sources/ManagerCore/SystemIntent.swift` and is also included in the tool description sent to Ollama on every run.

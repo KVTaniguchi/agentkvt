@@ -2,6 +2,8 @@ Rails.application.routes.draw do
   get "/healthz", to: "health#show"
 
   namespace :v1 do
+    post :chat_wake, to: "chat_wakes#create"
+
     resource :bootstrap, only: :show
     resources :family_members, only: [:index, :create]
     resources :missions, only: [:index, :create, :update, :destroy] do
@@ -15,6 +17,7 @@ Rails.application.routes.draw do
 
     namespace :agent do
       get :due_missions, to: "due_missions#index"
+      get :chat_wake, to: "chat_wakes#show"
 
       resources :missions, only: [] do
         get :action_items, to: "mission_action_items#index"

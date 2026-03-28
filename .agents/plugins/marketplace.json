@@ -1,0 +1,20 @@
+{
+  "name": "agentkvt-local",
+  "interface": {
+    "displayName": "AgentKVT Local Plugins"
+  },
+  "plugins": [
+    {
+      "name": "agentkvt-production-logs",
+      "source": {
+        "source": "local",
+        "path": "./plugins/agentkvt-production-logs"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

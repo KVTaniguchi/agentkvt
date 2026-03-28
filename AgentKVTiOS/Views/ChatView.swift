@@ -21,7 +21,7 @@ struct ChatView: View {
                     ContentUnavailableView(
                         "No Chat Yet",
                         systemImage: "message",
-                        description: Text("Create an optional assistant thread. The Mac runner will answer when it next syncs.")
+                        description: Text("Create an optional assistant thread. The Mac answers shortly after messages sync from this device.")
                     )
                 }
             }
@@ -51,6 +51,8 @@ private struct ChatThreadDetailView: View {
     @Binding var draftedMessage: String
     let currentProfileId: UUID?
 
+    private let backendSync = IOSBackendSyncService()
+
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \ChatMessage.timestamp, order: .forward) private var allMessages: [ChatMessage]
     @Query(sort: \FamilyMember.createdAt, order: .forward) private var familyMembers: [FamilyMember]
@@ -74,7 +76,7 @@ private struct ChatThreadDetailView: View {
                 ContentUnavailableView(
                     "Start A Conversation",
                     systemImage: "text.bubble",
-                    description: Text("Messages are stored locally and answered by the Mac runner using the same tool-aware agent loop as missions.")
+                    description: Text("Messages sync to your Mac; the runner replies using the same tool-aware agent loop as missions.")
                 )
             } else {
                 ScrollViewReader { proxy in
@@ -149,6 +151,9 @@ private struct ChatThreadDetailView: View {
         thread.updatedAt = Date()
         try? modelContext.save()
         draftedMessage = ""
+        Task {
+            await backendSync.notifyChatWakeIfNeeded()
+        }
     }
 }
 

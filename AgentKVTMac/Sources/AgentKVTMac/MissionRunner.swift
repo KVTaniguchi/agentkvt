@@ -421,7 +421,7 @@ public final class MissionRunner: @unchecked Sendable {
         case "fetch_bee_ai_context":
             return """
             fetch_bee_ai_context guidance:
-            - Use this tool when recent BEE AI notes or summaries would improve prioritization, personalization, or context.
+            - Use this tool when recent Bee personal-memory context (conversations, daily brief, facts) would improve prioritization or personalization.
             """
         case "incoming_email_trigger":
             return """

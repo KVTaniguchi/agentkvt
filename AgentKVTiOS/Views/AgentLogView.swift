@@ -204,9 +204,9 @@ private struct AgentLogRow: View {
             return "Inspect a web page with the browser scout."
         case "fetch_bee_ai_context":
             if let key = json["store_as_life_context_key"] as? String {
-                return "Fetch BEE AI context and store it under '\(key)'."
+                return "Fetch Bee context and store it under '\(key)'."
             }
-            return "Fetch BEE AI context."
+            return "Fetch Bee context."
         case "incoming_email_trigger":
             return "Fetch the next pending inbound email."
         default:

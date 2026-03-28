@@ -231,6 +231,13 @@ public actor BackendAPIClient {
         return try decoder.decode(BackendMissionEnvelope.self, from: data).mission
     }
 
+    /// Poll after iOS `POST /v1/chat_wake`. Returns `true` when a wake was pending (and clears it server-side).
+    public func consumeChatWakeIfPending() async throws -> Bool {
+        let data = try await performRequest(path: "v1/agent/chat_wake", requiresAgentAuth: true)
+        struct Envelope: Decodable { let pending: Bool }
+        return try decoder.decode(Envelope.self, from: data).pending
+    }
+
     private func performRequest(
         path: String,
         method: String = "GET",

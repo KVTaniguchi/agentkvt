@@ -170,7 +170,7 @@ So the “processes” the agents run are **LLM reasoning + tool executions**. N
 | **Find a job** | Reads Life Context (goals, location). Optionally uses `fetch_bee_ai_context` for recent insights. Reasons about next steps. Calls `write_action_item` 2–3 times (e.g. “Apply to Company X”, “Email recruiter Y”, “Update LinkedIn headline”). |
 | **Save for down payment** | Maybe uses inbound Dropzone data (e.g. bank CSV). Reasons about savings vs spending. Calls `write_action_item` (“Transfer $500 to savings”, “Review subscriptions”) and/or `send_notification_email` with a weekly summary. |
 | **Stay on top of health checkups** | Uses Life Context (e.g. “last physical: 2024-01”). Calls `write_action_item` (“Schedule annual physical”, “Book dentist”). Might call `send_notification_email` to remind. |
-| **Reduce anxiety about money** | Could run weekly; uses `fetch_bee_ai_context` if BEE AI has mood/context. Calls `write_action_item` (“Review budget”, “Open 5-min breathing”) and/or `send_notification_email` with a short reassurance summary. |
+| **Reduce anxiety about money** | Could run weekly; uses `fetch_bee_ai_context` if [Bee](https://docs.bee.computer/docs) daily notes or conversations add useful context. Calls `write_action_item` (“Review budget”, “Open 5-min breathing”) and/or `send_notification_email` with a short reassurance summary. |
 | **Inbound email triage** | Triggered when new email lands in the Agent Inbox. Agent uses `incoming_email_trigger` to get sanitized content, then `write_action_item` for “Reply to X”, “Add to calendar”, etc. |
 
 ---
@@ -183,7 +183,7 @@ So the “processes” the agents run are **LLM reasoning + tool executions**. N
 | **web_search_and_fetch** | Calls Ollama's web_search and web_fetch APIs; returns clean Markdown (ads/footers/scripts stripped). Requires **OLLAMA_API_KEY**. | No (returns content to LLM) | "iOS roles in Philly" → scraped job pages as Markdown |
 | **headless_browser_scout** | Loads a URL in headless WebKit; optional click/fill actions; returns page text. For JS-heavy sites (LinkedIn, banks). | No (returns content to LLM) | Load LinkedIn jobs, click "Next", return listing text |
 | **send_notification_email** | Sends an email to the **fixed** user address (from env). Subject/body from LLM. | No (writes to outbox or uses `mail`) | “Weekly job search summary”, body with 3 next steps |
-| **fetch_bee_ai_context** | Calls BEE AI API; summarizes transcriptions/insights. | Yes → **AgentLog** (and optionally **LifeContext** key) | Stores under key `bee_ai_recent` for future missions |
+| **fetch_bee_ai_context** | Calls Bee HTTP API (usually local `bee proxy`); summarizes fetched JSON into text for the LLM. | Yes → **AgentLog** (and optionally **LifeContext** key) | Stores under key `bee_ai_recent` for future missions |
 | **incoming_email_trigger** | Returns the next pending email from the Agent Inbox (sanitized). | No (consumes from ingestor) | “Intent: Meeting request … General content: …” |
 | **github_agent** | (If configured) Performs GitHub operations (e.g. list PRs, create issue). | No (or via other tools) | Used in “PR triage” style missions |
 | **fetch_work_units** | Reads stigmergy board work by state/category. | No (returns content to LLM) | Get pending travel work units |

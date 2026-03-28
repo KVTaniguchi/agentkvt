@@ -368,20 +368,20 @@ struct HomeschoolLessonDeliveryTest {
     }
 }
 
-// MARK: - 4. Sovereign Context (BEE AI) Update Test
-// Business outcome: agent "learns" from voice notes (BEE AI) and updates internal facts;
+// MARK: - 4. Sovereign Context (Bee) Update Test
+// Business outcome: agent "learns" from Bee-sourced notes and updates internal facts;
 // subsequent missions (e.g. Job Scout) can then prioritize using this context.
 
 struct SovereignContextUpdateTest {
 
-    @Test("Context Sync mission updates LifeContext from mock BEE transcript; focus_areas includes Swift 6")
+    @Test("Context Sync mission updates LifeContext from mock Bee transcript; focus_areas includes Swift 6")
     func contextSyncUpdatesLifeContextFromBeeTranscript() async throws {
         let (context, _) = try makeTestContainer()
         let registry = makeTestRegistry(modelContext: context, includeBeeAI: true)
 
         let mission = MissionDefinition(
             missionName: "Context Sync",
-            systemPrompt: "Fetch BEE AI context and store the summary under the key focus_areas so future missions can prioritize accordingly.",
+            systemPrompt: "Fetch Bee context and store the summary under the key focus_areas so future missions can prioritize accordingly.",
             triggerSchedule: "daily|07:00",
             allowedMCPTools: ["fetch_bee_ai_context"]
         )
@@ -402,7 +402,7 @@ struct SovereignContextUpdateTest {
                     function: .init(name: "fetch_bee_ai_context", arguments: "{\"store_as_life_context_key\":\"focus_areas\"}")
                 )
             ]),
-            .assistantFinal(content: "Stored BEE AI context under focus_areas.")
+            .assistantFinal(content: "Stored Bee context under focus_areas.")
         ])
 
         let runner = MissionRunner(modelContext: context, client: mockClient, registry: registry)

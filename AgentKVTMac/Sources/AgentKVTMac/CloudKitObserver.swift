@@ -3,10 +3,10 @@ import Foundation
 
 /// Watches the shared CloudKit-backed persistent store for remote changes pushed from iOS.
 ///
-/// When the iPhone's EdgeSummarizationService inserts a new `IncomingEmailSummary` and
-/// CloudKit delivers it to the Mac, `NSPersistentStoreCoordinator` posts
-/// `NSPersistentStoreRemoteChangeNotification`. This observer catches that signal and
-/// fires `onRemoteChange` so the execution queue can schedule a `.cloudKitSync` work item.
+/// When CloudKit delivers remote SwiftData changes (e.g. `ChatMessage`, `IncomingEmailSummary`),
+/// `NSPersistentStoreCoordinator` posts `NSPersistentStoreRemoteChangeNotification`.
+/// This observer schedules `.cloudKitSync` so the Mac can process pending chat and email
+/// summary workflows without waiting for the periodic clock tick.
 ///
 /// **No ModelContext here.** The notification fires on an arbitrary background thread;
 /// we do not touch SwiftData from this callback. The actual fetch happens inside the

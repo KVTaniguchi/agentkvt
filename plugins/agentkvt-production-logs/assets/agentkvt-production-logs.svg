@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="AgentKVT Production Logs">
+  <rect width="128" height="128" rx="24" fill="#0F172A"/>
+  <rect x="18" y="24" width="92" height="80" rx="12" fill="#111827" stroke="#0F766E" stroke-width="4"/>
+  <path d="M31 48h18" stroke="#5EEAD4" stroke-width="6" stroke-linecap="round"/>
+  <path d="M31 64h34" stroke="#5EEAD4" stroke-width="6" stroke-linecap="round"/>
+  <path d="M31 80h26" stroke="#5EEAD4" stroke-width="6" stroke-linecap="round"/>
+  <path d="M78 42l18 22-18 22" fill="none" stroke="#F8FAFC" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
