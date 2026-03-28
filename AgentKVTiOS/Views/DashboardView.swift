@@ -39,7 +39,11 @@ struct DashboardView: View {
             ChatView()
                 .tabItem { Label("Chat", systemImage: "message") }
                 .tag(4)
-            InboundFilesView(files: inboundFiles, familyMembers: familyMembers)
+            InboundFilesView(
+                files: inboundFiles,
+                familyMembers: familyMembers,
+                isImporterPresented: $isImporterPresented
+            )
                 .tabItem { Label("Files", systemImage: "doc") }
                 .tag(5)
         }
@@ -61,13 +65,6 @@ struct DashboardView: View {
                     Button("Add family member…") { showAddFamilyMember = true }
                 } label: {
                     Label(currentProfileLabel, systemImage: "person.crop.circle")
-                }
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    isImporterPresented = true
-                } label: {
-                    Label("Upload File", systemImage: "square.and.arrow.up")
                 }
             }
         }
@@ -348,9 +345,15 @@ struct ActionItemDetailView: View {
     }
 }
 
+/// UI constants for Inbound Files (accessibility / UI tests).
+enum InboundFilesImportUI {
+    static let addButtonAccessibilityIdentifier = "inbound-files-add-items"
+}
+
 struct InboundFilesView: View {
     let files: [InboundFile]
     let familyMembers: [FamilyMember]
+    @Binding var isImporterPresented: Bool
 
     private let staleInterval: TimeInterval = 5 * 60 // 5 minutes
 
@@ -406,6 +409,16 @@ struct InboundFilesView: View {
             }
             .navigationTitle("Inbound Files")
             .emptyState(files.isEmpty, message: "Upload PDFs, TXTs, or CSVs to share with your Mac agent.")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        isImporterPresented = true
+                    } label: {
+                        Label("Add File", systemImage: "plus")
+                    }
+                    .accessibilityIdentifier(InboundFilesImportUI.addButtonAccessibilityIdentifier)
+                }
+            }
             .familyProfileToolbar()
         }
     }

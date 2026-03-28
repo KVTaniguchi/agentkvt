@@ -24,6 +24,7 @@
 		A1000015 /* IOSBackendSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000014 /* IOSBackendSettings.swift */; };
 		B1000001 /* ManagerCore in Frameworks */ = {isa = PBXBuildFile; productRef = A3000001 /* ManagerCore */; };
 		B1000002 /* ManagerCoreIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000002 /* ManagerCoreIntegrationTests.swift */; };
+		B1000003 /* InboundFilesImportUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000003 /* InboundFilesImportUITests.swift */; };
 		C1000001 /* AgentKVTMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2000001 /* AgentKVTMacApp.swift */; };
 		C1000002 /* AgentKVTMac in Frameworks */ = {isa = PBXBuildFile; productRef = C3000002 /* AgentKVTMac */; };
 		C1000003 /* ManagerCore in Frameworks */ = {isa = PBXBuildFile; productRef = A3000001 /* ManagerCore */; };
@@ -59,6 +60,7 @@
 		A2000014 /* IOSBackendSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSBackendSettings.swift; sourceTree = "<group>"; };
 		B2000001 /* AgentKVTiOSTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AgentKVTiOSTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B2000002 /* ManagerCoreIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManagerCoreIntegrationTests.swift; sourceTree = "<group>"; };
+		B2000003 /* InboundFilesImportUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboundFilesImportUITests.swift; sourceTree = "<group>"; };
 		C2000000 /* AgentKVTMacApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AgentKVTMacApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C2000001 /* AgentKVTMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKVTMacApp.swift; sourceTree = "<group>"; };
 		C2000002 /* AgentKVTMac.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AgentKVTMac.entitlements; sourceTree = "<group>"; };
@@ -175,6 +177,7 @@
 			isa = PBXGroup;
 			children = (
 				B2000002 /* ManagerCoreIntegrationTests.swift */,
+				B2000003 /* InboundFilesImportUITests.swift */,
 			);
 			path = AgentKVTiOS/AgentKVTiOSTests;
 			sourceTree = SOURCE_ROOT;
@@ -347,6 +350,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				B1000002 /* ManagerCoreIntegrationTests.swift in Sources */,
+				B1000003 /* InboundFilesImportUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
