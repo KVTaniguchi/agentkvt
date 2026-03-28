@@ -2,6 +2,17 @@
 
 This document ties together **Rails production mode + `agentkvt_production`**, **iOS Release/TestFlight API configuration**, and **network reachability** (LAN and Tailscale).
 
+## Deployment boundary
+
+The production setup has two separate deployables:
+
+- the signed/TestFlight macOS app bundle
+- the Rails backend running from the repo checkout on the server Mac
+
+Installing a new TestFlight build does **not** update `~/AgentKVTMac`, run Rails migrations, or restart Puma. Treat the backend as its own service with its own deploy flow.
+
+For the repeatable backend deploy path, see [BACKEND_DEPLOYMENT.md](BACKEND_DEPLOYMENT.md).
+
 ## 1. Rails production on the Mac server
 
 1. On the server Mac, ensure Postgres is running (same as development).
@@ -41,6 +52,14 @@ This document ties together **Rails production mode + `agentkvt_production`**, *
    ```
 
    From another device on Tailscale, use `http://<tailscale-ip>:3000/healthz` instead.
+
+### Recommended service management
+
+For long-running production use, install the dedicated backend LaunchAgent template:
+
+- [com.agentkvt.api.plist](../AgentKVTMac/Deploy/com.agentkvt.api.plist)
+
+That keeps the Rails API separate from the TestFlight app lifecycle and gives `./bin/deploy_agentkvt_backend.sh` a stable restart target.
 
 ## 2. iOS Release / TestFlight API URL
 

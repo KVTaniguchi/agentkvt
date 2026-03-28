@@ -2,6 +2,8 @@
 
 Use this guide when the iPhone client is coming from TestFlight and the Mac Brain also needs to read the same **production** CloudKit records.
 
+This guide covers the macOS app bundle. The Rails backend on the server Mac is a separate deployable and must be updated independently. Installing a new TestFlight Mac build does **not** update `~/AgentKVTMac/server` or restart the backend API.
+
 ## Why this matters
 
 Mixing **TestFlight iPhone** with an **Xcode-run Mac app** is not a reliable shared-store setup:
@@ -116,3 +118,4 @@ This is a `LaunchAgent` template for the signed app bundle, not the old CLI runn
 
 - The CLI runner is still useful for isolated smoke tests, but it is not the production shared-store path.
 - The production macOS app defaults to scheduler mode automatically. CLI runs still default to the one-shot smoke test unless `RUN_SCHEDULER` is set.
+- Backend deploy/restart steps live in [BACKEND_DEPLOYMENT.md](BACKEND_DEPLOYMENT.md).

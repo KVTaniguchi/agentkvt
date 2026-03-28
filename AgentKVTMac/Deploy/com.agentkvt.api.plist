@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+
+<!--
+  AgentKVT API — launchd User Agent
+  =================================
+  Use this when the Rails backend should stay up independently of the TestFlight
+  macOS app. This manages the API process that serves ~/AgentKVTMac/server.
+
+  Assumptions:
+  - the repo checkout lives at ~/AgentKVTMac
+  - ./bin/run_agentkvt_api.sh is the supported startup path
+  - server/.env already contains the production secrets
+
+  Install:
+    mkdir -p ~/.agentkvt/logs ~/Library/LaunchAgents
+    cp com.agentkvt.api.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.agentkvt.api.plist
+    launchctl enable gui/$(id -u)/com.agentkvt.api
+    launchctl kickstart -k gui/$(id -u)/com.agentkvt.api
+
+  Uninstall:
+    launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.agentkvt.api.plist
+    rm ~/Library/LaunchAgents/com.agentkvt.api.plist
+
+  Notes:
+  - To deploy new backend code after this is installed, run:
+      cd ~/AgentKVTMac && ./bin/deploy_agentkvt_backend.sh origin/main
+  - If your checkout is not at ~/AgentKVTMac, replace that path in the shell
+    command below.
+  - launchd stdout/stderr goes to ~/.agentkvt/logs/ (created by the shell command
+    before exec). Rails application logs use the configured Rails logger separately.
+-->
+
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.agentkvt.api</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-lc</string>
+        <string>mkdir -p "$HOME/.agentkvt/logs" &amp;&amp; cd "$HOME/AgentKVTMac" &amp;&amp; exec ./bin/run_agentkvt_api.sh</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>ThrottleInterval</key>
+    <integer>15</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/familyagent/.agentkvt/logs/agentkvt-api-launchd.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/familyagent/.agentkvt/logs/agentkvt-api-launchd.err</string>
+</dict>
+</plist>
