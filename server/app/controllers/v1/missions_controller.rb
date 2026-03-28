@@ -16,15 +16,18 @@ module V1
     end
 
     def update
-      mission = current_workspace.missions.find(params[:id])
-      mission.update!(mission_params)
+      mission = current_workspace.missions.find_by(id: params[:id]) || current_workspace.missions.new
+      attributes = mission_params.to_h
+      mission.id = params[:id] if mission.new_record?
+      mission.assign_attributes(attributes.except("id"))
+      mission.save!
 
       render json: { mission: serialize_mission(mission) }
     end
 
     def destroy
-      mission = current_workspace.missions.find(params[:id])
-      mission.destroy!
+      mission = current_workspace.missions.find_by(id: params[:id])
+      mission&.destroy!
 
       head :no_content
     end

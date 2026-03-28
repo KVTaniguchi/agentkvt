@@ -45,6 +45,32 @@ class V1MissionsTest < ActionDispatch::IntegrationTest
     assert_equal 0, JSON.parse(response.body).fetch("missions").length
   end
 
+  test "update creates a missing mission with the requested id" do
+    mission_id = SecureRandom.uuid
+
+    patch "/v1/missions/#{mission_id}", params: {
+      mission: {
+        id: mission_id,
+        mission_name: "Imported Local Mission",
+        system_prompt: "Import this local mission into the backend.",
+        trigger_schedule: "daily|08:00",
+        allowed_mcp_tools: ["write_action_item"],
+        is_enabled: true
+      }
+    }, as: :json, headers: workspace_headers
+
+    assert_response :success
+    body = JSON.parse(response.body)
+    assert_equal mission_id, body.dig("mission", "id")
+    assert_equal "Imported Local Mission", body.dig("mission", "mission_name")
+    assert_equal 1, @workspace.missions.where(id: mission_id).count
+  end
+
+  test "destroy succeeds even when the mission is already missing" do
+    delete "/v1/missions/#{SecureRandom.uuid}", headers: workspace_headers
+    assert_response :no_content
+  end
+
   private
 
   def workspace_headers
