@@ -79,6 +79,12 @@ struct DashboardView: View {
             switch result {
             case .success(let urls):
                 guard let url = urls.first else { return }
+                // Picked URLs are security-scoped; reading without this yields "permission" errors.
+                guard url.startAccessingSecurityScopedResource() else {
+                    importError = "Failed to import file: Could not access the selected file."
+                    return
+                }
+                defer { url.stopAccessingSecurityScopedResource() }
                 do {
                     let data = try Data(contentsOf: url)
                     let inbound = InboundFile(
