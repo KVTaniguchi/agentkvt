@@ -18,8 +18,9 @@
 
   Notes:
   - Replace the app path below with the actual installed app location.
-  - We launch via `open -W -n -a` so LaunchServices starts the app as a real
-    macOS application and launchd waits until that app exits.
+  - We launch via `open -W -a` (omit `-n`) so a relaunch does not start a second
+    instance while one is already running; LaunchServices starts a real macOS app
+    and launchd waits until that app exits.
   - The app reads its runtime settings from:
       ~/Library/Group Containers/group.com.agentkvt.shared/Library/Application Support/agentkvt-runner.plist
     so you usually do not need to pass environment variables here.
@@ -48,7 +49,6 @@
     <array>
         <string>/usr/bin/open</string>
         <string>-W</string>
-        <string>-n</string>
         <string>-a</string>
         <string>/Applications/AgentKVTMacApp.app</string>
     </array>
