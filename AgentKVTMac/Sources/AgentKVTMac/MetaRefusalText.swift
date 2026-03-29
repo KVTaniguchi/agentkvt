@@ -22,6 +22,11 @@ enum MetaRefusalText {
     /// True when the model output tool-call structures as plain text instead of using the tool API.
     /// Llama 4 / llama3.2 sometimes emits {"tool_calls": [...]} or {"type":"function",...} as literal response text.
     static func looksLikeRawToolCallOutput(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("{") || trimmed.hasPrefix("[") {
+            return true
+        }
+        
         // Ollama-style: {"tool_calls": [...]}
         if text.contains("\"tool_calls\"") && (text.contains("\"name\"") || text.contains("\"function\"")) {
             return true
