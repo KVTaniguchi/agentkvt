@@ -198,10 +198,19 @@ struct ObjectiveDetailView: View {
             Section("Activity") {
                 ObjectiveActivityCard(
                     summary: activitySummary,
-                    counts: taskCounts,
+                    taskCounts: taskCounts,
+                    workUnitCounts: workUnitCounts,
                     snapshotCount: snapshots.count,
-                    lastLoadedAt: lastLoadedAt
+                    logCount: agentLogs.count,
+                    lastHeartbeatAt: lastHeartbeatAt,
+                    lastLoadedAt: lastLoadedAt,
+                    showBoardSyncHint: !workUnitCounts.hasAnyUnits && !agentLogs.isEmpty
                 )
+                if !liveBoardWorkUnits.isEmpty {
+                    ForEach(liveBoardWorkUnits, id: \.id) { unit in
+                        ObjectiveWorkUnitRow(unit: unit)
+                    }
+                }
                 if let runNowButtonTitle {
                     Button(runNowButtonTitle) {
                         Task { await runObjectiveNow() }
@@ -236,28 +245,6 @@ struct ObjectiveDetailView: View {
                 }
             } header: {
                 Text("Tasks")
-            }
-
-            Section("Live Execution") {
-                ObjectiveLiveExecutionCard(
-                    counts: workUnitCounts,
-                    heartbeatAt: lastHeartbeatAt,
-                    logCount: agentLogs.count
-                )
-
-                if !liveBoardWorkUnits.isEmpty {
-                    ForEach(liveBoardWorkUnits, id: \.id) { unit in
-                        ObjectiveWorkUnitRow(unit: unit)
-                    }
-                } else if !agentLogs.isEmpty {
-                    Text("Server activity is visible below. Waiting for board-state sync from the Mac runner.")
-                        .foregroundStyle(.secondary)
-                        .font(.subheadline)
-                } else if !isLoading {
-                    Text("No live board activity yet.")
-                        .foregroundStyle(.secondary)
-                        .font(.subheadline)
-                }
             }
 
             // Research Snapshots
@@ -481,9 +468,13 @@ private struct ObjectiveActivitySummary {
 
 private struct ObjectiveActivityCard: View {
     let summary: ObjectiveActivitySummary
-    let counts: ObjectiveTaskCounts
+    let taskCounts: ObjectiveTaskCounts
+    let workUnitCounts: ObjectiveWorkUnitCounts
     let snapshotCount: Int
+    let logCount: Int
+    let lastHeartbeatAt: Date?
     let lastLoadedAt: Date?
+    let showBoardSyncHint: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -511,15 +502,40 @@ private struct ObjectiveActivityCard: View {
             }
 
             HStack(spacing: 8) {
-                if counts.hasAnyTasks {
-                    ObjectiveMetricChip(label: "\(counts.pending) pending", tint: .orange)
-                    ObjectiveMetricChip(label: "\(counts.inProgress) active", tint: .blue)
-                    ObjectiveMetricChip(label: "\(counts.completed) done", tint: .green)
-                    if counts.failed > 0 {
-                        ObjectiveMetricChip(label: "\(counts.failed) failed", tint: .red)
+                if taskCounts.hasAnyTasks {
+                    ObjectiveMetricChip(label: "\(taskCounts.pending) pending", tint: .orange)
+                    ObjectiveMetricChip(label: "\(taskCounts.inProgress) active", tint: .blue)
+                    ObjectiveMetricChip(label: "\(taskCounts.completed) done", tint: .green)
+                    if taskCounts.failed > 0 {
+                        ObjectiveMetricChip(label: "\(taskCounts.failed) failed", tint: .red)
                     }
                 }
                 ObjectiveMetricChip(label: "\(snapshotCount) snapshots", tint: .secondary)
+                ObjectiveMetricChip(label: "\(logCount) logs", tint: .secondary)
+            }
+
+            if workUnitCounts.hasAnyUnits {
+                HStack(spacing: 8) {
+                    ObjectiveMetricChip(label: "\(workUnitCounts.activeWorkers) workers", tint: .blue)
+                    ObjectiveMetricChip(label: "\(workUnitCounts.pending) queued", tint: .orange)
+                    ObjectiveMetricChip(label: "\(workUnitCounts.inProgress) board active", tint: .green)
+                    if workUnitCounts.blocked > 0 {
+                        ObjectiveMetricChip(label: "\(workUnitCounts.blocked) blocked", tint: .red)
+                    }
+                }
+                if let lastHeartbeatAt {
+                    Text("Board heartbeat \(lastHeartbeatAt, style: .relative)")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                } else {
+                    Text("Waiting for the first worker heartbeat.")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+            } else if showBoardSyncHint {
+                Text("Server logs update from the API; Mac board rows sync via iCloud when available.")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
             }
 
             if let lastLoadedAt {
@@ -544,37 +560,6 @@ private struct ObjectiveMetricChip: View {
             .padding(.vertical, 4)
             .background(tint.opacity(0.12))
             .clipShape(Capsule())
-    }
-}
-
-private struct ObjectiveLiveExecutionCard: View {
-    let counts: ObjectiveWorkUnitCounts
-    let heartbeatAt: Date?
-    let logCount: Int
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                ObjectiveMetricChip(label: "\(counts.activeWorkers) workers", tint: .blue)
-                ObjectiveMetricChip(label: "\(counts.pending) queued", tint: .orange)
-                ObjectiveMetricChip(label: "\(counts.inProgress) active", tint: .green)
-                if counts.blocked > 0 {
-                    ObjectiveMetricChip(label: "\(counts.blocked) blocked", tint: .red)
-                }
-                ObjectiveMetricChip(label: "\(logCount) logs", tint: .secondary)
-            }
-
-            if let heartbeatAt {
-                Text("Last heartbeat \(heartbeatAt, style: .relative)")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-            } else if counts.hasAnyUnits {
-                Text("Waiting for the first worker heartbeat.")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-            }
-        }
-        .padding(.vertical, 4)
     }
 }
 
