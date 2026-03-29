@@ -275,8 +275,20 @@ actor IOSBackendAPIClient {
     private let decoder: JSONDecoder
     private let encoder: JSONEncoder
 
+    /// Request paths are `v1/...` relative to the API host. If `AGENTKVT_API_BASE_URL` includes a trailing `/v1`,
+    /// resolving `v1/objectives/...` would become `.../v1/v1/...` and return 404.
+    private static func normalizeAPIBaseURL(_ url: URL) -> URL {
+        var s = url.absoluteString.trimmingCharacters(in: .whitespacesAndNewlines)
+        while s.hasSuffix("/") { s.removeLast() }
+        if s.lowercased().hasSuffix("/v1") {
+            s = String(s.dropLast("/v1".count))
+            while s.hasSuffix("/") { s.removeLast() }
+        }
+        return URL(string: s) ?? url
+    }
+
     init(baseURL: URL, workspaceSlug: String, session: URLSession = .shared) {
-        self.baseURL = baseURL
+        self.baseURL = Self.normalizeAPIBaseURL(baseURL)
         self.workspaceSlug = workspaceSlug
         self.session = session
 
