@@ -104,6 +104,10 @@ public final class OllamaClient: @unchecked Sendable {
     public struct ToolDef: Encodable, Sendable {
         public let function: FunctionDef
 
+        public init(function: FunctionDef) {
+            self.function = function
+        }
+
         public func encode(to encoder: Encoder) throws {
             var c = encoder.container(keyedBy: CodingKeys.self)
             try c.encode("function", forKey: .type)
@@ -115,12 +119,24 @@ public final class OllamaClient: @unchecked Sendable {
             public let name: String
             public let description: String?
             public let parameters: JSONSchema?
+
+            public init(name: String, description: String?, parameters: JSONSchema?) {
+                self.name = name
+                self.description = description
+                self.parameters = parameters
+            }
         }
 
         public struct JSONSchema: Codable, Sendable {
             public let type: String
             public let properties: [String: Property]?
             public let required: [String]?
+
+            public init(type: String, properties: [String: Property]?, required: [String]?) {
+                self.type = type
+                self.properties = properties
+                self.required = required
+            }
 
             public struct Property: Codable, Sendable {
                 public let type: String
