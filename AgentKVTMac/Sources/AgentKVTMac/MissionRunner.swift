@@ -183,7 +183,7 @@ public final class MissionRunner: @unchecked Sendable {
                     toolTranscript: toolTranscript
                 )
                 if shouldRetryObjectiveBoardMission(request: request, firstOutcome: first) {
-                    let nudge = userMessage + “\n\nRETRY (mandatory): Your previous response was invalid - either a generic disclaimer or raw tool-call JSON written as text. You MUST use the tool API to invoke tools. Do NOT write tool_calls JSON in your reply text. Call read_objective_snapshot first via the tool API, then multi_step_search and/or write_objective_snapshot via the tool API.”
+                    let nudge = userMessage + "\n\nRETRY (mandatory): Your previous response was invalid - either a generic disclaimer or raw tool-call JSON written as text. You MUST use the tool API to invoke tools. Do NOT write tool_calls JSON in your reply text. Call read_objective_snapshot first via the tool API, then multi_step_search and/or write_objective_snapshot via the tool API."
                     first = try await runLoop(
                         request: request,
                         allowedToolIds: allowedTools,
