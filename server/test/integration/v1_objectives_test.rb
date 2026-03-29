@@ -307,6 +307,47 @@ class V1ObjectivesTest < ActionDispatch::IntegrationTest
     assert_equal [task.id.to_s], enqueued_task_ids
   end
 
+  test "reset_stuck_tasks_and_run moves in_progress tasks to pending and enqueue" do
+    objective = @workspace.objectives.create!(goal: "Stuck", status: "active", priority: 0)
+    stuck = objective.tasks.create!(description: "Stuck", status: "in_progress", result_summary: "half")
+    enqueued = []
+
+    with_stubbed_task_executor do |job_stub|
+      job_stub.define_singleton_method(:perform_later) do |task_id|
+        enqueued << task_id
+      end
+
+      post "/v1/objectives/#{objective.id}/reset_stuck_tasks_and_run", headers: workspace_headers
+    end
+
+    assert_response :success
+    assert_equal "pending", stuck.reload.status
+    assert_nil stuck.result_summary
+    assert_equal [stuck.id.to_s], enqueued
+  end
+
+  test "rerun resets all tasks to pending and enqueue" do
+    objective = @workspace.objectives.create!(goal: "Redo", status: "active", priority: 0)
+    a = objective.tasks.create!(description: "A", status: "completed", result_summary: "done")
+    b = objective.tasks.create!(description: "B", status: "in_progress", result_summary: "busy")
+    enqueued = []
+
+    with_stubbed_task_executor do |job_stub|
+      job_stub.define_singleton_method(:perform_later) do |task_id|
+        enqueued << task_id
+      end
+
+      post "/v1/objectives/#{objective.id}/rerun", headers: workspace_headers
+    end
+
+    assert_response :success
+    assert_equal "pending", a.reload.status
+    assert_nil a.result_summary
+    assert_equal "pending", b.reload.status
+    assert_nil b.result_summary
+    assert_equal [a.id.to_s, b.id.to_s].sort, enqueued.sort
+  end
+
   test "update returns 404 for unknown objective" do
     patch "/v1/objectives/#{SecureRandom.uuid}",
           params: { objective: { goal: "X", status: "pending", priority: 0 } },

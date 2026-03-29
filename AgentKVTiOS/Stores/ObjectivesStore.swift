@@ -9,6 +9,8 @@ protocol ObjectivesRemoteSyncing: Sendable {
     func fetchObjectiveDetailRemote(id: UUID) async throws -> IOSBackendObjectiveDetail
     func updateObjectiveRemote(id: UUID, goal: String, status: String, priority: Int) async throws -> IOSBackendObjective
     func runObjectiveNowRemote(id: UUID) async throws -> IOSBackendObjective
+    func resetStuckTasksAndRunObjectiveRemote(id: UUID) async throws -> IOSBackendObjective
+    func rerunObjectiveRemote(id: UUID) async throws -> IOSBackendObjective
     func deleteObjectiveRemote(id: UUID) async throws
 }
 
@@ -68,6 +70,28 @@ final class ObjectivesStore {
     @MainActor
     func runObjectiveNow(id: UUID) async throws -> IOSBackendObjective {
         let updated = try await sync.runObjectiveNowRemote(id: id)
+        if let idx = objectives.firstIndex(where: { $0.id == id }) {
+            objectives[idx] = updated
+        } else {
+            objectives.insert(updated, at: 0)
+        }
+        return updated
+    }
+
+    @MainActor
+    func resetStuckTasksAndRun(id: UUID) async throws -> IOSBackendObjective {
+        let updated = try await sync.resetStuckTasksAndRunObjectiveRemote(id: id)
+        if let idx = objectives.firstIndex(where: { $0.id == id }) {
+            objectives[idx] = updated
+        } else {
+            objectives.insert(updated, at: 0)
+        }
+        return updated
+    }
+
+    @MainActor
+    func rerunObjective(id: UUID) async throws -> IOSBackendObjective {
+        let updated = try await sync.rerunObjectiveRemote(id: id)
         if let idx = objectives.firstIndex(where: { $0.id == id }) {
             objectives[idx] = updated
         } else {

@@ -13,9 +13,10 @@ struct ObjectiveDetailView: View {
     @State private var isLoading = false
     @State private var isStartingWork = false
     @State private var errorMessage: String?
-    @State private var runNowError: String?
+    @State private var actionError: String?
     @State private var showEditPromptSheet = false
     @State private var showDeleteConfirmation = false
+    @State private var showRerunAllConfirmation = false
     @State private var isDeleting = false
     @State private var deleteError: String?
     @State private var lastLoadedAt: Date?
@@ -48,6 +49,35 @@ struct ObjectiveDetailView: View {
         ObjectiveTaskCounts(tasks: tasks)
     }
 
+    private var runNowLabel: String {
+        switch displayedObjective.status {
+        case "pending":
+            return "Start work now"
+        case "active":
+            if tasks.isEmpty { return "Plan tasks now" }
+            if taskCounts.pending > 0 { return "Run now (queue pending)" }
+            if taskCounts.failed > 0 && taskCounts.inProgress == 0 { return "Retry failed tasks" }
+            if taskCounts.completed > 0 && taskCounts.pending == 0 && taskCounts.inProgress == 0 {
+                return "Run now"
+            }
+            return "Run now"
+        default:
+            return "Run now"
+        }
+    }
+
+    private var actionsFooter: String {
+        switch displayedObjective.status {
+        case "active":
+            return """
+            Run now queues pending or failed tasks. Use “Reset stuck tasks & run” if work is stuck in progress. \
+            “Rerun all tasks” sets every task back to pending and dispatches the Mac agent again.
+            """
+        default:
+            return "Activates this objective and starts planning or task execution."
+        }
+    }
+
     private var liveBoardWorkUnits: [WorkUnit] {
         objectiveWorkUnits.filter { $0.workType != "objective_root" }
     }
@@ -70,20 +100,6 @@ struct ObjectiveDetailView: View {
             workUnitCounts.inProgress > 0
     }
 
-    private var runNowButtonTitle: String? {
-        switch displayedObjective.status {
-        case "pending":
-            return "Start Work Now"
-        case "active":
-            if tasks.isEmpty { return "Plan Tasks Now" }
-            if taskCounts.pending > 0 { return "Start Pending Tasks" }
-            if taskCounts.failed > 0 && taskCounts.inProgress == 0 { return "Retry Failed Tasks" }
-            return nil
-        default:
-            return nil
-        }
-    }
-
     private var activitySummary: ObjectiveActivitySummary {
         if isStartingWork {
             return ObjectiveActivitySummary(
@@ -99,7 +115,7 @@ struct ObjectiveDetailView: View {
         case "pending":
             return ObjectiveActivitySummary(
                 title: "Saved but not started",
-                message: "No planner or Mac-agent work has been dispatched yet. Tap Start Work Now to activate this objective immediately.",
+                message: "No planner or Mac-agent work has been dispatched yet. Use Start work now in Actions below.",
                 systemImage: "pause.circle.fill",
                 tint: .orange
             )
@@ -211,12 +227,39 @@ struct ObjectiveDetailView: View {
                         ObjectiveWorkUnitRow(unit: unit)
                     }
                 }
-                if let runNowButtonTitle {
-                    Button(runNowButtonTitle) {
+            }
+
+            if displayedObjective.status == "pending" || displayedObjective.status == "active" {
+                Section {
+                    Button {
                         Task { await runObjectiveNow() }
+                    } label: {
+                        Label(runNowLabel, systemImage: "play.circle.fill")
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(isStartingWork || isDeleting)
+
+                    if displayedObjective.status == "active", taskCounts.inProgress > 0 {
+                        Button {
+                            Task { await resetStuckTasksAndRun() }
+                        } label: {
+                            Label("Reset stuck tasks & run", systemImage: "arrow.uturn.backward.circle")
+                        }
+                        .disabled(isStartingWork || isDeleting)
+                    }
+
+                    if displayedObjective.status == "active" {
+                        Button(role: .destructive) {
+                            showRerunAllConfirmation = true
+                        } label: {
+                            Label("Rerun all tasks", systemImage: "arrow.clockwise.circle")
+                        }
+                        .disabled(isStartingWork || isDeleting)
+                    }
+                } header: {
+                    Text("Actions")
+                } footer: {
+                    Text(actionsFooter)
                 }
             }
 
@@ -309,13 +352,25 @@ struct ObjectiveDetailView: View {
         } message: {
             Text(errorMessage ?? "An error occurred.")
         }
-        .alert("Could Not Start Objective", isPresented: Binding(
-            get: { runNowError != nil },
-            set: { if !$0 { runNowError = nil } }
-        )) {
-            Button("OK", role: .cancel) { runNowError = nil }
+        .confirmationDialog(
+            "Rerun all tasks?",
+            isPresented: $showRerunAllConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Rerun all tasks", role: .destructive) {
+                Task { await rerunAllTasks() }
+            }
+            Button("Cancel", role: .cancel) {}
         } message: {
-            Text(runNowError ?? "An error occurred.")
+            Text("Every task resets to pending and the Mac agent is asked to run them again. Existing research snapshots may still be listed until new results arrive.")
+        }
+        .alert("Action failed", isPresented: Binding(
+            get: { actionError != nil },
+            set: { if !$0 { actionError = nil } }
+        )) {
+            Button("OK", role: .cancel) { actionError = nil }
+        } message: {
+            Text(actionError ?? "An error occurred.")
         }
         .alert("Could Not Delete Objective", isPresented: Binding(
             get: { deleteError != nil },
@@ -386,7 +441,7 @@ struct ObjectiveDetailView: View {
 
     @MainActor
     private func runObjectiveNow() async {
-        runNowError = nil
+        actionError = nil
         isStartingWork = true
         defer { isStartingWork = false }
 
@@ -394,7 +449,35 @@ struct ObjectiveDetailView: View {
             displayedObjective = try await store.runObjectiveNow(id: displayedObjective.id)
             await loadDetail(showSpinner: false)
         } catch {
-            runNowError = error.localizedDescription
+            actionError = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func resetStuckTasksAndRun() async {
+        actionError = nil
+        isStartingWork = true
+        defer { isStartingWork = false }
+
+        do {
+            displayedObjective = try await store.resetStuckTasksAndRun(id: displayedObjective.id)
+            await loadDetail(showSpinner: false)
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func rerunAllTasks() async {
+        actionError = nil
+        isStartingWork = true
+        defer { isStartingWork = false }
+
+        do {
+            displayedObjective = try await store.rerunObjective(id: displayedObjective.id)
+            await loadDetail(showSpinner: false)
+        } catch {
+            actionError = error.localizedDescription
         }
     }
 

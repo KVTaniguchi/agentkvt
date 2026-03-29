@@ -57,6 +57,14 @@ private final class MockObjectivesSync: ObjectivesRemoteSyncing, @unchecked Send
         return try makeObjective(id: id, goal: "Run now", status: "active", priority: 0)
     }
 
+    func resetStuckTasksAndRunObjectiveRemote(id: UUID) async throws -> IOSBackendObjective {
+        fatalError("unused in these tests")
+    }
+
+    func rerunObjectiveRemote(id: UUID) async throws -> IOSBackendObjective {
+        fatalError("unused in these tests")
+    }
+
     func deleteObjectiveRemote(id: UUID) async throws {
         deletedIds.append(id)
     }

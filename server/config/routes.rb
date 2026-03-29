@@ -16,6 +16,8 @@ Rails.application.routes.draw do
     resources :agent_logs, only: [:index]
     resources :objectives, only: [:index, :create, :show, :update, :destroy] do
       post :run_now, on: :member
+      post :reset_stuck_tasks_and_run, on: :member
+      post :rerun, on: :member
     end
 
     namespace :agent do

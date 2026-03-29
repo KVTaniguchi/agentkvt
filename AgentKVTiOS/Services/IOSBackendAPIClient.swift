@@ -487,6 +487,24 @@ actor IOSBackendAPIClient {
         return try decoder.decode(IOSBackendObjectiveEnvelope.self, from: data).objective
     }
 
+    /// Clears `in_progress` tasks back to `pending`, then dispatches (for stuck webhook/Mac runs).
+    func resetStuckTasksAndRunObjective(id: UUID) async throws -> IOSBackendObjective {
+        let data = try await performRequest(
+            path: "v1/objectives/\(id.uuidString)/reset_stuck_tasks_and_run",
+            method: "POST"
+        )
+        return try decoder.decode(IOSBackendObjectiveEnvelope.self, from: data).objective
+    }
+
+    /// Resets every task to `pending` and dispatches — full rerun from the app.
+    func rerunObjective(id: UUID) async throws -> IOSBackendObjective {
+        let data = try await performRequest(
+            path: "v1/objectives/\(id.uuidString)/rerun",
+            method: "POST"
+        )
+        return try decoder.decode(IOSBackendObjectiveEnvelope.self, from: data).objective
+    }
+
     func deleteObjective(id: UUID) async throws {
         _ = try await performRequest(path: "v1/objectives/\(id.uuidString)", method: "DELETE")
     }
@@ -1204,6 +1222,16 @@ final class IOSBackendSyncService {
     func runObjectiveNowRemote(id: UUID) async throws -> IOSBackendObjective {
         guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
         return try await client.runObjectiveNow(id: id)
+    }
+
+    func resetStuckTasksAndRunObjectiveRemote(id: UUID) async throws -> IOSBackendObjective {
+        guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
+        return try await client.resetStuckTasksAndRunObjective(id: id)
+    }
+
+    func rerunObjectiveRemote(id: UUID) async throws -> IOSBackendObjective {
+        guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
+        return try await client.rerunObjective(id: id)
     }
 
     func deleteObjectiveRemote(id: UUID) async throws {
