@@ -483,13 +483,21 @@ struct TaskSearchPayload: Sendable {
     /// Returns nil if the body is not a valid run_task_search payload.
     init?(json: String) {
         guard let data = json.data(using: .utf8),
-              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              obj["agentkvt"] as? String == "run_task_search",
-              let taskId = obj["task_id"] as? String,
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            print("[TaskSearchPayload] Failed to parse JSON body string")
+            return nil
+        }
+        guard obj["agentkvt"] as? String == "run_task_search" else {
+            return nil // Not our webhook type, ignore silently.
+        }
+        guard let taskId = obj["task_id"] as? String,
               let objectiveId = obj["objective_id"] as? String,
               let description = obj["description"] as? String,
               !taskId.isEmpty, !objectiveId.isEmpty, !description.isEmpty
-        else { return nil }
+        else { 
+            print("[TaskSearchPayload] Invalid payload keys! task_id=\(obj["task_id"] ?? "nil"), objective_id=\(obj["objective_id"] ?? "nil"), description=\(obj["description"] ?? "nil")")
+            return nil 
+        }
 
         self.taskId = taskId
         self.objectiveId = objectiveId

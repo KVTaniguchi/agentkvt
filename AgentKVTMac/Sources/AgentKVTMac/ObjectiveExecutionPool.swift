@@ -34,6 +34,7 @@ actor ObjectiveExecutionPool {
     func start() {
         guard !started else { return }
         started = true
+        print("[ObjectiveExecutionPool] starting \(maxConcurrentWorkers) workers")
         for index in 0..<maxConcurrentWorkers {
             let slot = ObjectiveWorkerSlot(id: UUID(), label: "objective-worker-\(index + 1)")
             let task = Task.detached(priority: .utility) { [processor] in
@@ -45,7 +46,11 @@ actor ObjectiveExecutionPool {
 
     func enqueue(_ payload: TaskSearchPayload) {
         start()
-        guard supervisorTaskIds.insert(payload.taskId).inserted else { return }
+        print("[ObjectiveExecutionPool] enqueueing task \(payload.taskId)")
+        guard supervisorTaskIds.insert(payload.taskId).inserted else { 
+            print("[ObjectiveExecutionPool] ignoring task \(payload.taskId) because it is already supervised")
+            return 
+        }
 
         Task.detached(priority: .utility) { [processor, taskId = payload.taskId] in
             await processor.superviseObjective(payload: payload)
@@ -115,6 +120,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
     func superviseObjective(payload: TaskSearchPayload) async {
         guard let objectiveId = UUID(uuidString: payload.objectiveId),
               let taskId = UUID(uuidString: payload.taskId) else {
+            print("[ObjectiveExecutionPool.Supervisor] ERROR: invalid UUID string in payload: obj=\(payload.objectiveId) task=\(payload.taskId)")
             return
         }
 
@@ -201,12 +207,13 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
     }
 
     func runWorkerLoop(slot: ObjectiveWorkerSlot) async {
+        print("[ObjectiveWorker] \(slot.label) started finding work")
         while !Task.isCancelled {
             do {
                 if let claimed = try claimNextWorkUnit(slot: slot) {
                     try await execute(claimed: claimed, slot: slot)
                 } else {
-                    try? await Task.sleep(for: .seconds(1))
+                    try? await Task.sleep(for: .seconds(2))
                 }
             } catch {
                 await logEvent(
@@ -472,6 +479,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             ANTI-HALLUCINATION:
             - You already have an assigned objective and task IDs above. Never claim you lack instructions, missions, or predefined goals.
             - Your final plain-text reply must summarize concrete findings for the traveler (logistics, dates, safety, options) — not meta-commentary about your role.
+            - Your final system response MUST be plain English prose sentences. Do NOT begin your message with `{` or `[`.
 
             Instructions:
             1. Prefer reconciling and summarizing the server findings above; use read_objective_snapshot if you need a fresher list mid-run.
@@ -498,7 +506,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             CRITICAL OUTPUT RULES (llama3.2 strict mode):
             - NEVER write JSON, tool-call syntax, or any structured data as a snapshot value.
             - NEVER output {"tool_calls": ...} or similar structures as text.
-            - Snapshot values MUST be plain English prose sentences — e.g. "The Gaslamp Quarter offers hotels from $180/night with walkable dining."
+            - Your final textual response MUST be plain English prose sentences. Do NOT begin your message with `{` or `[`.
             - To call a tool, use the tool interface; do not write tool-call JSON in your response text.
 
             \(context)
@@ -1142,6 +1150,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         workerLabel: String? = nil,
         missionName: String? = nil
     ) async {
+        print("[ObjectiveExecutionPool] [\(workerLabel ?? "Supervisor")] [\(phase)] task=\(taskId?.uuidString ?? "nil"): \(content)")
         guard let backendClient else { return }
 
         var metadata: [String: String] = [:]
