@@ -252,10 +252,15 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                 objectiveId: claimed.objectiveId,
                 taskId: claimed.taskId
             )
+            let resolvedParentGoal = await resolveParentObjectiveGoal(
+                payload: claimed.payload,
+                objectiveId: claimed.objectiveId
+            )
             let request = buildMissionRequest(
                 for: claimed,
                 workerLabel: slot.label,
-                serverSnapshotsContext: serverSnapshotsContext
+                serverSnapshotsContext: serverSnapshotsContext,
+                resolvedParentGoal: resolvedParentGoal
             )
             let result = try await missionRunner.run(request)
             heartbeatTask.cancel()
@@ -358,8 +363,19 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
     private func buildMissionRequest(
         for claimed: ClaimedWork,
         workerLabel: String,
-        serverSnapshotsContext: String
+        serverSnapshotsContext: String,
+        resolvedParentGoal: String?
     ) -> MissionRunner.Request {
+        // `resolveParentObjectiveGoal` already merges webhook payload + API; nil means no goal string anywhere.
+        let effectiveGoal = resolvedParentGoal
+        let userMessage = objectiveBoardUserMessage(
+            effectiveGoal: effectiveGoal,
+            rootTaskDescription: claimed.payload.rootTaskDescription,
+            workUnitDescription: claimed.payload.workDescription,
+            objectiveId: claimed.objectiveId,
+            taskId: claimed.taskId,
+            isSynthesis: claimed.workType == Constants.synthesisType
+        )
         let systemPrompt: String
         switch claimed.workType {
         case Constants.synthesisType:
@@ -368,10 +384,12 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                 ? "No completed research work units were summarized."
                 : completedSummary.map { "- \($0)" }.joined(separator: "\n")
             let context = objectiveContextBlock(
-                goal: claimed.payload.parentObjectiveGoal,
+                goal: effectiveGoal,
                 taskLine: claimed.payload.rootTaskDescription
             )
             systemPrompt = """
+            AgentKVT objective-board mode (tools required). Do not reply with generic chat-assistant disclaimers; you already have the mission in the user message.
+
             You are \(workerLabel), the synthesis agent for one objective task.
 
             \(context)
@@ -405,10 +423,12 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             """
         default:
             let context = objectiveContextBlock(
-                goal: claimed.payload.parentObjectiveGoal,
+                goal: effectiveGoal,
                 taskLine: claimed.payload.rootTaskDescription
             )
             systemPrompt = """
+            AgentKVT objective-board mode (tools required). Do not reply with generic chat-assistant disclaimers; you already have the mission in the user message.
+
             You are \(workerLabel), one member of a parallel objective research team.
 
             CRITICAL OUTPUT RULES (llama3.2 strict mode):
@@ -457,11 +477,73 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                 workUnitId: claimed.workUnitId,
                 workerLabel: workerLabel
             ),
-            userMessageOverride: """
-            Execute this objective-board work unit now. You have explicit objective_id and task_id in the system prompt — use tools as instructed. \
-            Do not answer that you have no mission, instructions, or predefined goals.
-            """
+            userMessageOverride: userMessage
         )
+    }
+
+    /// Prefer webhook-stored goal; otherwise load `goal` from the Rails API so older SwiftData work units still ground the model.
+    private func resolveParentObjectiveGoal(
+        payload: ObjectiveWorkPayload,
+        objectiveId: UUID
+    ) async -> String? {
+        if let g = normalizedGoal(payload.parentObjectiveGoal) { return g }
+        guard let backendClient else { return nil }
+        do {
+            let objective = try await backendClient.fetchObjective(id: objectiveId)
+            return normalizedGoal(objective.goal)
+        } catch {
+            return nil
+        }
+    }
+
+    private func normalizedGoal(_ raw: String?) -> String? {
+        let t = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !t.isEmpty else { return nil }
+        return t
+    }
+
+    /// Repeats the mission in the **user** turn — local models (e.g. Llama with tools) often under-weight `system` alone.
+    private func objectiveBoardUserMessage(
+        effectiveGoal: String?,
+        rootTaskDescription: String,
+        workUnitDescription: String,
+        objectiveId: UUID,
+        taskId: UUID,
+        isSynthesis: Bool
+    ) -> String {
+        let goalBlock: String = {
+            guard let g = effectiveGoal, !g.isEmpty else {
+                return """
+                PARENT OBJECTIVE: (not available from local payload — still use TASK FOCUS and WORK UNIT below; call read_objective_snapshot if you need stored context.)
+                """
+            }
+            let capped = g.count > 12_000 ? String(g.prefix(12_000)) + "\n… (truncated)" : g
+            return """
+            PARENT OBJECTIVE (authoritative full goal):
+            \(capped)
+            """
+        }()
+
+        let synthesisNote = isSynthesis
+            ? "This is the SYNTHESIS step: merge findings, call write_objective_snapshot with mark_task_completed true on the final summary key, and write substantive traveler guidance."
+            : "This is a RESEARCH step: call read_objective_snapshot, multi_step_search as needed, write_objective_snapshot (mark_task_completed false)."
+
+        return """
+        \(goalBlock)
+
+        TASK FOCUS (this task row on the objective):
+        \(rootTaskDescription)
+
+        WORK UNIT YOU MUST EXECUTE NOW:
+        \(workUnitDescription)
+
+        \(synthesisNote)
+
+        objective_id=\(objectiveId.uuidString)
+        task_id=\(taskId.uuidString)
+
+        You MUST use the allowed tools. A plain-text reply that refuses, claims you have no instructions, or only offers to help "in general" is invalid — you already have the goal and work unit above.
+        """
     }
 
     private func createResearchRound(
@@ -984,17 +1066,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
     }
 
     private func looksLikeMetaRefusal(_ text: String) -> Bool {
-        let t = text.lowercased()
-        let needles = [
-            "don't have any specific",
-            "don't have any predefined",
-            "no predefined goals",
-            "no missions to execute",
-            "don't have any mission",
-            "i don't have any instructions",
-            "i can provide information and assist",
-        ]
-        return needles.contains { t.contains($0) }
+        MetaRefusalText.isLikelyRefusal(text)
     }
 
     private func logEvent(

@@ -174,7 +174,7 @@ public final class MissionRunner: @unchecked Sendable {
             let toolTranscript = ToolTranscriptRecorder()
             let result: String
             do {
-                result = try await runLoop(
+                var first = try await runLoop(
                     request: request,
                     allowedToolIds: allowedTools,
                     systemPrompt: systemPrompt,
@@ -182,6 +182,22 @@ public final class MissionRunner: @unchecked Sendable {
                     actionItemsCounter: actionItemsCounter,
                     toolTranscript: toolTranscript
                 )
+                if shouldRetryObjectiveBoardMission(request: request, firstOutcome: first) {
+                    let nudge = userMessage + """
+
+                    RETRY (mandatory): Your previous answer looked like a generic chat disclaimer or ignored tools. Call read_objective_snapshot first, then multi_step_search and/or write_objective_snapshot. Do not reply with “I don’t have an objective” or similar.
+                    """
+                    first = try await runLoop(
+                        request: request,
+                        allowedToolIds: allowedTools,
+                        systemPrompt: systemPrompt,
+                        userMessage: nudge,
+                        maxRounds: 12,
+                        actionItemsCounter: actionItemsCounter,
+                        toolTranscript: toolTranscript
+                    )
+                }
+                result = first
             } catch {
                 await logWriter.writeLog(
                     missionId: request.id,
@@ -247,6 +263,13 @@ public final class MissionRunner: @unchecked Sendable {
     /// Run one mission and log the outcome.
     public func run(_ mission: MissionDefinition) async throws -> String {
         try await run(Request(mission))
+    }
+
+    /// One retry for objective-board missions when the model returns refusal boilerplate without using tools (common with local Llama + tool calls).
+    private func shouldRetryObjectiveBoardMission(request: Request, firstOutcome: String) -> Bool {
+        guard request.executionMetadata?.objectiveId != nil else { return false }
+        guard request.allowedToolIds.contains("write_objective_snapshot") else { return false }
+        return MetaRefusalText.isLikelyRefusal(firstOutcome)
     }
 
     private func missionUserMessage(ownerProfileId: UUID?) -> String {

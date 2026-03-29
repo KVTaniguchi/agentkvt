@@ -118,12 +118,27 @@ public struct BackendResearchSnapshot: Codable, Sendable {
     public let updatedAt: Date
 }
 
+/// One objective row from `GET /v1/objectives/:id` (used to hydrate `goal` when local payloads omit it).
+public struct BackendObjective: Codable, Sendable {
+    public let id: UUID
+    public let workspaceId: UUID
+    public let goal: String
+    public let status: String
+    public let priority: Int
+    public let createdAt: Date
+    public let updatedAt: Date
+}
+
 private struct BackendResearchSnapshotEnvelope: Codable {
     let researchSnapshot: BackendResearchSnapshot
 }
 
 private struct BackendResearchSnapshotsListEnvelope: Codable {
     let researchSnapshots: [BackendResearchSnapshot]
+}
+
+private struct BackendObjectiveEnvelope: Codable {
+    let objective: BackendObjective
 }
 
 public actor BackendAPIClient {
@@ -155,6 +170,12 @@ public actor BackendAPIClient {
     public func fetchMissions() async throws -> [BackendMission] {
         let data = try await performRequest(path: "v1/missions")
         return try decoder.decode(BackendMissionsEnvelope.self, from: data).missions
+    }
+
+    /// Loads the objective (including `goal`) from the API. Uses workspace slug only — same auth as other `v1/` reads.
+    public func fetchObjective(id: UUID) async throws -> BackendObjective {
+        let data = try await performRequest(path: "v1/objectives/\(id.uuidString)")
+        return try decoder.decode(BackendObjectiveEnvelope.self, from: data).objective
     }
 
     public func fetchDueMissions(at date: Date) async throws -> [BackendMission] {
