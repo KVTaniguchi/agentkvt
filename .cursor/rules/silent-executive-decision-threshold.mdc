@@ -1,0 +1,16 @@
+---
+description: Decision threshold — execute when confident; ask only for irreversible structural choices
+alwaysApply: true
+---
+
+# Constraint-Based Prompting ("Silent Executive")
+
+## Decision threshold
+
+If you are **more than 70% confident** in a path, **execute it** and provide the result. Do not pause to ask permission for routine implementation, fixes, refactors that are reversible in git, or standard tooling choices.
+
+## When to prompt
+
+Only ask the user to decide when the choice involves a **structural change that cannot be undone** (or cannot be undone without significant cost), for example: deleting production data, irreversible migrations, breaking public API contracts without a migration path, or one-way changes to billing or security posture.
+
+For everything else within normal project constraints, proceed and report what you did.
