@@ -3,6 +3,19 @@ module V1
     # Called by the Mac agent after running multi_step_search for a task.
     # Upserts a ResearchSnapshot keyed by (objective_id, key) and tracks delta.
     class ResearchSnapshotsController < BaseController
+      # GET — list snapshots for stigmergic read-before-write (optional task_id narrows to
+      # objective-wide + that task's rows).
+      def index
+        objective = current_workspace.objectives.find(params[:objective_id])
+        scope = objective.research_snapshots
+        if (tid = params[:task_id].presence) && objective.tasks.exists?(id: tid)
+          scope = scope.where("task_id IS NULL OR task_id = ?", tid)
+        end
+
+        snapshots = scope.recent_first.limit(200)
+        render json: { research_snapshots: snapshots.map { |s| serialize_research_snapshot(s) } }
+      end
+
       def create
         objective = current_workspace.objectives.find(params[:objective_id])
         task_id = params[:task_id].presence

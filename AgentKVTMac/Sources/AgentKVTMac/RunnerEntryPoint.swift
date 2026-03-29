@@ -149,6 +149,7 @@ public func runAgentKVTMacRunner() async {
         if let backendClient {
             registry.register(makeWriteActionItemTool(backendClient: backendClient))
             registry.register(makeFetchAgentLogsTool(backendClient: backendClient))
+            registry.register(makeReadObjectiveSnapshotTool(backendClient: backendClient))
             registry.register(makeWriteObjectiveSnapshotTool(backendClient: backendClient))
         } else {
             registry.register(makeWriteActionItemTool(modelContext: context))

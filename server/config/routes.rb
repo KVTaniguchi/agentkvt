@@ -32,7 +32,7 @@ Rails.application.routes.draw do
       end
 
       resources :objectives, only: [] do
-        resources :research_snapshots, only: [:create]
+        resources :research_snapshots, only: [:index, :create]
       end
     end
   end

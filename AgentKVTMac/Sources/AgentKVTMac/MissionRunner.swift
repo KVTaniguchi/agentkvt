@@ -483,6 +483,19 @@ public final class MissionRunner: @unchecked Sendable {
             - Call after observing a current value to persist it and detect meaningful change.
             - Only call write_action_item if the result starts with "changed:".
             """
+        case "read_objective_snapshot":
+            return """
+            read_objective_snapshot guidance:
+            - Call early on objective-board work units to load findings already stored on the server for this objective.
+            - Pass task_id when the work unit has one so you see objective-wide snapshots plus this task's rows.
+            - Skip redundant searches when a key already answers your question; refine or add new keys instead.
+            """
+        case "write_objective_snapshot":
+            return """
+            write_objective_snapshot guidance:
+            - Persist durable findings as plain-language prose only (never JSON arrays/objects or tool-call blobs).
+            - After multi_step_search, synthesize results into concise human-readable lines before writing.
+            """
         default:
             guard let description = registry.tool(id: toolId)?.description?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !description.isEmpty else {

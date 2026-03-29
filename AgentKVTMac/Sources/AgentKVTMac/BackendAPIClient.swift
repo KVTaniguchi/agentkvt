@@ -122,6 +122,10 @@ private struct BackendResearchSnapshotEnvelope: Codable {
     let researchSnapshot: BackendResearchSnapshot
 }
 
+private struct BackendResearchSnapshotsListEnvelope: Codable {
+    let researchSnapshots: [BackendResearchSnapshot]
+}
+
 public actor BackendAPIClient {
     public let baseURL: URL
     public let workspaceSlug: String
@@ -269,6 +273,20 @@ public actor BackendAPIClient {
         return try decoder.decode(BackendMissionEnvelope.self, from: data).mission
     }
 
+    /// List research snapshots for an objective (optional `taskId` matches server filter).
+    public func fetchResearchSnapshots(objectiveId: UUID, taskId: UUID? = nil) async throws -> [BackendResearchSnapshot] {
+        var queryItems: [URLQueryItem] = []
+        if let taskId {
+            queryItems.append(URLQueryItem(name: "task_id", value: taskId.uuidString))
+        }
+        let data = try await performRequest(
+            path: "v1/agent/objectives/\(objectiveId.uuidString)/research_snapshots",
+            queryItems: queryItems,
+            requiresAgentAuth: true
+        )
+        return try decoder.decode(BackendResearchSnapshotsListEnvelope.self, from: data).researchSnapshots
+    }
+
     /// Write (upsert) a research snapshot for an objective. The server tracks the
     /// previous value and sets `delta_note` automatically when the value changes.
     /// Pass `taskId` to simultaneously mark the parent task as completed.
@@ -279,10 +297,8 @@ public actor BackendAPIClient {
         value: String,
         markTaskCompleted: Bool? = nil
     ) async throws -> BackendResearchSnapshot {
-        if ObjectiveResearchSnapshotPayload.looksLikeRawToolJSON(value) {
-            throw BackendAPIError.invalidPayload(
-                "Refusing to send raw tool-call JSON as snapshot value (matches server validation)."
-            )
+        if let msg = ObjectiveResearchSnapshotPayload.clientRejectionMessageIfInvalid(value) {
+            throw BackendAPIError.invalidPayload(msg)
         }
         let path = "v1/agent/objectives/\(objectiveId.uuidString)/research_snapshots"
         var queryItems: [URLQueryItem] = []

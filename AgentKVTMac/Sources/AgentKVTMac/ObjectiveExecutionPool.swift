@@ -240,19 +240,27 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         }
 
         do {
-            let request = buildMissionRequest(for: claimed, workerLabel: slot.label)
+            let serverSnapshotsContext = await fetchServerSnapshotsContext(
+                objectiveId: claimed.objectiveId,
+                taskId: claimed.taskId
+            )
+            let request = buildMissionRequest(
+                for: claimed,
+                workerLabel: slot.label,
+                serverSnapshotsContext: serverSnapshotsContext
+            )
             let result = try await missionRunner.run(request)
             heartbeatTask.cancel()
 
             if claimed.workType == Constants.synthesisType, let backendClient {
-                if ObjectiveResearchSnapshotPayload.looksLikeRawToolJSON(result) {
+                if ObjectiveResearchSnapshotPayload.clientRejectionMessageIfInvalid(result) != nil {
                     try blockWorkUnit(
                         claimed.workUnitId,
-                        error: "Model returned tool-call JSON instead of a final summary; refusing to mark complete."
+                        error: "Model returned JSON instead of a final prose summary; refusing to mark complete."
                     )
                     await logEvent(
                         phase: "error",
-                        content: "Synthesis produced tool-style JSON as final text; work unit blocked.",
+                        content: "Synthesis produced JSON as final text; work unit blocked.",
                         objectiveId: claimed.objectiveId,
                         taskId: claimed.taskId,
                         workUnitId: claimed.workUnitId,
@@ -311,7 +319,11 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         }
     }
 
-    private func buildMissionRequest(for claimed: ClaimedWork, workerLabel: String) -> MissionRunner.Request {
+    private func buildMissionRequest(
+        for claimed: ClaimedWork,
+        workerLabel: String,
+        serverSnapshotsContext: String
+    ) -> MissionRunner.Request {
         let systemPrompt: String
         switch claimed.workType {
         case Constants.synthesisType:
@@ -328,19 +340,23 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             Task ID: \(claimed.taskId.uuidString)
             Work Unit ID: \(claimed.workUnitId.uuidString)
 
-            Completed work so far:
+            Authoritative findings already on the server (Postgres) — base your synthesis primarily on these:
+            \(serverSnapshotsContext)
+
+            Completed research work units (local summaries, may overlap or add nuance):
             \(workSummary)
 
             Instructions:
-            1. Use multi_step_search only if you need one last current fact to close a gap.
-            2. Write at least one final objective snapshot with:
+            1. Prefer reconciling and summarizing the server findings above; use read_objective_snapshot if you need a fresher list mid-run.
+            2. Use multi_step_search only if you need one last current fact to close a gap.
+            3. Write at least one final objective snapshot with:
                - objective_id: \(claimed.objectiveId.uuidString)
                - task_id: \(claimed.taskId.uuidString)
                - key: \(finalSummaryKey(taskId: claimed.taskId))
-               - value: a concise synthesis of the best guidance so far
+               - value: concise plain-language synthesis (not JSON) of the best guidance
                - mark_task_completed: true
-            3. You may write additional supporting snapshots before the final one.
-            4. Finish with a short, plain-language summary of what the team found.
+            4. You may write additional supporting snapshots before the final one.
+            5. Finish with a short, plain-language summary of what the team found.
             """
         default:
             systemPrompt = """
@@ -352,15 +368,19 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             Task ID: \(claimed.taskId.uuidString)
             Work Unit ID: \(claimed.workUnitId.uuidString)
 
+            Shared knowledge on the server when this work unit started (avoid duplicating these findings):
+            \(serverSnapshotsContext)
+
             Instructions:
-            1. Use multi_step_search to research this focused subproblem thoroughly.
-            2. Write 1-3 objective snapshots that capture durable findings from this work unit.
-            3. Every snapshot from this work unit must include:
+            1. Call read_objective_snapshot with objective_id \(claimed.objectiveId.uuidString) (and task_id \(claimed.taskId.uuidString) if you need an updated list) before spending tokens on overlapping searches.
+            2. Use multi_step_search to research gaps or updates for this focused subproblem.
+            3. Write 1-3 objective snapshots that capture durable findings from this work unit as plain-language prose (never JSON blobs).
+            4. Every snapshot from this work unit must include:
                - objective_id: \(claimed.objectiveId.uuidString)
                - task_id: \(claimed.taskId.uuidString)
                - mark_task_completed: false
-            4. Do not mark the overall task complete from this work unit.
-            5. Finish with a short summary of the strongest findings you gathered.
+            5. Do not mark the overall task complete from this work unit.
+            6. Finish with a short summary of the strongest findings you gathered.
             """
         }
 
@@ -369,7 +389,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             missionName: "Objective Work Unit: \(claimed.title.prefix(60))",
             systemPrompt: systemPrompt,
             triggerSchedule: "objective_board",
-            allowedToolIds: ["multi_step_search", "write_objective_snapshot"],
+            allowedToolIds: ["read_objective_snapshot", "multi_step_search", "write_objective_snapshot"],
             ownerProfileId: nil,
             isEnabled: true,
             lastRunAt: nil,
@@ -783,6 +803,30 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             .filter { $0.workType == Constants.researchType && $0.state == WorkUnitState.done.rawValue }
             .compactMap { decodePayload($0.moundPayload)?.resultSummary }
             .filter { !$0.isEmpty }
+    }
+
+    /// Snapshot rows from Postgres (same filter as `read_objective_snapshot`) for prompts.
+    private func fetchServerSnapshotsContext(objectiveId: UUID, taskId: UUID) async -> String {
+        guard let backendClient else {
+            return "Backend client unavailable — use read_objective_snapshot after it is configured."
+        }
+        do {
+            let snapshots = try await backendClient.fetchResearchSnapshots(objectiveId: objectiveId, taskId: taskId)
+            if snapshots.isEmpty {
+                return "No snapshots stored yet for this objective/task scope."
+            }
+            let lines = snapshots.prefix(50).map { snap in
+                let scope = snap.taskId.map { " [task: \(String($0.uuidString.prefix(8)))…]" } ?? " [objective-wide]"
+                return "- \(snap.key)\(scope): \(snap.value)"
+            }
+            var text = lines.joined(separator: "\n")
+            if text.count > 12_000 {
+                text = String(text.prefix(12_000)) + "\n… (truncated)"
+            }
+            return text
+        } catch {
+            return "Could not load server snapshots (\(error.localizedDescription)). Call read_objective_snapshot to fetch manually."
+        }
     }
 
     private func freshContext() -> ModelContext {

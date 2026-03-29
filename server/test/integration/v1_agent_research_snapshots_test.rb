@@ -113,15 +113,46 @@ class V1AgentResearchSnapshotsTest < ActionDispatch::IntegrationTest
 
     assert_response :unprocessable_entity
     body = JSON.parse(response.body)
-    assert_match(/plain-language|tool-call/i, body["error"].to_s)
+    assert_match(/plain-language|JSON|structured/i, body["error"].to_s)
   end
 
-  test "allows non-tool JSON object values" do
+  test "rejects non-tool JSON object values" do
     post "/v1/agent/objectives/#{@objective.id}/research_snapshots",
          params: { research_snapshot: { key: "structured_note", value: '{"hotel":"Grand","nightly":189}' } },
          as: :json, headers: agent_headers
 
-    assert_response :created
+    assert_response :unprocessable_entity
+  end
+
+  test "index lists research snapshots for objective" do
+    @objective.research_snapshots.create!(
+      key: "rate", value: "6.5%", checked_at: Time.current, task_id: @task.id
+    )
+
+    get "/v1/agent/objectives/#{@objective.id}/research_snapshots",
+        as: :json, headers: agent_headers
+
+    assert_response :success
+    body = JSON.parse(response.body)
+    assert_equal 1, body["research_snapshots"].length
+    assert_equal "rate", body["research_snapshots"].first["key"]
+    assert_equal "6.5%", body["research_snapshots"].first["value"]
+  end
+
+  test "index with task_id includes nil task_id snapshots and matching task" do
+    @objective.research_snapshots.create!(key: "shared", value: "note", checked_at: Time.current, task_id: nil)
+    other_task = @objective.tasks.create!(description: "Other", status: "pending")
+    @objective.research_snapshots.create!(key: "other", value: "x", checked_at: Time.current, task_id: other_task.id)
+    @objective.research_snapshots.create!(key: "mine", value: "for this task", checked_at: Time.current, task_id: @task.id)
+
+    get "/v1/agent/objectives/#{@objective.id}/research_snapshots",
+        params: { task_id: @task.id },
+        as: :json, headers: agent_headers
+
+    assert_response :success
+    body = JSON.parse(response.body)
+    keys = body["research_snapshots"].map { |s| s["key"] }.sort
+    assert_equal %w[mine shared], keys
   end
 
   # ── auth / isolation ────────────────────────────────────────────────────────

@@ -32,7 +32,7 @@ public func makeWriteObjectiveSnapshotTool(backendClient: BackendAPIClient) -> T
                 ),
                 "value": .init(
                     type: "string",
-                    description: "Plain-language research finding or metric. Do not paste tool-call JSON or multi_step_search argument blobs."
+                    description: "Plain-language research finding only. Do not paste JSON objects/arrays, tool-call payloads, or raw search argument blobs."
                 ),
                 "mark_task_completed": .init(
                     type: "boolean",
