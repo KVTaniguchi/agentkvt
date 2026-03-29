@@ -38,11 +38,14 @@ class MacAgentClient
   private
 
   def build_payload(task)
+    goal = task.objective&.goal.to_s
     {
       agentkvt: "run_task_search",
       task_id: task.id,
       objective_id: task.objective_id,
       description: task.description,
+      # Full parent objective so the Mac agent can ground research/synthesis (task.description alone is often a narrow sub-line).
+      objective_goal: goal.byteslice(0, 20_000),
       # Default to a single search step. Webhook-triggered missions on the Mac
       # can read this file via read_dropzone_file and pass steps_json directly
       # to the multi_step_search tool.

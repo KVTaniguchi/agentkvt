@@ -477,6 +477,8 @@ struct TaskSearchPayload: Sendable {
     let taskId: String
     let objectiveId: String
     let description: String
+    /// Full parent objective goal from Rails (`objective.goal`); optional for older webhook clients.
+    let objectiveGoal: String?
 
     /// Returns nil if the body is not a valid run_task_search payload.
     init?(json: String) {
@@ -492,5 +494,11 @@ struct TaskSearchPayload: Sendable {
         self.taskId = taskId
         self.objectiveId = objectiveId
         self.description = description
+        if let g = obj["objective_goal"] as? String {
+            let t = g.trimmingCharacters(in: .whitespacesAndNewlines)
+            self.objectiveGoal = t.isEmpty ? nil : t
+        } else {
+            self.objectiveGoal = nil
+        }
     }
 }

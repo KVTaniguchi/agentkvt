@@ -74,6 +74,8 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         let objectiveId: UUID
         let taskId: UUID
         let rootTaskDescription: String
+        /// Parent objective goal from Rails webhook (`objective_goal`); nil in older SwiftData payloads.
+        let parentObjectiveGoal: String?
         let workDescription: String
         let planningRound: Int
         let workType: String
@@ -117,10 +119,12 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         }
 
         do {
+            let parentGoal = payload.objectiveGoal
             let root = try ensureRootWorkUnit(
                 objectiveId: objectiveId,
                 taskId: taskId,
-                title: payload.description
+                title: payload.description,
+                parentObjectiveGoal: parentGoal
             )
             try updateRootState(rootId: root.id, state: WorkUnitState.inProgress.rawValue, phase: "decomposing")
             await logEvent(
@@ -135,6 +139,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                 objectiveId: objectiveId,
                 taskId: taskId,
                 rootTaskDescription: payload.description,
+                parentObjectiveGoal: parentGoal,
                 planningRound: 1,
                 completedSummaries: []
             )
@@ -147,6 +152,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                     activePhaseHint: "research",
                     planningRound: 1,
                     rootTaskDescription: payload.description,
+                    parentObjectiveGoal: parentGoal,
                     priority: 1.0
                 )
             }
@@ -157,6 +163,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                 objectiveId: objectiveId,
                 taskId: taskId,
                 rootTaskDescription: payload.description,
+                parentObjectiveGoal: parentGoal,
                 planningRound: 2,
                 completedSummaries: roundOneSummaries
             )
@@ -168,7 +175,8 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             _ = try ensureSynthesisWorkUnit(
                 objectiveId: objectiveId,
                 taskId: taskId,
-                rootTaskDescription: payload.description
+                rootTaskDescription: payload.description,
+                parentObjectiveGoal: parentGoal
             )
             try updateRootState(rootId: root.id, state: WorkUnitState.inProgress.rawValue, phase: "synthesizing")
             try await waitForSynthesisToSettle(objectiveId: objectiveId, taskId: taskId)
@@ -269,26 +277,54 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                     )
                     return
                 }
-                do {
-                    _ = try await backendClient.writeResearchSnapshot(
-                        objectiveId: claimed.objectiveId,
-                        taskId: claimed.taskId,
-                        key: finalSummaryKey(taskId: claimed.taskId),
-                        value: String(result.prefix(8000)),
-                        markTaskCompleted: true
-                    )
-                } catch {
-                    try blockWorkUnit(claimed.workUnitId, error: String(describing: error))
-                    await logEvent(
-                        phase: "error",
-                        content: "Synthesis snapshot write failed: \(error)",
-                        objectiveId: claimed.objectiveId,
-                        taskId: claimed.taskId,
-                        workUnitId: claimed.workUnitId,
-                        workerLabel: slot.label,
-                        missionName: "Objective Worker \(slot.label)"
-                    )
-                    throw error
+                let summaryKey = finalSummaryKey(taskId: claimed.taskId)
+                let existingSnaps = try? await backendClient.fetchResearchSnapshots(
+                    objectiveId: claimed.objectiveId,
+                    taskId: claimed.taskId
+                )
+                let toolRow = existingSnaps?.first { $0.key == summaryKey }
+                let toolWroteSummary = toolRow.map { !$0.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } ?? false
+
+                if toolWroteSummary {
+                    // write_objective_snapshot already upserted task_summary_*; do not overwrite with the assistant's closing chit-chat.
+                } else {
+                    if looksLikeMetaRefusal(result) {
+                        try blockWorkUnit(
+                            claimed.workUnitId,
+                            error: "Synthesis final text looked like a meta-refusal instead of research guidance."
+                        )
+                        await logEvent(
+                            phase: "error",
+                            content: "Synthesis produced a meta-refusal and did not write task_summary via tools.",
+                            objectiveId: claimed.objectiveId,
+                            taskId: claimed.taskId,
+                            workUnitId: claimed.workUnitId,
+                            workerLabel: slot.label,
+                            missionName: "Objective Worker \(slot.label)"
+                        )
+                        return
+                    }
+                    do {
+                        _ = try await backendClient.writeResearchSnapshot(
+                            objectiveId: claimed.objectiveId,
+                            taskId: claimed.taskId,
+                            key: summaryKey,
+                            value: String(result.prefix(8000)),
+                            markTaskCompleted: true
+                        )
+                    } catch {
+                        try blockWorkUnit(claimed.workUnitId, error: String(describing: error))
+                        await logEvent(
+                            phase: "error",
+                            content: "Synthesis snapshot write failed: \(error)",
+                            objectiveId: claimed.objectiveId,
+                            taskId: claimed.taskId,
+                            workUnitId: claimed.workUnitId,
+                            workerLabel: slot.label,
+                            missionName: "Objective Worker \(slot.label)"
+                        )
+                        throw error
+                    }
                 }
             }
 
@@ -331,10 +367,15 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             let workSummary = completedSummary.isEmpty
                 ? "No completed research work units were summarized."
                 : completedSummary.map { "- \($0)" }.joined(separator: "\n")
+            let context = objectiveContextBlock(
+                goal: claimed.payload.parentObjectiveGoal,
+                taskLine: claimed.payload.rootTaskDescription
+            )
             systemPrompt = """
             You are \(workerLabel), the synthesis agent for one objective task.
 
-            Objective task: \(claimed.payload.rootTaskDescription)
+            \(context)
+
             Synthesis work unit: \(claimed.payload.workDescription)
             Objective ID: \(claimed.objectiveId.uuidString)
             Task ID: \(claimed.taskId.uuidString)
@@ -346,19 +387,27 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             Completed research work units (local summaries, may overlap or add nuance):
             \(workSummary)
 
+            ANTI-HALLUCINATION:
+            - You already have an assigned objective and task IDs above. Never claim you lack instructions, missions, or predefined goals.
+            - Your final plain-text reply must summarize concrete findings for the traveler (logistics, dates, safety, options) — not meta-commentary about your role.
+
             Instructions:
             1. Prefer reconciling and summarizing the server findings above; use read_objective_snapshot if you need a fresher list mid-run.
             2. Use multi_step_search only if you need one last current fact to close a gap.
-            3. Write at least one final objective snapshot with:
+            3. Write at least one final objective snapshot with write_objective_snapshot using:
                - objective_id: \(claimed.objectiveId.uuidString)
                - task_id: \(claimed.taskId.uuidString)
                - key: \(finalSummaryKey(taskId: claimed.taskId))
                - value: concise plain-language synthesis (not JSON) of the best guidance
                - mark_task_completed: true
             4. You may write additional supporting snapshots before the final one.
-            5. Finish with a short, plain-language summary of what the team found.
+            5. Finish with a short, plain-language summary of what the team found (must be substantive, not a refusal).
             """
         default:
+            let context = objectiveContextBlock(
+                goal: claimed.payload.parentObjectiveGoal,
+                taskLine: claimed.payload.rootTaskDescription
+            )
             systemPrompt = """
             You are \(workerLabel), one member of a parallel objective research team.
 
@@ -368,7 +417,8 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             - Snapshot values MUST be plain English prose sentences — e.g. "The Gaslamp Quarter offers hotels from $180/night with walkable dining."
             - To call a tool, use the tool interface; do not write tool-call JSON in your response text.
 
-            Objective task: \(claimed.payload.rootTaskDescription)
+            \(context)
+
             Focused work unit: \(claimed.payload.workDescription)
             Objective ID: \(claimed.objectiveId.uuidString)
             Task ID: \(claimed.taskId.uuidString)
@@ -376,6 +426,8 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
 
             Shared knowledge on the server when this work unit started (avoid duplicating these findings):
             \(serverSnapshotsContext)
+
+            Do not claim you lack missions or goals — this work unit is your assigned task.
 
             Instructions:
             1. Call read_objective_snapshot with objective_id \(claimed.objectiveId.uuidString) (and task_id \(claimed.taskId.uuidString) if you need an updated list) before spending tokens on overlapping searches.
@@ -404,7 +456,11 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                 taskId: claimed.taskId,
                 workUnitId: claimed.workUnitId,
                 workerLabel: workerLabel
-            )
+            ),
+            userMessageOverride: """
+            Execute this objective-board work unit now. You have explicit objective_id and task_id in the system prompt — use tools as instructed. \
+            Do not answer that you have no mission, instructions, or predefined goals.
+            """
         )
     }
 
@@ -412,11 +468,13 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         objectiveId: UUID,
         taskId: UUID,
         rootTaskDescription: String,
+        parentObjectiveGoal: String?,
         planningRound: Int,
         completedSummaries: [String]
     ) async -> Int {
         let planned = await planResearchWorkUnits(
             rootTaskDescription: rootTaskDescription,
+            parentObjectiveGoal: parentObjectiveGoal,
             completedSummaries: completedSummaries,
             planningRound: planningRound
         )
@@ -432,6 +490,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                     activePhaseHint: "research_round_\(planningRound)",
                     planningRound: planningRound,
                     rootTaskDescription: rootTaskDescription,
+                    parentObjectiveGoal: parentObjectiveGoal,
                     priority: planningRound == 1 ? 1.0 : 0.9
                 )
                 created += 1
@@ -461,6 +520,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
 
     private func planResearchWorkUnits(
         rootTaskDescription: String,
+        parentObjectiveGoal: String?,
         completedSummaries: [String],
         planningRound: Int
     ) async -> [String] {
@@ -480,9 +540,19 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         - Do not repeat completed work.
         - Keep each string under 120 characters.
         """
+        let goalBlock: String = {
+            let g = parentObjectiveGoal?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if g.isEmpty { return "" }
+            return """
+
+            Parent objective (full user goal):
+            \(g)
+            """
+        }()
         let userPrompt = """
         Objective task:
         \(rootTaskDescription)
+        \(goalBlock)
 
         Planning round: \(planningRound)
 
@@ -556,7 +626,12 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             .map { $0 }
     }
 
-    private func ensureRootWorkUnit(objectiveId: UUID, taskId: UUID, title: String) throws -> WorkUnit {
+    private func ensureRootWorkUnit(
+        objectiveId: UUID,
+        taskId: UUID,
+        title: String,
+        parentObjectiveGoal: String?
+    ) throws -> WorkUnit {
         let context = freshContext()
         if let existing = try objectiveWorkUnits(in: context, objectiveId: objectiveId, taskId: taskId)
             .first(where: { $0.workType == Constants.rootType }) {
@@ -567,6 +642,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             objectiveId: objectiveId,
             taskId: taskId,
             rootTaskDescription: title,
+            parentObjectiveGoal: parentObjectiveGoal,
             workDescription: title,
             planningRound: 0,
             workType: Constants.rootType,
@@ -593,7 +669,8 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
     private func ensureSynthesisWorkUnit(
         objectiveId: UUID,
         taskId: UUID,
-        rootTaskDescription: String
+        rootTaskDescription: String,
+        parentObjectiveGoal: String?
     ) throws -> WorkUnit {
         let context = freshContext()
         if let existing = try objectiveWorkUnits(in: context, objectiveId: objectiveId, taskId: taskId)
@@ -605,6 +682,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             objectiveId: objectiveId,
             taskId: taskId,
             rootTaskDescription: rootTaskDescription,
+            parentObjectiveGoal: parentObjectiveGoal,
             workDescription: title,
             planningRound: 99,
             workType: Constants.synthesisType,
@@ -637,6 +715,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         activePhaseHint: String,
         planningRound: Int,
         rootTaskDescription: String,
+        parentObjectiveGoal: String?,
         priority: Double
     ) throws -> WorkUnit {
         let context = freshContext()
@@ -644,6 +723,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             objectiveId: objectiveId,
             taskId: taskId,
             rootTaskDescription: rootTaskDescription,
+            parentObjectiveGoal: parentObjectiveGoal,
             workDescription: title,
             planningRound: planningRound,
             workType: workType,
@@ -694,6 +774,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             objectiveId: unit.objectiveId ?? UUID(),
             taskId: unit.sourceTaskId ?? UUID(),
             rootTaskDescription: unit.title,
+            parentObjectiveGoal: nil,
             workDescription: unit.title,
             planningRound: 0,
             workType: unit.workType,
@@ -886,6 +967,34 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
 
     private func finalSummaryKey(taskId: UUID) -> String {
         "task_summary_\(taskId.uuidString.replacingOccurrences(of: "-", with: "").prefix(12))"
+    }
+
+    private func objectiveContextBlock(goal: String?, taskLine: String) -> String {
+        let g = goal?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if g.isEmpty {
+            return "Task focus:\n\(taskLine)"
+        }
+        return """
+        Parent objective (authoritative user goal):
+        \(g)
+
+        Your task focus (work within this scope):
+        \(taskLine)
+        """
+    }
+
+    private func looksLikeMetaRefusal(_ text: String) -> Bool {
+        let t = text.lowercased()
+        let needles = [
+            "don't have any specific",
+            "don't have any predefined",
+            "no predefined goals",
+            "no missions to execute",
+            "don't have any mission",
+            "i don't have any instructions",
+            "i can provide information and assist",
+        ]
+        return needles.contains { t.contains($0) }
     }
 
     private func logEvent(

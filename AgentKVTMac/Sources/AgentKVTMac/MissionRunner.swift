@@ -37,6 +37,8 @@ public final class MissionRunner: @unchecked Sendable {
         /// Summaries of unhandled actions already created by this mission. Injected into the
         /// system prompt so the LLM avoids creating duplicate suggestions on repeated runs.
         public let existingActionItemSummaries: [String]
+        /// When set, used as the user message instead of the generic "Execute your mission…" line.
+        public let userMessageOverride: String?
 
         public init(
             id: UUID,
@@ -48,7 +50,8 @@ public final class MissionRunner: @unchecked Sendable {
             isEnabled: Bool = true,
             lastRunAt: Date? = nil,
             executionMetadata: ExecutionMetadata? = nil,
-            existingActionItemSummaries: [String] = []
+            existingActionItemSummaries: [String] = [],
+            userMessageOverride: String? = nil
         ) {
             self.id = id
             self.missionName = missionName
@@ -60,6 +63,7 @@ public final class MissionRunner: @unchecked Sendable {
             self.lastRunAt = lastRunAt
             self.executionMetadata = executionMetadata
             self.existingActionItemSummaries = existingActionItemSummaries
+            self.userMessageOverride = userMessageOverride
         }
 
         init(_ mission: MissionDefinition) {
@@ -71,7 +75,8 @@ public final class MissionRunner: @unchecked Sendable {
                 allowedToolIds: mission.allowedMCPTools,
                 ownerProfileId: mission.ownerProfileId,
                 isEnabled: mission.isEnabled,
-                lastRunAt: mission.lastRunAt
+                lastRunAt: mission.lastRunAt,
+                userMessageOverride: nil
             )
         }
 
@@ -86,7 +91,8 @@ public final class MissionRunner: @unchecked Sendable {
                 isEnabled: isEnabled,
                 lastRunAt: lastRunAt,
                 executionMetadata: executionMetadata,
-                existingActionItemSummaries: existingActionItemSummaries
+                existingActionItemSummaries: existingActionItemSummaries,
+                userMessageOverride: userMessageOverride
             )
         }
     }
@@ -147,7 +153,7 @@ public final class MissionRunner: @unchecked Sendable {
             allowedTools: allowedTools,
             existingActionItemSummaries: request.existingActionItemSummaries
         )
-        let userMessage = missionUserMessage(ownerProfileId: request.ownerProfileId)
+        let userMessage = request.userMessageOverride ?? missionUserMessage(ownerProfileId: request.ownerProfileId)
         let context = MissionExecutionContext.Context(
             missionId: request.id,
             missionName: request.missionName,
