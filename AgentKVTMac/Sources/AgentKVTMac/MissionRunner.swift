@@ -182,8 +182,8 @@ public final class MissionRunner: @unchecked Sendable {
                     actionItemsCounter: actionItemsCounter,
                     toolTranscript: toolTranscript
                 )
-                if shouldRetryObjectiveBoardMission(request: request, firstOutcome: first) {
-                    let nudge = userMessage + "\n\nRETRY (mandatory): Your previous response was invalid - either a generic disclaimer or raw tool-call JSON written as text. You MUST use the tool API to invoke tools. Do NOT write tool_calls JSON in your reply text. Call read_objective_snapshot first via the tool API, then multi_step_search and/or write_objective_snapshot via the tool API."
+                if let retryNudge = objectiveBoardRetryNudge(request: request, firstOutcome: first, transcript: toolTranscript.entries) {
+                    let nudge = userMessage + "\n\n" + retryNudge
                     first = try await runLoop(
                         request: request,
                         allowedToolIds: allowedTools,
@@ -262,12 +262,25 @@ public final class MissionRunner: @unchecked Sendable {
         try await run(Request(mission))
     }
 
-    /// One retry for objective-board missions when the model returns refusal boilerplate or raw
-    /// tool-call JSON as text instead of using the tool API (common with local Llama models).
-    private func shouldRetryObjectiveBoardMission(request: Request, firstOutcome: String) -> Bool {
-        guard request.executionMetadata?.objectiveId != nil else { return false }
-        guard request.allowedToolIds.contains("write_objective_snapshot") else { return false }
-        return MetaRefusalText.isInvalidResearchOutput(firstOutcome)
+    /// Returns a retry nudge string when the objective-board mission needs a second pass,
+    /// or nil if the first pass looks valid. Covers three failure modes:
+    /// 1. Refusal boilerplate ("I don't have any specific objective…")
+    /// 2. Raw tool-call JSON written as text instead of using the tool API
+    /// 3. Model completed research but never called write_objective_snapshot
+    private func objectiveBoardRetryNudge(request: Request, firstOutcome: String, transcript: [String]) -> String? {
+        guard request.executionMetadata?.objectiveId != nil else { return nil }
+        guard request.allowedToolIds.contains("write_objective_snapshot") else { return nil }
+
+        if MetaRefusalText.isInvalidResearchOutput(firstOutcome) {
+            return "RETRY (mandatory): Your previous response was invalid - either a generic disclaimer or raw tool-call JSON written as text. You MUST use the tool API to invoke tools. Do NOT write tool_calls JSON in your reply text. Call read_objective_snapshot first via the tool API, then multi_step_search and/or write_objective_snapshot via the tool API."
+        }
+
+        let wroteSnapshot = transcript.contains { $0.contains("write_objective_snapshot") }
+        if !wroteSnapshot {
+            return "RETRY (mandatory): You completed searches but never called write_objective_snapshot. You MUST call write_objective_snapshot now using the tool API to persist your findings. Use objective_id and task_id from your instructions. Do not respond with plain text only."
+        }
+
+        return nil
     }
 
     private func missionUserMessage(ownerProfileId: UUID?) -> String {
