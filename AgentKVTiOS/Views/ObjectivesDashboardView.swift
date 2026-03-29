@@ -8,6 +8,13 @@ struct ObjectivesDashboardView: View {
     var body: some View {
         NavigationStack {
             List {
+                if let err = store.errorMessage, !err.isEmpty {
+                    Section {
+                        Text(err)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
                 ForEach(store.objectives) { objective in
                     NavigationLink(destination: ObjectiveDetailView(objective: objective)) {
                         ObjectiveRow(objective: objective)
@@ -22,8 +29,10 @@ struct ObjectivesDashboardView: View {
                     ProgressView()
                 }
             }
-            .emptyState(store.objectives.isEmpty && !store.isLoading,
-                        message: "No objectives yet. Tap + to create one.")
+            .emptyState(
+                store.objectives.isEmpty && !store.isLoading && store.errorMessage == nil,
+                message: "No objectives yet. Tap + to create one."
+            )
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button {

@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
 	<key>AGENTKVT_API_BASE_URL</key>
-	<string>$(AGENTKVT_API_BASE_URL)</string>
+	<string>http://192.168.4.144:3000</string>
 	<key>AGENTKVT_WORKSPACE_SLUG</key>
-	<string>$(AGENTKVT_WORKSPACE_SLUG)</string>
+	<string>default</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
