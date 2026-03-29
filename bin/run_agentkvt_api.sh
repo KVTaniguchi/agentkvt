@@ -15,6 +15,9 @@ USER_GEM_BIN="${USER_GEM_HOME}/bin"
 export GEM_HOME="${USER_GEM_HOME}"
 export GEM_PATH="${USER_GEM_HOME}"
 export PATH="${USER_GEM_BIN}:${PATH}"
+# libpq's GSS probe is unsafe after fork on the production macOS host.
+# We only talk to the local Postgres instance here, so disable GSS auth.
+export PGGSSENCMODE="${PGGSSENCMODE:-disable}"
 
 if [ ! -f "${SERVER_DIR}/config/application.rb" ]; then
   echo "Rails app not found at ${SERVER_DIR}. Run ./bin/bootstrap_agentkvt_backend.sh first." >&2

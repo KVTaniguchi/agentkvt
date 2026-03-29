@@ -95,6 +95,8 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
     private let client: any OllamaClientProtocol
     private let missionRunner: MissionRunner
     private let backendClient: BackendAPIClient?
+    /// Serializes SwiftData claim read/modify/save so parallel workers cannot claim the same pending unit.
+    private let claimLock = NSLock()
 
     init(
         modelContainer: ModelContainer,
@@ -241,17 +243,48 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             let request = buildMissionRequest(for: claimed, workerLabel: slot.label)
             let result = try await missionRunner.run(request)
             heartbeatTask.cancel()
-            try completeWorkUnit(claimed.workUnitId, summary: result)
 
             if claimed.workType == Constants.synthesisType, let backendClient {
-                _ = try? await backendClient.writeResearchSnapshot(
-                    objectiveId: claimed.objectiveId,
-                    taskId: claimed.taskId,
-                    key: finalSummaryKey(taskId: claimed.taskId),
-                    value: String(result.prefix(500)),
-                    markTaskCompleted: true
-                )
+                if Self.looksLikeRawToolPayload(result) {
+                    try blockWorkUnit(
+                        claimed.workUnitId,
+                        error: "Model returned tool-call JSON instead of a final summary; refusing to mark complete."
+                    )
+                    await logEvent(
+                        phase: "error",
+                        content: "Synthesis produced tool-style JSON as final text; work unit blocked.",
+                        objectiveId: claimed.objectiveId,
+                        taskId: claimed.taskId,
+                        workUnitId: claimed.workUnitId,
+                        workerLabel: slot.label,
+                        missionName: "Objective Worker \(slot.label)"
+                    )
+                    return
+                }
+                do {
+                    _ = try await backendClient.writeResearchSnapshot(
+                        objectiveId: claimed.objectiveId,
+                        taskId: claimed.taskId,
+                        key: finalSummaryKey(taskId: claimed.taskId),
+                        value: String(result.prefix(8000)),
+                        markTaskCompleted: true
+                    )
+                } catch {
+                    try blockWorkUnit(claimed.workUnitId, error: String(describing: error))
+                    await logEvent(
+                        phase: "error",
+                        content: "Synthesis snapshot write failed: \(error)",
+                        objectiveId: claimed.objectiveId,
+                        taskId: claimed.taskId,
+                        workUnitId: claimed.workUnitId,
+                        workerLabel: slot.label,
+                        missionName: "Objective Worker \(slot.label)"
+                    )
+                    throw error
+                }
             }
+
+            try completeWorkUnit(claimed.workUnitId, summary: result)
 
             await logEvent(
                 phase: "worker_complete",
@@ -609,6 +642,9 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
     }
 
     private func claimNextWorkUnit(slot: ObjectiveWorkerSlot) throws -> ClaimedWork? {
+        claimLock.lock()
+        defer { claimLock.unlock() }
+
         let context = freshContext()
         try requeueExpiredClaims(in: context)
 
@@ -648,6 +684,17 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             activePhaseHint: unit.activePhaseHint,
             payload: payload
         )
+    }
+
+    /// True when the model leaked a JSON tool payload as plain assistant text (should not be stored as a final summary).
+    private static func looksLikeRawToolPayload(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("{"),
+              let data = trimmed.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              obj["tool_calls"] != nil
+        else { return false }
+        return true
     }
 
     private func completeWorkUnit(_ workUnitId: UUID, summary: String) throws {
@@ -723,11 +770,19 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         while true {
             let context = freshContext()
             try requeueExpiredClaims(in: context)
-            let remaining = try objectiveWorkUnits(in: context, objectiveId: objectiveId, taskId: taskId)
-                .filter {
-                    $0.workType == Constants.synthesisType &&
-                    ($0.state == WorkUnitState.pending.rawValue || $0.state == WorkUnitState.inProgress.rawValue)
-                }
+            let synthesisUnits = try objectiveWorkUnits(in: context, objectiveId: objectiveId, taskId: taskId)
+                .filter { $0.workType == Constants.synthesisType }
+            if let blocked = synthesisUnits.first(where: { $0.state == WorkUnitState.blocked.rawValue }) {
+                let detail = decodePayload(blocked.moundPayload)?.lastError ?? "synthesis work unit blocked"
+                throw NSError(
+                    domain: "ObjectiveExecution",
+                    code: 2,
+                    userInfo: [NSLocalizedDescriptionKey: detail]
+                )
+            }
+            let remaining = synthesisUnits.filter {
+                $0.state == WorkUnitState.pending.rawValue || $0.state == WorkUnitState.inProgress.rawValue
+            }
             if remaining.isEmpty { return }
             try? await Task.sleep(for: .seconds(2))
         }

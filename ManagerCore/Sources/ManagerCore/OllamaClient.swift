@@ -232,7 +232,32 @@ public final class OllamaClient: @unchecked Sendable {
         }
         let parsed = try JSONDecoder().decode(ChatResponse.self, from: data)
         guard let msg = parsed.message else { throw OllamaError.noMessage }
-        return msg
+        return coerceAssistantMessageIfNeeded(msg, tools: tools)
+    }
+
+    /// When tools are enabled, some models return HTTP 200 with `tool_calls` serialized inside `content` instead of structured fields.
+    private func coerceAssistantMessageIfNeeded(_ msg: Message, tools: [ToolDef]?) -> Message {
+        guard let tools, !tools.isEmpty else { return msg }
+        if let tc = msg.toolCalls, !tc.isEmpty { return msg }
+        let rawContent = msg.content?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !rawContent.isEmpty else { return msg }
+        let normalized = normalizeManualToolPayload(rawContent)
+        guard let data = normalized.data(using: .utf8),
+              let parsed = try? JSONDecoder().decode(ManualToolResponse.self, from: data),
+              let toolCalls = parsed.toolCalls, !toolCalls.isEmpty
+        else { return msg }
+        do {
+            let mapped = try toolCalls.map { call in
+                ToolCall(
+                    id: nil,
+                    type: "function",
+                    function: .init(name: call.name, arguments: try call.arguments.jsonString())
+                )
+            }
+            return .init(role: "assistant", content: parsed.content, toolCalls: mapped)
+        } catch {
+            return msg
+        }
     }
 
     private func performManualToolChat(messages: [Message], tools: [ToolDef]) async throws -> Message {

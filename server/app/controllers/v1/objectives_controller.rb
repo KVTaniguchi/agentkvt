@@ -16,8 +16,9 @@ module V1
 
     def show
       objective = current_workspace.objectives.find(params[:id])
+      # Match Mac/client UUID casing (uppercase) vs DB lowercase by normalizing both sides.
       agent_logs = current_workspace.agent_logs
-        .where("metadata_json ->> 'objective_id' = ?", objective.id.to_s)
+        .where("LOWER(metadata_json ->> 'objective_id') = LOWER(?)", objective.id.to_s)
         .recent_first
         .limit(30)
 

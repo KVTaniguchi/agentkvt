@@ -31,10 +31,11 @@ public func makeMultiStepSearchTool(apiKey: String? = nil) -> ToolRegistry.Tool 
             required: ["steps_json"]
         ),
         handler: { args in
-            guard let stepsJson = args["steps_json"] as? String,
-                  let data = stepsJson.data(using: .utf8),
-                  let rawSteps = try? JSONSerialization.jsonObject(with: data) as? [[String: String]] else {
-                return "Error: steps_json must be a valid JSON array of step objects."
+            guard let stepsJson = args["steps_json"] as? String else {
+                return "Error: steps_json is required."
+            }
+            guard let rawSteps = parseStepObjects(from: stepsJson), !rawSteps.isEmpty else {
+                return "Error: steps_json must be a JSON array of step objects (type/query/url). Strip markdown fences if present."
             }
 
             let steps = Array(rawSteps.prefix(5))
@@ -89,4 +90,55 @@ public func makeMultiStepSearchTool(apiKey: String? = nil) -> ToolRegistry.Tool 
 private func cap(_ string: String, chars: Int) -> String {
     guard string.count > chars else { return string }
     return String(string.prefix(chars)) + "\n\n[Truncated for context.]"
+}
+
+/// Strips ```json fences and parses a JSON array of objects into string dictionaries (values coerced to strings).
+private func parseStepObjects(from stepsJson: String) -> [[String: String]]? {
+    let stripped = stripMarkdownCodeFences(stepsJson.trimmingCharacters(in: .whitespacesAndNewlines))
+    guard let data = stripped.data(using: .utf8) else { return nil }
+    guard let top = try? JSONSerialization.jsonObject(with: data) else { return nil }
+    let objects: [[String: Any]]
+    if let arr = top as? [[String: Any]] {
+        objects = arr
+    } else if let single = top as? [String: Any] {
+        objects = [single]
+    } else {
+        return nil
+    }
+    return objects.map(stringifyStepDictionary)
+}
+
+private func stripMarkdownCodeFences(_ raw: String) -> String {
+    let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard trimmed.hasPrefix("```") else { return trimmed }
+    let lines = trimmed.split(separator: "\n", omittingEmptySubsequences: false)
+    guard lines.count >= 3 else { return trimmed }
+    return lines.dropFirst().dropLast().joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+}
+
+private func stringifyStepDictionary(_ dict: [String: Any]) -> [String: String] {
+    var out: [String: String] = [:]
+    for (key, value) in dict {
+        switch value {
+        case let str as String:
+            out[key] = str
+        case let num as NSNumber:
+            out[key] = num.stringValue
+        case let bool as Bool:
+            out[key] = bool ? "true" : "false"
+        case let sub as [String: Any]:
+            if let d = try? JSONSerialization.data(withJSONObject: sub),
+               let s = String(data: d, encoding: .utf8) {
+                out[key] = s
+            }
+        case let sub as [Any]:
+            if let d = try? JSONSerialization.data(withJSONObject: sub),
+               let s = String(data: d, encoding: .utf8) {
+                out[key] = s
+            }
+        default:
+            break
+        }
+    }
+    return out
 }
