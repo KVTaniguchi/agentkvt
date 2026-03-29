@@ -104,6 +104,26 @@ class V1AgentResearchSnapshotsTest < ActionDispatch::IntegrationTest
     assert_equal "in_progress", @task.reload.status
   end
 
+  test "rejects raw tool-call JSON as snapshot value" do
+    junk = '{"tool_calls":[{"name":"multi_step_search","arguments":{"steps_json":"[]"}}]}'
+
+    post "/v1/agent/objectives/#{@objective.id}/research_snapshots",
+         params: { research_snapshot: { key: "bad", value: junk } },
+         as: :json, headers: agent_headers
+
+    assert_response :unprocessable_entity
+    body = JSON.parse(response.body)
+    assert_match(/plain-language|tool-call/i, body["error"].to_s)
+  end
+
+  test "allows non-tool JSON object values" do
+    post "/v1/agent/objectives/#{@objective.id}/research_snapshots",
+         params: { research_snapshot: { key: "structured_note", value: '{"hotel":"Grand","nightly":189}' } },
+         as: :json, headers: agent_headers
+
+    assert_response :created
+  end
+
   # ── auth / isolation ────────────────────────────────────────────────────────
 
   test "requires valid bearer token" do

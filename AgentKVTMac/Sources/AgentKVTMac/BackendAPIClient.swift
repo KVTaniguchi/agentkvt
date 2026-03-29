@@ -279,6 +279,11 @@ public actor BackendAPIClient {
         value: String,
         markTaskCompleted: Bool? = nil
     ) async throws -> BackendResearchSnapshot {
+        if ObjectiveResearchSnapshotPayload.looksLikeRawToolJSON(value) {
+            throw BackendAPIError.invalidPayload(
+                "Refusing to send raw tool-call JSON as snapshot value (matches server validation)."
+            )
+        }
         let path = "v1/agent/objectives/\(objectiveId.uuidString)/research_snapshots"
         var queryItems: [URLQueryItem] = []
         if let taskId {

@@ -245,7 +245,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             heartbeatTask.cancel()
 
             if claimed.workType == Constants.synthesisType, let backendClient {
-                if Self.looksLikeRawToolPayload(result) {
+                if ObjectiveResearchSnapshotPayload.looksLikeRawToolJSON(result) {
                     try blockWorkUnit(
                         claimed.workUnitId,
                         error: "Model returned tool-call JSON instead of a final summary; refusing to mark complete."
@@ -684,17 +684,6 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             activePhaseHint: unit.activePhaseHint,
             payload: payload
         )
-    }
-
-    /// True when the model leaked a JSON tool payload as plain assistant text (should not be stored as a final summary).
-    private static func looksLikeRawToolPayload(_ text: String) -> Bool {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.hasPrefix("{"),
-              let data = trimmed.data(using: .utf8),
-              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              obj["tool_calls"] != nil
-        else { return false }
-        return true
     }
 
     private func completeWorkUnit(_ workUnitId: UUID, summary: String) throws {

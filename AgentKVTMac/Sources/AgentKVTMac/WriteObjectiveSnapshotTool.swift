@@ -32,7 +32,7 @@ public func makeWriteObjectiveSnapshotTool(backendClient: BackendAPIClient) -> T
                 ),
                 "value": .init(
                     type: "string",
-                    description: "The newly observed value (price, text, count, etc.)"
+                    description: "Plain-language research finding or metric. Do not paste tool-call JSON or multi_step_search argument blobs."
                 ),
                 "mark_task_completed": .init(
                     type: "boolean",
@@ -51,6 +51,10 @@ public func makeWriteObjectiveSnapshotTool(backendClient: BackendAPIClient) -> T
 
             let taskId: UUID? = (args["task_id"] as? String).flatMap { UUID(uuidString: $0) }
             let markTaskCompleted = args["mark_task_completed"] as? Bool
+
+            if let msg = ObjectiveResearchSnapshotPayload.clientRejectionMessageIfInvalid(value) {
+                return "Error: \(msg)"
+            }
 
             do {
                 let snapshot = try await backendClient.writeResearchSnapshot(
