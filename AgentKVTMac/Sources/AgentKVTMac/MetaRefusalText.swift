@@ -18,4 +18,14 @@ enum MetaRefusalText {
         ]
         return needles.contains { t.contains($0) }
     }
+
+    /// True when the model output tool-call structures as plain text instead of using the tool API.
+    /// Llama 4 / llama3.2 sometimes emits {"tool_calls": [...]} as literal response text.
+    static func looksLikeRawToolCallOutput(_ text: String) -> Bool {
+        text.contains("\"tool_calls\"") && (text.contains("\"name\"") || text.contains("\"function\""))
+    }
+
+    static func isInvalidResearchOutput(_ text: String) -> Bool {
+        isLikelyRefusal(text) || looksLikeRawToolCallOutput(text)
+    }
 }

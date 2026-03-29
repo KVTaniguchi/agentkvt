@@ -265,6 +265,26 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             let result = try await missionRunner.run(request)
             heartbeatTask.cancel()
 
+            // Block research work units whose final text is raw tool-call JSON (model used text
+            // output instead of the tool API). Blocked units are skipped by waitForResearchToSettle
+            // so synthesis can still proceed with whatever real research completed.
+            if claimed.workType == Constants.researchType && MetaRefusalText.looksLikeRawToolCallOutput(result) {
+                try blockWorkUnit(
+                    claimed.workUnitId,
+                    error: "Research output was raw tool-call JSON syntax instead of prose findings."
+                )
+                await logEvent(
+                    phase: "error",
+                    content: "Research work unit blocked: model wrote tool-call JSON as text instead of using tool API.",
+                    objectiveId: claimed.objectiveId,
+                    taskId: claimed.taskId,
+                    workUnitId: claimed.workUnitId,
+                    workerLabel: slot.label,
+                    missionName: "Objective Worker \(slot.label)"
+                )
+                return
+            }
+
             if claimed.workType == Constants.synthesisType, let backendClient {
                 if ObjectiveResearchSnapshotPayload.clientRejectionMessageIfInvalid(result) != nil {
                     try blockWorkUnit(

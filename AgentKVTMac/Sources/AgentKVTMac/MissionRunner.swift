@@ -183,10 +183,10 @@ public final class MissionRunner: @unchecked Sendable {
                     toolTranscript: toolTranscript
                 )
                 if shouldRetryObjectiveBoardMission(request: request, firstOutcome: first) {
-                    let nudge = userMessage + """
+                    let nudge = userMessage + “””
 
-                    RETRY (mandatory): Your previous answer looked like a generic chat disclaimer or ignored tools. Call read_objective_snapshot first, then multi_step_search and/or write_objective_snapshot. Do not reply with “I don’t have an objective” or similar.
-                    """
+                    RETRY (mandatory): Your previous response was invalid — either a generic disclaimer or raw JSON tool-call syntax written as text. You MUST use the tool API to call tools, not write {\”tool_calls\”:[...]} in your reply. Call read_objective_snapshot first via the tool API, then multi_step_search and/or write_objective_snapshot via the tool API. Do not write JSON in your response text.
+                    “””
                     first = try await runLoop(
                         request: request,
                         allowedToolIds: allowedTools,
@@ -265,11 +265,12 @@ public final class MissionRunner: @unchecked Sendable {
         try await run(Request(mission))
     }
 
-    /// One retry for objective-board missions when the model returns refusal boilerplate without using tools (common with local Llama + tool calls).
+    /// One retry for objective-board missions when the model returns refusal boilerplate or raw
+    /// tool-call JSON as text instead of using the tool API (common with local Llama models).
     private func shouldRetryObjectiveBoardMission(request: Request, firstOutcome: String) -> Bool {
         guard request.executionMetadata?.objectiveId != nil else { return false }
         guard request.allowedToolIds.contains("write_objective_snapshot") else { return false }
-        return MetaRefusalText.isLikelyRefusal(firstOutcome)
+        return MetaRefusalText.isInvalidResearchOutput(firstOutcome)
     }
 
     private func missionUserMessage(ownerProfileId: UUID?) -> String {
