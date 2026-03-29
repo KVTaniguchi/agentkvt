@@ -262,6 +262,17 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                 serverSnapshotsContext: serverSnapshotsContext,
                 resolvedParentGoal: resolvedParentGoal
             )
+            // Count snapshots before the mission so we can detect whether write_objective_snapshot was called.
+            let preRunSnapshotCount: Int
+            if claimed.workType == Constants.researchType, let backendClient {
+                let snaps = try? await backendClient.fetchResearchSnapshots(
+                    objectiveId: claimed.objectiveId,
+                    taskId: claimed.taskId
+                )
+                preRunSnapshotCount = snaps?.count ?? 0
+            } else {
+                preRunSnapshotCount = 0
+            }
             let result = try await missionRunner.run(request)
             heartbeatTask.cancel()
 
@@ -283,6 +294,39 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                     missionName: "Objective Worker \(slot.label)"
                 )
                 return
+            }
+
+            // Research fallback: if the model produced valid prose but never called write_objective_snapshot,
+            // force-write the result so synthesis always has real data in Postgres.
+            if claimed.workType == Constants.researchType,
+               let backendClient,
+               !MetaRefusalText.isInvalidResearchOutput(result)
+            {
+                let postRunSnaps = try? await backendClient.fetchResearchSnapshots(
+                    objectiveId: claimed.objectiveId,
+                    taskId: claimed.taskId
+                )
+                let postRunCount = postRunSnaps?.count ?? 0
+                if postRunCount <= preRunSnapshotCount {
+                    let shortId = claimed.workUnitId.uuidString.prefix(8).lowercased()
+                    let key = "research_\(shortId)"
+                    try? await backendClient.writeResearchSnapshot(
+                        objectiveId: claimed.objectiveId,
+                        taskId: claimed.taskId,
+                        key: key,
+                        value: String(result.prefix(4000)),
+                        markTaskCompleted: false
+                    )
+                    await logEvent(
+                        phase: "objective_supervisor",
+                        content: "Research fallback: force-wrote prose findings to Postgres (model did not call write_objective_snapshot).",
+                        objectiveId: claimed.objectiveId,
+                        taskId: claimed.taskId,
+                        workUnitId: claimed.workUnitId,
+                        workerLabel: slot.label,
+                        missionName: "Objective Worker \(slot.label)"
+                    )
+                }
             }
 
             if claimed.workType == Constants.synthesisType, let backendClient {
