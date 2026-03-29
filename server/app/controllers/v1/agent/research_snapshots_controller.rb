@@ -6,6 +6,11 @@ module V1
       def create
         objective = current_workspace.objectives.find(params[:objective_id])
         task_id = params[:task_id].presence
+        mark_task_completed = if params.key?(:mark_task_completed)
+          ActiveModel::Type::Boolean.new.cast(params[:mark_task_completed])
+        else
+          task_id.present?
+        end
 
         snapshot = objective.research_snapshots.find_or_initialize_by(key: snapshot_params[:key])
 
@@ -27,7 +32,7 @@ module V1
         snapshot.save!
 
         # Update parent task status if a task_id was supplied
-        if task_id
+        if task_id && mark_task_completed
           Task.find_by(id: task_id)&.update!(
             status: "completed",
             result_summary: snapshot_params[:value].truncate(500)

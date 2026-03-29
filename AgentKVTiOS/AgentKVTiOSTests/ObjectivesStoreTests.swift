@@ -32,6 +32,7 @@ private final class MockObjectivesSync: ObjectivesRemoteSyncing, @unchecked Send
     var isEnabled = true
     var objectives: [IOSBackendObjective] = []
     var updateLog: [(UUID, String, String, Int)] = []
+    var runNowIds: [UUID] = []
     var deletedIds: [UUID] = []
 
     func fetchObjectivesRemote() async throws -> [IOSBackendObjective] {
@@ -49,6 +50,11 @@ private final class MockObjectivesSync: ObjectivesRemoteSyncing, @unchecked Send
     func updateObjectiveRemote(id: UUID, goal: String, status: String, priority: Int) async throws -> IOSBackendObjective {
         updateLog.append((id, goal, status, priority))
         return try makeObjective(id: id, goal: goal, status: status, priority: priority)
+    }
+
+    func runObjectiveNowRemote(id: UUID) async throws -> IOSBackendObjective {
+        runNowIds.append(id)
+        return try makeObjective(id: id, goal: "Run now", status: "active", priority: 0)
     }
 
     func deleteObjectiveRemote(id: UUID) async throws {
@@ -104,5 +110,24 @@ struct ObjectivesStoreTests {
         #expect(mock.deletedIds == [a])
         #expect(store.objectives.count == 1)
         #expect(store.objectives[0].id == b)
+    }
+
+    @Test("runObjectiveNow updates the matching row and records the trigger")
+    @MainActor
+    func runNowUpdatesLocalRow() async throws {
+        let id = UUID(uuidString: "cccccccc-cccc-cccc-cccc-cccccccccccc")!
+        let original = try makeObjective(id: id, goal: "Old", status: "pending", priority: 0)
+        let mock = MockObjectivesSync()
+        mock.objectives = [original]
+
+        let store = ObjectivesStore(sync: mock)
+        await store.refresh()
+
+        let updated = try await store.runObjectiveNow(id: id)
+
+        #expect(mock.runNowIds == [id])
+        #expect(updated.status == "active")
+        #expect(store.objectives[0].status == "active")
+        #expect(store.objectives[0].goal == "Run now")
     }
 }

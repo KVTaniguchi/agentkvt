@@ -6,6 +6,25 @@ import SwiftData
 /// then writes outcome to AgentLog. ActionItems are written by tools (e.g. write_action_item).
 public final class MissionRunner: @unchecked Sendable {
     public struct Request: Sendable {
+        public struct ExecutionMetadata: Sendable {
+            public let objectiveId: UUID?
+            public let taskId: UUID?
+            public let workUnitId: UUID?
+            public let workerLabel: String?
+
+            public init(
+                objectiveId: UUID? = nil,
+                taskId: UUID? = nil,
+                workUnitId: UUID? = nil,
+                workerLabel: String? = nil
+            ) {
+                self.objectiveId = objectiveId
+                self.taskId = taskId
+                self.workUnitId = workUnitId
+                self.workerLabel = workerLabel
+            }
+        }
+
         public let id: UUID
         public let missionName: String
         public let systemPrompt: String
@@ -14,6 +33,7 @@ public final class MissionRunner: @unchecked Sendable {
         public let ownerProfileId: UUID?
         public let isEnabled: Bool
         public let lastRunAt: Date?
+        public let executionMetadata: ExecutionMetadata?
         /// Summaries of unhandled actions already created by this mission. Injected into the
         /// system prompt so the LLM avoids creating duplicate suggestions on repeated runs.
         public let existingActionItemSummaries: [String]
@@ -27,6 +47,7 @@ public final class MissionRunner: @unchecked Sendable {
             ownerProfileId: UUID?,
             isEnabled: Bool = true,
             lastRunAt: Date? = nil,
+            executionMetadata: ExecutionMetadata? = nil,
             existingActionItemSummaries: [String] = []
         ) {
             self.id = id
@@ -37,6 +58,7 @@ public final class MissionRunner: @unchecked Sendable {
             self.ownerProfileId = ownerProfileId
             self.isEnabled = isEnabled
             self.lastRunAt = lastRunAt
+            self.executionMetadata = executionMetadata
             self.existingActionItemSummaries = existingActionItemSummaries
         }
 
@@ -63,6 +85,7 @@ public final class MissionRunner: @unchecked Sendable {
                 ownerProfileId: ownerProfileId,
                 isEnabled: isEnabled,
                 lastRunAt: lastRunAt,
+                executionMetadata: executionMetadata,
                 existingActionItemSummaries: existingActionItemSummaries
             )
         }
@@ -117,7 +140,7 @@ public final class MissionRunner: @unchecked Sendable {
         self.logWriter = logWriter ?? SwiftDataMissionLogWriter(modelContext: modelContext)
     }
 
-    public func run(_ request: Request) async throws {
+    public func run(_ request: Request) async throws -> String {
         let allowedTools = request.allowedToolIds
         let systemPrompt = missionSystemPrompt(
             basePrompt: request.systemPrompt,
@@ -125,54 +148,31 @@ public final class MissionRunner: @unchecked Sendable {
             existingActionItemSummaries: request.existingActionItemSummaries
         )
         let userMessage = missionUserMessage(ownerProfileId: request.ownerProfileId)
-        await logWriter.writeLog(
+        let context = MissionExecutionContext.Context(
             missionId: request.id,
             missionName: request.missionName,
-            phase: "start",
-            content: "Starting mission with \(allowedTools.count) allowed tool(s): \(allowedTools.joined(separator: ", "))",
-            toolName: nil
+            objectiveId: request.executionMetadata?.objectiveId,
+            taskId: request.executionMetadata?.taskId,
+            workUnitId: request.executionMetadata?.workUnitId,
+            workerLabel: request.executionMetadata?.workerLabel
         )
-        let actionItemsCounter = ActionItemCounter()
-        let toolTranscript = ToolTranscriptRecorder()
-        let result: String
-        do {
-            result = try await runLoop(
-                request: request,
-                allowedToolIds: allowedTools,
-                systemPrompt: systemPrompt,
-                userMessage: userMessage,
-                actionItemsCounter: actionItemsCounter,
-                toolTranscript: toolTranscript
-            )
-        } catch {
+        return try await MissionExecutionContext.$current.withValue(context) {
             await logWriter.writeLog(
                 missionId: request.id,
                 missionName: request.missionName,
-                phase: "error",
-                content: "Error: \(error)",
+                phase: "start",
+                content: "Starting mission with \(allowedTools.count) allowed tool(s): \(allowedTools.joined(separator: ", "))",
                 toolName: nil
             )
-            throw error
-        }
-        if allowedTools.contains("write_action_item") && actionItemsCounter.count == 0 {
-            await logWriter.writeLog(
-                missionId: request.id,
-                missionName: request.missionName,
-                phase: "warning",
-                content: "Mission completed without write_action_item. Attempting one recovery pass to create a visible action item for the user.",
-                toolName: nil
-            )
+            let actionItemsCounter = ActionItemCounter()
+            let toolTranscript = ToolTranscriptRecorder()
+            let result: String
             do {
-                _ = try await runLoop(
+                result = try await runLoop(
                     request: request,
-                    allowedToolIds: ["write_action_item"],
-                    systemPrompt: recoverySystemPrompt(for: request.missionName),
-                    userMessage: recoveryUserMessage(
-                        request: request,
-                        originalOutcome: result,
-                        toolTranscript: toolTranscript.entries
-                    ),
-                    maxRounds: 3,
+                    allowedToolIds: allowedTools,
+                    systemPrompt: systemPrompt,
+                    userMessage: userMessage,
                     actionItemsCounter: actionItemsCounter,
                     toolTranscript: toolTranscript
                 )
@@ -180,32 +180,66 @@ public final class MissionRunner: @unchecked Sendable {
                 await logWriter.writeLog(
                     missionId: request.id,
                     missionName: request.missionName,
+                    phase: "error",
+                    content: "Error: \(error)",
+                    toolName: nil
+                )
+                throw error
+            }
+            if allowedTools.contains("write_action_item") && actionItemsCounter.count == 0 {
+                await logWriter.writeLog(
+                    missionId: request.id,
+                    missionName: request.missionName,
                     phase: "warning",
-                    content: "Recovery pass failed while trying to create an action item: \(error)",
+                    content: "Mission completed without write_action_item. Attempting one recovery pass to create a visible action item for the user.",
+                    toolName: nil
+                )
+                do {
+                    _ = try await runLoop(
+                        request: request,
+                        allowedToolIds: ["write_action_item"],
+                        systemPrompt: recoverySystemPrompt(for: request.missionName),
+                        userMessage: recoveryUserMessage(
+                            request: request,
+                            originalOutcome: result,
+                            toolTranscript: toolTranscript.entries
+                        ),
+                        maxRounds: 3,
+                        actionItemsCounter: actionItemsCounter,
+                        toolTranscript: toolTranscript
+                    )
+                } catch {
+                    await logWriter.writeLog(
+                        missionId: request.id,
+                        missionName: request.missionName,
+                        phase: "warning",
+                        content: "Recovery pass failed while trying to create an action item: \(error)",
+                        toolName: nil
+                    )
+                }
+            }
+            if allowedTools.contains("write_action_item") && actionItemsCounter.count == 0 {
+                await logWriter.writeLog(
+                    missionId: request.id,
+                    missionName: request.missionName,
+                    phase: "warning",
+                    content: "Mission completed but write_action_item was never called, even after recovery. No action items were created and the user will see no output.",
                     toolName: nil
                 )
             }
-        }
-        if allowedTools.contains("write_action_item") && actionItemsCounter.count == 0 {
             await logWriter.writeLog(
                 missionId: request.id,
                 missionName: request.missionName,
-                phase: "warning",
-                content: "Mission completed but write_action_item was never called, even after recovery. No action items were created and the user will see no output.",
+                phase: "outcome",
+                content: result,
                 toolName: nil
             )
+            return result
         }
-        await logWriter.writeLog(
-            missionId: request.id,
-            missionName: request.missionName,
-            phase: "outcome",
-            content: result,
-            toolName: nil
-        )
     }
 
     /// Run one mission and log the outcome.
-    public func run(_ mission: MissionDefinition) async throws {
+    public func run(_ mission: MissionDefinition) async throws -> String {
         try await run(Request(mission))
     }
 
@@ -250,45 +284,42 @@ public final class MissionRunner: @unchecked Sendable {
             allowedToolIds: allowedToolIds,
             toolBatchExecutionPolicy: missionToolBatchExecutionPolicy()
         )
-        let context = MissionExecutionContext.Context(missionId: request.id, missionName: request.missionName)
-        return try await MissionExecutionContext.$current.withValue(context) {
-            try await loop.run(systemPrompt: systemPrompt, userMessage: userMessage, maxRounds: maxRounds) { event in
-                let phase: String
-                let content: String
-                let toolName: String?
-                switch event {
-                case .assistantResponse(let responseContent, let toolCalls):
-                    phase = "assistant"
-                    content = self.assistantResponseContent(responseContent, toolCallCount: toolCalls.count)
-                    toolName = nil
-                case .toolCallRequested(let name, let arguments):
-                    phase = "tool_call"
-                    content = arguments
-                    toolName = name
-                    toolTranscript.append(self.toolTranscriptLine(prefix: "tool_call", name: name, content: arguments))
-                case .toolCallCompleted(let name, let toolResult, let wasDeferred):
-                    phase = "tool_result"
-                    content = toolResult
-                    toolName = name
-                    toolTranscript.append(self.toolTranscriptLine(prefix: "tool_result", name: name, content: toolResult))
-                    if name == "write_action_item" && !wasDeferred { actionItemsCounter.count += 1 }
-                case .finalResponse(let responseContent):
-                    phase = "assistant_final"
-                    content = responseContent
-                    toolName = nil
-                case .maxRoundsReached:
-                    phase = "warning"
-                    content = "Agent loop reached max rounds before producing a final response."
-                    toolName = nil
-                }
-                await self.logWriter.writeLog(
-                    missionId: request.id,
-                    missionName: request.missionName,
-                    phase: phase,
-                    content: content,
-                    toolName: toolName
-                )
+        return try await loop.run(systemPrompt: systemPrompt, userMessage: userMessage, maxRounds: maxRounds) { event in
+            let phase: String
+            let content: String
+            let toolName: String?
+            switch event {
+            case .assistantResponse(let responseContent, let toolCalls):
+                phase = "assistant"
+                content = self.assistantResponseContent(responseContent, toolCallCount: toolCalls.count)
+                toolName = nil
+            case .toolCallRequested(let name, let arguments):
+                phase = "tool_call"
+                content = arguments
+                toolName = name
+                toolTranscript.append(self.toolTranscriptLine(prefix: "tool_call", name: name, content: arguments))
+            case .toolCallCompleted(let name, let toolResult, let wasDeferred):
+                phase = "tool_result"
+                content = toolResult
+                toolName = name
+                toolTranscript.append(self.toolTranscriptLine(prefix: "tool_result", name: name, content: toolResult))
+                if name == "write_action_item" && !wasDeferred { actionItemsCounter.count += 1 }
+            case .finalResponse(let responseContent):
+                phase = "assistant_final"
+                content = responseContent
+                toolName = nil
+            case .maxRoundsReached:
+                phase = "warning"
+                content = "Agent loop reached max rounds before producing a final response."
+                toolName = nil
             }
+            await self.logWriter.writeLog(
+                missionId: request.id,
+                missionName: request.missionName,
+                phase: phase,
+                content: content,
+                toolName: toolName
+            )
         }
     }
 

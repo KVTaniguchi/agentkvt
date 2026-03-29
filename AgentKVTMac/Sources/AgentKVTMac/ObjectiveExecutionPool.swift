@@ -1,0 +1,829 @@
+import Foundation
+import ManagerCore
+import SwiftData
+
+private struct ObjectiveWorkerSlot: Sendable {
+    let id: UUID
+    let label: String
+}
+
+actor ObjectiveExecutionPool {
+    private let processor: ObjectiveExecutionProcessor
+    private let maxConcurrentWorkers: Int
+
+    private var started = false
+    private var workerTasks: [Task<Void, Never>] = []
+    private var supervisorTaskIds: Set<String> = []
+
+    init(
+        modelContainer: ModelContainer,
+        client: any OllamaClientProtocol,
+        missionRunner: MissionRunner,
+        backendClient: BackendAPIClient?,
+        maxConcurrentWorkers: Int
+    ) {
+        self.processor = ObjectiveExecutionProcessor(
+            modelContainer: modelContainer,
+            client: client,
+            missionRunner: missionRunner,
+            backendClient: backendClient
+        )
+        self.maxConcurrentWorkers = max(1, maxConcurrentWorkers)
+    }
+
+    func start() {
+        guard !started else { return }
+        started = true
+        for index in 0..<maxConcurrentWorkers {
+            let slot = ObjectiveWorkerSlot(id: UUID(), label: "objective-worker-\(index + 1)")
+            let task = Task.detached(priority: .utility) { [processor] in
+                await processor.runWorkerLoop(slot: slot)
+            }
+            workerTasks.append(task)
+        }
+    }
+
+    func enqueue(_ payload: TaskSearchPayload) {
+        start()
+        guard supervisorTaskIds.insert(payload.taskId).inserted else { return }
+
+        Task.detached(priority: .utility) { [processor, taskId = payload.taskId] in
+            await processor.superviseObjective(payload: payload)
+            await self.finishSupervision(taskId: taskId)
+        }
+    }
+
+    private func finishSupervision(taskId: String) {
+        supervisorTaskIds.remove(taskId)
+    }
+}
+
+private final class ObjectiveExecutionProcessor: @unchecked Sendable {
+    private enum Constants {
+        static let objectiveCategory = "objective"
+        static let rootType = "objective_root"
+        static let researchType = "objective_research"
+        static let synthesisType = "objective_synthesis"
+    }
+
+    private struct WorkPlan: Codable, Sendable {
+        let workUnits: [String]
+    }
+
+    private struct ObjectiveWorkPayload: Codable, Sendable {
+        let objectiveId: UUID
+        let taskId: UUID
+        let rootTaskDescription: String
+        let workDescription: String
+        let planningRound: Int
+        let workType: String
+        var resultSummary: String?
+        var lastError: String?
+    }
+
+    private struct ClaimedWork: Sendable {
+        let workUnitId: UUID
+        let objectiveId: UUID
+        let taskId: UUID
+        let title: String
+        let workType: String
+        let activePhaseHint: String?
+        let payload: ObjectiveWorkPayload
+    }
+
+    private let modelContainer: ModelContainer
+    private let client: any OllamaClientProtocol
+    private let missionRunner: MissionRunner
+    private let backendClient: BackendAPIClient?
+
+    init(
+        modelContainer: ModelContainer,
+        client: any OllamaClientProtocol,
+        missionRunner: MissionRunner,
+        backendClient: BackendAPIClient?
+    ) {
+        self.modelContainer = modelContainer
+        self.client = client
+        self.missionRunner = missionRunner
+        self.backendClient = backendClient
+    }
+
+    func superviseObjective(payload: TaskSearchPayload) async {
+        guard let objectiveId = UUID(uuidString: payload.objectiveId),
+              let taskId = UUID(uuidString: payload.taskId) else {
+            return
+        }
+
+        do {
+            let root = try ensureRootWorkUnit(
+                objectiveId: objectiveId,
+                taskId: taskId,
+                title: payload.description
+            )
+            try updateRootState(rootId: root.id, state: WorkUnitState.inProgress.rawValue, phase: "decomposing")
+            await logEvent(
+                phase: "objective_supervisor",
+                content: "Supervisor started board work for task: \(payload.description)",
+                objectiveId: objectiveId,
+                taskId: taskId,
+                missionName: "Objective Supervisor"
+            )
+
+            let initialUnits = await createResearchRound(
+                objectiveId: objectiveId,
+                taskId: taskId,
+                rootTaskDescription: payload.description,
+                planningRound: 1,
+                completedSummaries: []
+            )
+            if initialUnits == 0 {
+                _ = try createWorkUnit(
+                    objectiveId: objectiveId,
+                    taskId: taskId,
+                    title: payload.description,
+                    workType: Constants.researchType,
+                    activePhaseHint: "research",
+                    planningRound: 1,
+                    rootTaskDescription: payload.description,
+                    priority: 1.0
+                )
+            }
+            try await waitForResearchToSettle(objectiveId: objectiveId, taskId: taskId)
+
+            let roundOneSummaries = try completedSummaries(objectiveId: objectiveId, taskId: taskId)
+            let followUpUnits = await createResearchRound(
+                objectiveId: objectiveId,
+                taskId: taskId,
+                rootTaskDescription: payload.description,
+                planningRound: 2,
+                completedSummaries: roundOneSummaries
+            )
+            if followUpUnits > 0 {
+                try updateRootState(rootId: root.id, state: WorkUnitState.inProgress.rawValue, phase: "follow_up")
+                try await waitForResearchToSettle(objectiveId: objectiveId, taskId: taskId)
+            }
+
+            _ = try ensureSynthesisWorkUnit(
+                objectiveId: objectiveId,
+                taskId: taskId,
+                rootTaskDescription: payload.description
+            )
+            try updateRootState(rootId: root.id, state: WorkUnitState.inProgress.rawValue, phase: "synthesizing")
+            try await waitForSynthesisToSettle(objectiveId: objectiveId, taskId: taskId)
+            try updateRootState(rootId: root.id, state: WorkUnitState.done.rawValue, phase: "complete")
+
+            await logEvent(
+                phase: "objective_supervisor",
+                content: "Objective board completed for task: \(payload.description)",
+                objectiveId: objectiveId,
+                taskId: taskId,
+                missionName: "Objective Supervisor"
+            )
+        } catch {
+            await logEvent(
+                phase: "error",
+                content: "Objective supervisor failed: \(error)",
+                objectiveId: objectiveId,
+                taskId: taskId,
+                missionName: "Objective Supervisor"
+            )
+        }
+    }
+
+    func runWorkerLoop(slot: ObjectiveWorkerSlot) async {
+        while !Task.isCancelled {
+            do {
+                if let claimed = try claimNextWorkUnit(slot: slot) {
+                    try await execute(claimed: claimed, slot: slot)
+                } else {
+                    try? await Task.sleep(for: .seconds(1))
+                }
+            } catch {
+                await logEvent(
+                    phase: "error",
+                    content: "Worker loop failed: \(error)",
+                    objectiveId: nil,
+                    taskId: nil,
+                    workUnitId: nil,
+                    workerLabel: slot.label,
+                    missionName: "Objective Worker \(slot.label)"
+                )
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
+    }
+
+    private func execute(claimed: ClaimedWork, slot: ObjectiveWorkerSlot) async throws {
+        await logEvent(
+            phase: "worker_claim",
+            content: "Claimed \(claimed.workType) work unit: \(claimed.title)",
+            objectiveId: claimed.objectiveId,
+            taskId: claimed.taskId,
+            workUnitId: claimed.workUnitId,
+            workerLabel: slot.label,
+            missionName: "Objective Worker \(slot.label)"
+        )
+
+        let heartbeatTask = Task.detached(priority: .utility) { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(10))
+                guard let self else { return }
+                try? self.touchWorkUnit(
+                    workUnitId: claimed.workUnitId,
+                    workerId: slot.id,
+                    workerLabel: slot.label,
+                    phase: claimed.activePhaseHint ?? "working"
+                )
+            }
+        }
+
+        do {
+            let request = buildMissionRequest(for: claimed, workerLabel: slot.label)
+            let result = try await missionRunner.run(request)
+            heartbeatTask.cancel()
+            try completeWorkUnit(claimed.workUnitId, summary: result)
+
+            if claimed.workType == Constants.synthesisType, let backendClient {
+                _ = try? await backendClient.writeResearchSnapshot(
+                    objectiveId: claimed.objectiveId,
+                    taskId: claimed.taskId,
+                    key: finalSummaryKey(taskId: claimed.taskId),
+                    value: String(result.prefix(500)),
+                    markTaskCompleted: true
+                )
+            }
+
+            await logEvent(
+                phase: "worker_complete",
+                content: "Completed \(claimed.workType) work unit: \(claimed.title)",
+                objectiveId: claimed.objectiveId,
+                taskId: claimed.taskId,
+                workUnitId: claimed.workUnitId,
+                workerLabel: slot.label,
+                missionName: "Objective Worker \(slot.label)"
+            )
+        } catch {
+            heartbeatTask.cancel()
+            try blockWorkUnit(claimed.workUnitId, error: String(describing: error))
+            await logEvent(
+                phase: "error",
+                content: "Work unit failed: \(error)",
+                objectiveId: claimed.objectiveId,
+                taskId: claimed.taskId,
+                workUnitId: claimed.workUnitId,
+                workerLabel: slot.label,
+                missionName: "Objective Worker \(slot.label)"
+            )
+            throw error
+        }
+    }
+
+    private func buildMissionRequest(for claimed: ClaimedWork, workerLabel: String) -> MissionRunner.Request {
+        let systemPrompt: String
+        switch claimed.workType {
+        case Constants.synthesisType:
+            let completedSummary = (try? completedSummaries(objectiveId: claimed.objectiveId, taskId: claimed.taskId)) ?? []
+            let workSummary = completedSummary.isEmpty
+                ? "No completed research work units were summarized."
+                : completedSummary.map { "- \($0)" }.joined(separator: "\n")
+            systemPrompt = """
+            You are \(workerLabel), the synthesis agent for one objective task.
+
+            Objective task: \(claimed.payload.rootTaskDescription)
+            Synthesis work unit: \(claimed.payload.workDescription)
+            Objective ID: \(claimed.objectiveId.uuidString)
+            Task ID: \(claimed.taskId.uuidString)
+            Work Unit ID: \(claimed.workUnitId.uuidString)
+
+            Completed work so far:
+            \(workSummary)
+
+            Instructions:
+            1. Use multi_step_search only if you need one last current fact to close a gap.
+            2. Write at least one final objective snapshot with:
+               - objective_id: \(claimed.objectiveId.uuidString)
+               - task_id: \(claimed.taskId.uuidString)
+               - key: \(finalSummaryKey(taskId: claimed.taskId))
+               - value: a concise synthesis of the best guidance so far
+               - mark_task_completed: true
+            3. You may write additional supporting snapshots before the final one.
+            4. Finish with a short, plain-language summary of what the team found.
+            """
+        default:
+            systemPrompt = """
+            You are \(workerLabel), one member of a parallel objective research team.
+
+            Objective task: \(claimed.payload.rootTaskDescription)
+            Focused work unit: \(claimed.payload.workDescription)
+            Objective ID: \(claimed.objectiveId.uuidString)
+            Task ID: \(claimed.taskId.uuidString)
+            Work Unit ID: \(claimed.workUnitId.uuidString)
+
+            Instructions:
+            1. Use multi_step_search to research this focused subproblem thoroughly.
+            2. Write 1-3 objective snapshots that capture durable findings from this work unit.
+            3. Every snapshot from this work unit must include:
+               - objective_id: \(claimed.objectiveId.uuidString)
+               - task_id: \(claimed.taskId.uuidString)
+               - mark_task_completed: false
+            4. Do not mark the overall task complete from this work unit.
+            5. Finish with a short summary of the strongest findings you gathered.
+            """
+        }
+
+        return MissionRunner.Request(
+            id: claimed.workUnitId,
+            missionName: "Objective Work Unit: \(claimed.title.prefix(60))",
+            systemPrompt: systemPrompt,
+            triggerSchedule: "objective_board",
+            allowedToolIds: ["multi_step_search", "write_objective_snapshot"],
+            ownerProfileId: nil,
+            isEnabled: true,
+            lastRunAt: nil,
+            executionMetadata: .init(
+                objectiveId: claimed.objectiveId,
+                taskId: claimed.taskId,
+                workUnitId: claimed.workUnitId,
+                workerLabel: workerLabel
+            )
+        )
+    }
+
+    private func createResearchRound(
+        objectiveId: UUID,
+        taskId: UUID,
+        rootTaskDescription: String,
+        planningRound: Int,
+        completedSummaries: [String]
+    ) async -> Int {
+        let planned = await planResearchWorkUnits(
+            rootTaskDescription: rootTaskDescription,
+            completedSummaries: completedSummaries,
+            planningRound: planningRound
+        )
+
+        var created = 0
+        for title in planned {
+            do {
+                _ = try createWorkUnit(
+                    objectiveId: objectiveId,
+                    taskId: taskId,
+                    title: title,
+                    workType: Constants.researchType,
+                    activePhaseHint: "research_round_\(planningRound)",
+                    planningRound: planningRound,
+                    rootTaskDescription: rootTaskDescription,
+                    priority: planningRound == 1 ? 1.0 : 0.9
+                )
+                created += 1
+            } catch {
+                await logEvent(
+                    phase: "error",
+                    content: "Failed to create work unit '\(title)': \(error)",
+                    objectiveId: objectiveId,
+                    taskId: taskId,
+                    missionName: "Objective Supervisor"
+                )
+            }
+        }
+
+        if created > 0 {
+            await logEvent(
+                phase: "objective_supervisor",
+                content: "Queued \(created) research work unit(s) for round \(planningRound).",
+                objectiveId: objectiveId,
+                taskId: taskId,
+                missionName: "Objective Supervisor"
+            )
+        }
+
+        return created
+    }
+
+    private func planResearchWorkUnits(
+        rootTaskDescription: String,
+        completedSummaries: [String],
+        planningRound: Int
+    ) async -> [String] {
+        let summaries = completedSummaries.isEmpty
+            ? "None yet."
+            : completedSummaries.map { "- \($0)" }.joined(separator: "\n")
+        let systemPrompt = """
+        You decompose one objective task into parallel stigmergic board work units.
+        Respond with ONLY valid JSON in one of these shapes:
+        {"work_units":["Task A","Task B"]}
+        or
+        ["Task A","Task B"]
+
+        Rules:
+        - Return 0 to 4 work units.
+        - Each work unit must be a concrete research subproblem.
+        - Do not repeat completed work.
+        - Keep each string under 120 characters.
+        """
+        let userPrompt = """
+        Objective task:
+        \(rootTaskDescription)
+
+        Planning round: \(planningRound)
+
+        Already completed work:
+        \(summaries)
+        """
+
+        do {
+            let response = try await client.chat(
+                messages: [
+                    .init(role: "system", content: systemPrompt, toolCalls: nil),
+                    .init(role: "user", content: userPrompt, toolCalls: nil)
+                ],
+                tools: nil
+            )
+            return normalizePlannedWorkUnits(response.content)
+        } catch {
+            return heuristicWorkUnits(from: rootTaskDescription, planningRound: planningRound, completedSummaries: completedSummaries)
+        }
+    }
+
+    private func normalizePlannedWorkUnits(_ raw: String?) -> [String] {
+        guard let raw = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+            return []
+        }
+        let normalized = raw
+            .replacingOccurrences(of: "```json", with: "")
+            .replacingOccurrences(of: "```", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard let data = normalized.data(using: .utf8) else { return [] }
+        if let plan = try? JSONDecoder().decode(WorkPlan.self, from: data) {
+            return sanitizePlannedTitles(plan.workUnits)
+        }
+        if let array = try? JSONDecoder().decode([String].self, from: data) {
+            return sanitizePlannedTitles(array)
+        }
+        return []
+    }
+
+    private func heuristicWorkUnits(
+        from rootTaskDescription: String,
+        planningRound: Int,
+        completedSummaries: [String]
+    ) -> [String] {
+        let base = rootTaskDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !base.isEmpty else { return [] }
+
+        if planningRound == 1 {
+            return sanitizePlannedTitles([
+                "Research logistics and costs for: \(base)",
+                "Identify risks, deadlines, and constraints for: \(base)",
+                "Find the strongest recommendations and alternatives for: \(base)"
+            ])
+        }
+
+        guard !completedSummaries.isEmpty else { return [] }
+        return sanitizePlannedTitles([
+            "Follow up on unresolved gaps or tradeoffs from: \(base)"
+        ])
+    }
+
+    private func sanitizePlannedTitles(_ titles: [String]) -> [String] {
+        var seen: Set<String> = []
+        return titles
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .map { String($0.prefix(120)) }
+            .filter { seen.insert($0.lowercased()).inserted }
+            .prefix(4)
+            .map { $0 }
+    }
+
+    private func ensureRootWorkUnit(objectiveId: UUID, taskId: UUID, title: String) throws -> WorkUnit {
+        let context = freshContext()
+        if let existing = try objectiveWorkUnits(in: context, objectiveId: objectiveId, taskId: taskId)
+            .first(where: { $0.workType == Constants.rootType }) {
+            return existing
+        }
+
+        let payload = ObjectiveWorkPayload(
+            objectiveId: objectiveId,
+            taskId: taskId,
+            rootTaskDescription: title,
+            workDescription: title,
+            planningRound: 0,
+            workType: Constants.rootType,
+            resultSummary: nil,
+            lastError: nil
+        )
+        let root = WorkUnit(
+            title: title,
+            category: Constants.objectiveCategory,
+            objectiveId: objectiveId,
+            sourceTaskId: taskId,
+            workType: Constants.rootType,
+            state: WorkUnitState.pending.rawValue,
+            moundPayload: encodePayload(payload),
+            activePhaseHint: "queued",
+            priority: 1.2,
+            lastHeartbeatAt: Date()
+        )
+        context.insert(root)
+        try context.save()
+        return root
+    }
+
+    private func ensureSynthesisWorkUnit(
+        objectiveId: UUID,
+        taskId: UUID,
+        rootTaskDescription: String
+    ) throws -> WorkUnit {
+        let context = freshContext()
+        if let existing = try objectiveWorkUnits(in: context, objectiveId: objectiveId, taskId: taskId)
+            .first(where: { $0.workType == Constants.synthesisType }) {
+            return existing
+        }
+        let title = "Synthesize findings and close out the task"
+        let payload = ObjectiveWorkPayload(
+            objectiveId: objectiveId,
+            taskId: taskId,
+            rootTaskDescription: rootTaskDescription,
+            workDescription: title,
+            planningRound: 99,
+            workType: Constants.synthesisType,
+            resultSummary: nil,
+            lastError: nil
+        )
+        let workUnit = WorkUnit(
+            title: title,
+            category: Constants.objectiveCategory,
+            objectiveId: objectiveId,
+            sourceTaskId: taskId,
+            workType: Constants.synthesisType,
+            state: WorkUnitState.pending.rawValue,
+            moundPayload: encodePayload(payload),
+            activePhaseHint: "synthesis",
+            priority: 2.0,
+            lastHeartbeatAt: Date()
+        )
+        context.insert(workUnit)
+        try context.save()
+        return workUnit
+    }
+
+    @discardableResult
+    private func createWorkUnit(
+        objectiveId: UUID,
+        taskId: UUID,
+        title: String,
+        workType: String,
+        activePhaseHint: String,
+        planningRound: Int,
+        rootTaskDescription: String,
+        priority: Double
+    ) throws -> WorkUnit {
+        let context = freshContext()
+        let payload = ObjectiveWorkPayload(
+            objectiveId: objectiveId,
+            taskId: taskId,
+            rootTaskDescription: rootTaskDescription,
+            workDescription: title,
+            planningRound: planningRound,
+            workType: workType,
+            resultSummary: nil,
+            lastError: nil
+        )
+        let workUnit = WorkUnit(
+            title: title,
+            category: Constants.objectiveCategory,
+            objectiveId: objectiveId,
+            sourceTaskId: taskId,
+            workType: workType,
+            state: WorkUnitState.pending.rawValue,
+            moundPayload: encodePayload(payload),
+            activePhaseHint: activePhaseHint,
+            priority: priority,
+            lastHeartbeatAt: Date()
+        )
+        context.insert(workUnit)
+        try context.save()
+        return workUnit
+    }
+
+    private func claimNextWorkUnit(slot: ObjectiveWorkerSlot) throws -> ClaimedWork? {
+        let context = freshContext()
+        try requeueExpiredClaims(in: context)
+
+        guard let unit = try objectiveBoardUnits(in: context)
+            .first(where: {
+                $0.workType != Constants.rootType &&
+                $0.state == WorkUnitState.pending.rawValue
+            }) else {
+            return nil
+        }
+
+        unit.state = WorkUnitState.inProgress.rawValue
+        unit.claimedByMissionId = slot.id
+        unit.claimedUntil = Date().addingTimeInterval(90)
+        unit.workerLabel = slot.label
+        unit.lastHeartbeatAt = Date()
+        unit.updatedAt = Date()
+        try context.save()
+
+        let payload = decodePayload(unit.moundPayload) ?? ObjectiveWorkPayload(
+            objectiveId: unit.objectiveId ?? UUID(),
+            taskId: unit.sourceTaskId ?? UUID(),
+            rootTaskDescription: unit.title,
+            workDescription: unit.title,
+            planningRound: 0,
+            workType: unit.workType,
+            resultSummary: nil,
+            lastError: nil
+        )
+        guard let objectiveId = unit.objectiveId, let taskId = unit.sourceTaskId else { return nil }
+        return ClaimedWork(
+            workUnitId: unit.id,
+            objectiveId: objectiveId,
+            taskId: taskId,
+            title: unit.title,
+            workType: unit.workType,
+            activePhaseHint: unit.activePhaseHint,
+            payload: payload
+        )
+    }
+
+    private func completeWorkUnit(_ workUnitId: UUID, summary: String) throws {
+        let context = freshContext()
+        guard let unit = try fetchWorkUnit(workUnitId, in: context) else { return }
+        unit.state = WorkUnitState.done.rawValue
+        unit.claimedUntil = nil
+        unit.updatedAt = Date()
+        unit.lastHeartbeatAt = Date()
+        if var payload = decodePayload(unit.moundPayload) {
+            payload.resultSummary = String(summary.prefix(600))
+            unit.moundPayload = encodePayload(payload)
+        }
+        try context.save()
+    }
+
+    private func blockWorkUnit(_ workUnitId: UUID, error: String) throws {
+        let context = freshContext()
+        guard let unit = try fetchWorkUnit(workUnitId, in: context) else { return }
+        unit.state = WorkUnitState.blocked.rawValue
+        unit.claimedUntil = nil
+        unit.updatedAt = Date()
+        unit.lastHeartbeatAt = Date()
+        if var payload = decodePayload(unit.moundPayload) {
+            payload.lastError = String(error.prefix(600))
+            unit.moundPayload = encodePayload(payload)
+        }
+        try context.save()
+    }
+
+    private func touchWorkUnit(
+        workUnitId: UUID,
+        workerId: UUID,
+        workerLabel: String,
+        phase: String
+    ) throws {
+        let context = freshContext()
+        guard let unit = try fetchWorkUnit(workUnitId, in: context) else { return }
+        unit.claimedByMissionId = workerId
+        unit.claimedUntil = Date().addingTimeInterval(90)
+        unit.workerLabel = workerLabel
+        unit.activePhaseHint = phase
+        unit.lastHeartbeatAt = Date()
+        unit.updatedAt = Date()
+        try context.save()
+    }
+
+    private func updateRootState(rootId: UUID, state: String, phase: String) throws {
+        let context = freshContext()
+        guard let root = try fetchWorkUnit(rootId, in: context) else { return }
+        root.state = state
+        root.activePhaseHint = phase
+        root.lastHeartbeatAt = Date()
+        root.updatedAt = Date()
+        try context.save()
+    }
+
+    private func waitForResearchToSettle(objectiveId: UUID, taskId: UUID) async throws {
+        while true {
+            let context = freshContext()
+            try requeueExpiredClaims(in: context)
+            let remaining = try objectiveWorkUnits(in: context, objectiveId: objectiveId, taskId: taskId)
+                .filter {
+                    $0.workType == Constants.researchType &&
+                    ($0.state == WorkUnitState.pending.rawValue || $0.state == WorkUnitState.inProgress.rawValue)
+                }
+            if remaining.isEmpty { return }
+            try? await Task.sleep(for: .seconds(2))
+        }
+    }
+
+    private func waitForSynthesisToSettle(objectiveId: UUID, taskId: UUID) async throws {
+        while true {
+            let context = freshContext()
+            try requeueExpiredClaims(in: context)
+            let remaining = try objectiveWorkUnits(in: context, objectiveId: objectiveId, taskId: taskId)
+                .filter {
+                    $0.workType == Constants.synthesisType &&
+                    ($0.state == WorkUnitState.pending.rawValue || $0.state == WorkUnitState.inProgress.rawValue)
+                }
+            if remaining.isEmpty { return }
+            try? await Task.sleep(for: .seconds(2))
+        }
+    }
+
+    private func completedSummaries(objectiveId: UUID, taskId: UUID) throws -> [String] {
+        let context = freshContext()
+        return try objectiveWorkUnits(in: context, objectiveId: objectiveId, taskId: taskId)
+            .filter { $0.workType == Constants.researchType && $0.state == WorkUnitState.done.rawValue }
+            .compactMap { decodePayload($0.moundPayload)?.resultSummary }
+            .filter { !$0.isEmpty }
+    }
+
+    private func freshContext() -> ModelContext {
+        ModelContext(modelContainer)
+    }
+
+    private func objectiveBoardUnits(in context: ModelContext) throws -> [WorkUnit] {
+        let category = Constants.objectiveCategory
+        let descriptor = FetchDescriptor<WorkUnit>(
+            predicate: #Predicate<WorkUnit> { $0.category == category },
+            sortBy: [SortDescriptor(\.priority, order: .reverse), SortDescriptor(\.createdAt, order: .forward)]
+        )
+        return try context.fetch(descriptor)
+    }
+
+    private func objectiveWorkUnits(in context: ModelContext, objectiveId: UUID, taskId: UUID) throws -> [WorkUnit] {
+        try objectiveBoardUnits(in: context).filter { $0.objectiveId == objectiveId && $0.sourceTaskId == taskId }
+    }
+
+    private func fetchWorkUnit(_ id: UUID, in context: ModelContext) throws -> WorkUnit? {
+        try objectiveBoardUnits(in: context).first(where: { $0.id == id })
+    }
+
+    private func requeueExpiredClaims(in context: ModelContext) throws {
+        let now = Date()
+        var didChange = false
+        for unit in try objectiveBoardUnits(in: context) where unit.state == WorkUnitState.inProgress.rawValue {
+            if let claimedUntil = unit.claimedUntil, claimedUntil < now {
+                unit.state = WorkUnitState.pending.rawValue
+                unit.claimedByMissionId = nil
+                unit.claimedUntil = nil
+                unit.workerLabel = nil
+                unit.activePhaseHint = "requeued"
+                unit.updatedAt = now
+                didChange = true
+            }
+        }
+        if didChange {
+            try context.save()
+        }
+    }
+
+    private func encodePayload(_ payload: ObjectiveWorkPayload) -> Data? {
+        try? JSONEncoder().encode(payload)
+    }
+
+    private func decodePayload(_ data: Data?) -> ObjectiveWorkPayload? {
+        guard let data else { return nil }
+        return try? JSONDecoder().decode(ObjectiveWorkPayload.self, from: data)
+    }
+
+    private func finalSummaryKey(taskId: UUID) -> String {
+        "task_summary_\(taskId.uuidString.replacingOccurrences(of: "-", with: "").prefix(12))"
+    }
+
+    private func logEvent(
+        phase: String,
+        content: String,
+        objectiveId: UUID?,
+        taskId: UUID?,
+        workUnitId: UUID? = nil,
+        workerLabel: String? = nil,
+        missionName: String? = nil
+    ) async {
+        guard let backendClient else { return }
+
+        var metadata: [String: String] = [:]
+        if let objectiveId {
+            metadata["objective_id"] = objectiveId.uuidString
+        }
+        if let taskId {
+            metadata["task_id"] = taskId.uuidString
+        }
+        if let workUnitId {
+            metadata["work_unit_id"] = workUnitId.uuidString
+        }
+        if let workerLabel, !workerLabel.isEmpty {
+            metadata["worker_label"] = workerLabel
+        }
+
+        _ = try? await backendClient.createAgentLog(
+            missionName: missionName,
+            phase: phase,
+            content: content,
+            metadata: metadata
+        )
+    }
+}

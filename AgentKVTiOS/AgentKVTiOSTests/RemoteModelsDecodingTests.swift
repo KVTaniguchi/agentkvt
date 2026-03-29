@@ -226,6 +226,24 @@ struct IOSBackendObjectiveDetailDecodingTests {
               "created_at": "2026-03-28T11:00:00Z",
               "updated_at": "2026-03-28T11:00:00Z"
             }
+          ],
+          "agent_logs": [
+            {
+              "id": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+              "workspace_id": "22222222-2222-2222-2222-222222222222",
+              "mission_id": null,
+              "mission_name": "Objective Worker alpha",
+              "phase": "worker_claim",
+              "content": "Claimed a board work unit",
+              "metadata_json": {
+                "objective_id": "11111111-1111-1111-1111-111111111111",
+                "worker_label": "objective-worker-1"
+              },
+              "tool_name": null,
+              "timestamp": "2026-03-28T11:05:00Z",
+              "created_at": "2026-03-28T11:05:00Z",
+              "updated_at": "2026-03-28T11:05:00Z"
+            }
           ]
         }
         """
@@ -235,6 +253,8 @@ struct IOSBackendObjectiveDetailDecodingTests {
         #expect(detail.tasks[0].description == "Fetch current 30-yr rate")
         #expect(detail.researchSnapshots.count == 1)
         #expect(detail.researchSnapshots[0].key == "30yr_rate")
+        #expect(detail.agentLogs.count == 1)
+        #expect(detail.agentLogs[0].missionName == "Objective Worker alpha")
     }
 
     @Test("Decodes empty tasks and snapshots arrays")

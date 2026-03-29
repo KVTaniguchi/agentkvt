@@ -65,6 +65,12 @@ public final class OllamaClient: @unchecked Sendable {
         public let type: String?
         public let function: FunctionCall?
 
+        public init(id: String?, type: String?, function: FunctionCall?) {
+            self.id = id
+            self.type = type
+            self.function = function
+        }
+
         public struct FunctionCall: Codable, Sendable {
             public let name: String
             public let arguments: String

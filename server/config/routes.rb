@@ -14,11 +14,14 @@ Rails.application.routes.draw do
       post :handle, on: :member
     end
     resources :agent_logs, only: [:index]
-    resources :objectives, only: [:index, :create, :show, :update, :destroy]
+    resources :objectives, only: [:index, :create, :show, :update, :destroy] do
+      post :run_now, on: :member
+    end
 
     namespace :agent do
       get :due_missions, to: "due_missions#index"
       get :chat_wake, to: "chat_wakes#show"
+      post :logs, to: "agent_logs#create"
 
       resources :missions, only: [] do
         get :action_items, to: "mission_action_items#index"

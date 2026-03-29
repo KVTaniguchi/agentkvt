@@ -70,7 +70,7 @@ module ApiSerialization
       id: agent_log.id,
       workspace_id: agent_log.workspace_id,
       mission_id: agent_log.mission_id,
-      mission_name: agent_log.mission&.mission_name,
+      mission_name: agent_log.mission&.mission_name || agent_log.metadata_json["mission_name"],
       phase: agent_log.phase,
       content: agent_log.content,
       metadata_json: agent_log.metadata_json,

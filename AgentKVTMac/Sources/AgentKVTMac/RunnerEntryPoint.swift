@@ -265,7 +265,8 @@ private func runScheduler(
         registry: registry,
         backendClient: backendClient,
         emailIngestor: emailIngestor,
-        dropzoneDir: dropzoneDir
+        dropzoneDir: dropzoneDir,
+        objectiveWorkerConcurrency: settings.objectiveWorkerConcurrency
     )
 
     // Ensure directories exist before starting watchers.

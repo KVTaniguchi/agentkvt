@@ -8,6 +8,7 @@ protocol ObjectivesRemoteSyncing: Sendable {
     func createObjectiveRemote(goal: String, status: String, priority: Int) async throws -> IOSBackendObjective
     func fetchObjectiveDetailRemote(id: UUID) async throws -> IOSBackendObjectiveDetail
     func updateObjectiveRemote(id: UUID, goal: String, status: String, priority: Int) async throws -> IOSBackendObjective
+    func runObjectiveNowRemote(id: UUID) async throws -> IOSBackendObjective
     func deleteObjectiveRemote(id: UUID) async throws
 }
 
@@ -59,6 +60,18 @@ final class ObjectivesStore {
         let updated = try await sync.updateObjectiveRemote(id: id, goal: goal, status: status, priority: priority)
         if let idx = objectives.firstIndex(where: { $0.id == id }) {
             objectives[idx] = updated
+        }
+        return updated
+    }
+
+    /// Explicitly kicks off planner/task execution for this objective on the server.
+    @MainActor
+    func runObjectiveNow(id: UUID) async throws -> IOSBackendObjective {
+        let updated = try await sync.runObjectiveNowRemote(id: id)
+        if let idx = objectives.firstIndex(where: { $0.id == id }) {
+            objectives[idx] = updated
+        } else {
+            objectives.insert(updated, at: 0)
         }
         return updated
     }

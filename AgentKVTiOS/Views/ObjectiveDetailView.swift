@@ -1,27 +1,216 @@
+import ManagerCore
+import SwiftData
 import SwiftUI
 
 struct ObjectiveDetailView: View {
     let objective: IOSBackendObjective
 
     @Environment(ObjectivesStore.self) private var store
+    @Query private var objectiveWorkUnits: [WorkUnit]
     @State private var displayedObjective: IOSBackendObjective
     @State private var detail: IOSBackendObjectiveDetail?
+    @State private var pollTask: Task<Void, Never>?
     @State private var isLoading = false
+    @State private var isStartingWork = false
     @State private var errorMessage: String?
+    @State private var runNowError: String?
     @State private var showEditPromptSheet = false
     @State private var showDeleteConfirmation = false
     @State private var isDeleting = false
     @State private var deleteError: String?
+    @State private var lastLoadedAt: Date?
 
     @Environment(\.dismiss) private var dismiss
 
     init(objective: IOSBackendObjective) {
         self.objective = objective
         _displayedObjective = State(initialValue: objective)
+        let objectiveID = objective.id
+        _objectiveWorkUnits = Query(
+            filter: #Predicate<WorkUnit> { $0.objectiveId == objectiveID },
+            sort: [SortDescriptor(\WorkUnit.updatedAt, order: .reverse)]
+        )
+    }
+
+    private var tasks: [IOSBackendTask] {
+        detail?.tasks ?? []
+    }
+
+    private var snapshots: [IOSBackendResearchSnapshot] {
+        detail?.researchSnapshots ?? []
+    }
+
+    private var agentLogs: [IOSBackendAgentLog] {
+        detail?.agentLogs ?? []
+    }
+
+    private var taskCounts: ObjectiveTaskCounts {
+        ObjectiveTaskCounts(tasks: tasks)
+    }
+
+    private var liveBoardWorkUnits: [WorkUnit] {
+        objectiveWorkUnits.filter { $0.workType != "objective_root" }
+    }
+
+    private var workUnitCounts: ObjectiveWorkUnitCounts {
+        ObjectiveWorkUnitCounts(workUnits: liveBoardWorkUnits)
+    }
+
+    private var lastHeartbeatAt: Date? {
+        liveBoardWorkUnits.compactMap(\.lastHeartbeatAt).max()
+    }
+
+    private var shouldAutoRefresh: Bool {
+        guard displayedObjective.status == "active" else { return false }
+        return detail == nil ||
+            tasks.isEmpty ||
+            taskCounts.pending > 0 ||
+            taskCounts.inProgress > 0 ||
+            workUnitCounts.pending > 0 ||
+            workUnitCounts.inProgress > 0
+    }
+
+    private var runNowButtonTitle: String? {
+        switch displayedObjective.status {
+        case "pending":
+            return "Start Work Now"
+        case "active":
+            if tasks.isEmpty { return "Plan Tasks Now" }
+            if taskCounts.pending > 0 { return "Start Pending Tasks" }
+            if taskCounts.failed > 0 && taskCounts.inProgress == 0 { return "Retry Failed Tasks" }
+            return nil
+        default:
+            return nil
+        }
+    }
+
+    private var activitySummary: ObjectiveActivitySummary {
+        if isStartingWork {
+            return ObjectiveActivitySummary(
+                title: "Starting work",
+                message: "Telling the server to activate this objective and dispatch any available tasks now.",
+                systemImage: "bolt.badge.clock",
+                tint: .blue,
+                showsProgress: true
+            )
+        }
+
+        switch displayedObjective.status {
+        case "pending":
+            return ObjectiveActivitySummary(
+                title: "Saved but not started",
+                message: "No planner or Mac-agent work has been dispatched yet. Tap Start Work Now to activate this objective immediately.",
+                systemImage: "pause.circle.fill",
+                tint: .orange
+            )
+        case "active":
+            if workUnitCounts.inProgress > 0 {
+                return ObjectiveActivitySummary(
+                    title: "Agent team is working",
+                    message: "\(workUnitCounts.inProgress) board work unit(s) are active across \(workUnitCounts.activeWorkers) worker(s). Recent server logs are shown below.",
+                    systemImage: "person.3.sequence.fill",
+                    tint: .blue,
+                    showsProgress: true
+                )
+            }
+            if workUnitCounts.pending > 0 {
+                return ObjectiveActivitySummary(
+                    title: "Work units are queued",
+                    message: "\(workUnitCounts.pending) board work unit(s) are waiting for the objective worker pool to claim them.",
+                    systemImage: "square.stack.3d.up.fill",
+                    tint: .orange
+                )
+            }
+            if taskCounts.inProgress > 0 {
+                return ObjectiveActivitySummary(
+                    title: "Agent is working",
+                    message: "\(taskCounts.inProgress) task(s) are currently in progress. This screen refreshes automatically while work is active.",
+                    systemImage: "bolt.circle.fill",
+                    tint: .blue,
+                    showsProgress: true
+                )
+            }
+            if taskCounts.pending > 0 {
+                return ObjectiveActivitySummary(
+                    title: "Tasks are queued",
+                    message: "\(taskCounts.pending) task(s) are waiting for the Mac agent. Tap Start Pending Tasks if you want to nudge dispatch right now.",
+                    systemImage: "clock.fill",
+                    tint: .orange
+                )
+            }
+            if tasks.isEmpty {
+                return ObjectiveActivitySummary(
+                    title: "Planning tasks",
+                    message: "The server should break this prompt into concrete research tasks first. If nothing appears, tap Plan Tasks Now.",
+                    systemImage: "sparkles",
+                    tint: .blue,
+                    showsProgress: shouldAutoRefresh
+                )
+            }
+            if taskCounts.failed > 0 {
+                return ObjectiveActivitySummary(
+                    title: "Some tasks failed",
+                    message: "\(taskCounts.failed) task(s) failed. Tap Retry Failed Tasks to requeue them for the agent.",
+                    systemImage: "exclamationmark.triangle.fill",
+                    tint: .red
+                )
+            }
+            if !snapshots.isEmpty || taskCounts.completed > 0 {
+                return ObjectiveActivitySummary(
+                    title: "Research available",
+                    message: "\(taskCounts.completed) task(s) completed and \(snapshots.count) snapshot(s) are available below.",
+                    systemImage: "checkmark.circle.fill",
+                    tint: .green
+                )
+            }
+            return ObjectiveActivitySummary(
+                title: "Active",
+                message: "This objective is active, but there is no task movement yet.",
+                systemImage: "circle.fill",
+                tint: .blue
+            )
+        case "completed":
+            return ObjectiveActivitySummary(
+                title: "Marked completed",
+                message: "The objective itself is marked completed. Existing tasks and research remain visible below.",
+                systemImage: "checkmark.seal.fill",
+                tint: .green
+            )
+        case "archived":
+            return ObjectiveActivitySummary(
+                title: "Archived",
+                message: "Archived objectives are preserved for reference and are not expected to dispatch new work.",
+                systemImage: "archivebox.fill",
+                tint: .gray
+            )
+        default:
+            return ObjectiveActivitySummary(
+                title: "Waiting",
+                message: "No agent activity detected yet.",
+                systemImage: "hourglass",
+                tint: .secondary
+            )
+        }
     }
 
     var body: some View {
         List {
+            Section("Activity") {
+                ObjectiveActivityCard(
+                    summary: activitySummary,
+                    counts: taskCounts,
+                    snapshotCount: snapshots.count,
+                    lastLoadedAt: lastLoadedAt
+                )
+                if let runNowButtonTitle {
+                    Button(runNowButtonTitle) {
+                        Task { await runObjectiveNow() }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isStartingWork || isDeleting)
+                }
+            }
+
             Section {
                 Text(displayedObjective.goal)
                     .font(.body)
@@ -36,7 +225,7 @@ struct ObjectiveDetailView: View {
 
             // Tasks
             Section {
-                if let tasks = detail?.tasks, !tasks.isEmpty {
+                if !tasks.isEmpty {
                     ForEach(tasks) { task in
                         TaskRow(task: task)
                     }
@@ -49,9 +238,31 @@ struct ObjectiveDetailView: View {
                 Text("Tasks")
             }
 
+            Section("Live Execution") {
+                ObjectiveLiveExecutionCard(
+                    counts: workUnitCounts,
+                    heartbeatAt: lastHeartbeatAt,
+                    logCount: agentLogs.count
+                )
+
+                if !liveBoardWorkUnits.isEmpty {
+                    ForEach(liveBoardWorkUnits, id: \.id) { unit in
+                        ObjectiveWorkUnitRow(unit: unit)
+                    }
+                } else if !agentLogs.isEmpty {
+                    Text("Server activity is visible below. Waiting for board-state sync from the Mac runner.")
+                        .foregroundStyle(.secondary)
+                        .font(.subheadline)
+                } else if !isLoading {
+                    Text("No live board activity yet.")
+                        .foregroundStyle(.secondary)
+                        .font(.subheadline)
+                }
+            }
+
             // Research Snapshots
             Section {
-                if let snapshots = detail?.researchSnapshots, !snapshots.isEmpty {
+                if !snapshots.isEmpty {
                     ForEach(snapshots) { snapshot in
                         SnapshotRow(snapshot: snapshot)
                     }
@@ -62,6 +273,18 @@ struct ObjectiveDetailView: View {
                 }
             } header: {
                 Text("Research")
+            }
+
+            Section("Recent Agent Logs") {
+                if !agentLogs.isEmpty {
+                    ForEach(Array(agentLogs.prefix(8)), id: \.id) { log in
+                        ObjectiveAgentLogRow(log: log)
+                    }
+                } else if !isLoading {
+                    Text("No objective-scoped agent logs yet.")
+                        .foregroundStyle(.secondary)
+                        .font(.subheadline)
+                }
             }
         }
         .navigationTitle(displayedObjective.goal)
@@ -85,9 +308,9 @@ struct ObjectiveDetailView: View {
         } message: {
             Text("Tasks and research tied to this objective will be removed.")
         }
-        .refreshable { await loadDetail() }
+        .refreshable { await loadDetail(showSpinner: false) }
         .overlay {
-            if isLoading || isDeleting {
+            if isLoading || isDeleting || isStartingWork {
                 ProgressView()
             }
         }
@@ -99,6 +322,14 @@ struct ObjectiveDetailView: View {
         } message: {
             Text(errorMessage ?? "An error occurred.")
         }
+        .alert("Could Not Start Objective", isPresented: Binding(
+            get: { runNowError != nil },
+            set: { if !$0 { runNowError = nil } }
+        )) {
+            Button("OK", role: .cancel) { runNowError = nil }
+        } message: {
+            Text(runNowError ?? "An error occurred.")
+        }
         .alert("Could Not Delete Objective", isPresented: Binding(
             get: { deleteError != nil },
             set: { if !$0 { deleteError = nil } }
@@ -108,31 +339,47 @@ struct ObjectiveDetailView: View {
             Text(deleteError ?? "An error occurred.")
         }
         .task { await loadDetail() }
+        .onDisappear {
+            pollTask?.cancel()
+            pollTask = nil
+        }
         .sheet(isPresented: $showEditPromptSheet) {
             EditObjectivePromptSheet(
                 objective: displayedObjective,
                 onSaved: { updated in
                     displayedObjective = updated
                     showEditPromptSheet = false
-                    Task { await loadDetail() }
+                    Task { await loadDetail(showSpinner: false) }
                 }
             )
         }
     }
 
     @MainActor
-    private func loadDetail() async {
-        isLoading = true
-        errorMessage = nil
-        defer { isLoading = false }
+    private func loadDetail(showSpinner: Bool = true) async {
+        if showSpinner {
+            isLoading = true
+            errorMessage = nil
+        }
+        defer {
+            if showSpinner {
+                isLoading = false
+            }
+        }
 
         do {
-            detail = try await store.fetchDetail(for: objective.id)
+            detail = try await store.fetchDetail(for: displayedObjective.id)
             if let o = detail?.objective {
                 displayedObjective = o
             }
+            lastLoadedAt = Date()
+            reconcilePolling()
         } catch {
-            errorMessage = error.localizedDescription
+            if showSpinner {
+                errorMessage = error.localizedDescription
+            } else {
+                IOSRuntimeLog.log("[ObjectiveDetailView] Auto-refresh failed: \(error)")
+            }
         }
     }
 
@@ -148,6 +395,262 @@ struct ObjectiveDetailView: View {
         } catch {
             deleteError = error.localizedDescription
         }
+    }
+
+    @MainActor
+    private func runObjectiveNow() async {
+        runNowError = nil
+        isStartingWork = true
+        defer { isStartingWork = false }
+
+        do {
+            displayedObjective = try await store.runObjectiveNow(id: displayedObjective.id)
+            await loadDetail(showSpinner: false)
+        } catch {
+            runNowError = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func reconcilePolling() {
+        guard shouldAutoRefresh else {
+            pollTask?.cancel()
+            pollTask = nil
+            return
+        }
+        guard pollTask == nil else { return }
+
+        pollTask = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(4))
+                await loadDetail(showSpinner: false)
+            }
+        }
+    }
+}
+
+private struct ObjectiveTaskCounts {
+    let pending: Int
+    let inProgress: Int
+    let completed: Int
+    let failed: Int
+
+    init(tasks: [IOSBackendTask]) {
+        self.pending = tasks.filter { $0.status == "pending" }.count
+        self.inProgress = tasks.filter { $0.status == "in_progress" }.count
+        self.completed = tasks.filter { $0.status == "completed" }.count
+        self.failed = tasks.filter { $0.status == "failed" }.count
+    }
+
+    var hasAnyTasks: Bool {
+        pending + inProgress + completed + failed > 0
+    }
+}
+
+private struct ObjectiveWorkUnitCounts {
+    let pending: Int
+    let inProgress: Int
+    let blocked: Int
+    let completed: Int
+    let activeWorkers: Int
+
+    init(workUnits: [WorkUnit]) {
+        pending = workUnits.filter { $0.state == WorkUnitState.pending.rawValue }.count
+        inProgress = workUnits.filter { $0.state == WorkUnitState.inProgress.rawValue }.count
+        blocked = workUnits.filter { $0.state == WorkUnitState.blocked.rawValue }.count
+        completed = workUnits.filter { $0.state == WorkUnitState.done.rawValue }.count
+        activeWorkers = Set(
+            workUnits
+                .filter { $0.state == WorkUnitState.inProgress.rawValue }
+                .compactMap(\.workerLabel)
+        ).count
+    }
+
+    var hasAnyUnits: Bool {
+        pending + inProgress + blocked + completed > 0
+    }
+}
+
+private struct ObjectiveActivitySummary {
+    let title: String
+    let message: String
+    let systemImage: String
+    let tint: Color
+    var showsProgress = false
+}
+
+private struct ObjectiveActivityCard: View {
+    let summary: ObjectiveActivitySummary
+    let counts: ObjectiveTaskCounts
+    let snapshotCount: Int
+    let lastLoadedAt: Date?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: summary.systemImage)
+                    .font(.title3)
+                    .foregroundStyle(summary.tint)
+                    .frame(width: 28)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(summary.title)
+                        .font(.headline)
+                    Text(summary.message)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 8)
+
+                if summary.showsProgress {
+                    ProgressView()
+                        .tint(summary.tint)
+                }
+            }
+
+            HStack(spacing: 8) {
+                if counts.hasAnyTasks {
+                    ObjectiveMetricChip(label: "\(counts.pending) pending", tint: .orange)
+                    ObjectiveMetricChip(label: "\(counts.inProgress) active", tint: .blue)
+                    ObjectiveMetricChip(label: "\(counts.completed) done", tint: .green)
+                    if counts.failed > 0 {
+                        ObjectiveMetricChip(label: "\(counts.failed) failed", tint: .red)
+                    }
+                }
+                ObjectiveMetricChip(label: "\(snapshotCount) snapshots", tint: .secondary)
+            }
+
+            if let lastLoadedAt {
+                Text("Last checked \(lastLoadedAt, style: .relative)")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+private struct ObjectiveMetricChip: View {
+    let label: String
+    let tint: Color
+
+    var body: some View {
+        Text(label)
+            .font(.caption)
+            .foregroundStyle(tint)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(tint.opacity(0.12))
+            .clipShape(Capsule())
+    }
+}
+
+private struct ObjectiveLiveExecutionCard: View {
+    let counts: ObjectiveWorkUnitCounts
+    let heartbeatAt: Date?
+    let logCount: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                ObjectiveMetricChip(label: "\(counts.activeWorkers) workers", tint: .blue)
+                ObjectiveMetricChip(label: "\(counts.pending) queued", tint: .orange)
+                ObjectiveMetricChip(label: "\(counts.inProgress) active", tint: .green)
+                if counts.blocked > 0 {
+                    ObjectiveMetricChip(label: "\(counts.blocked) blocked", tint: .red)
+                }
+                ObjectiveMetricChip(label: "\(logCount) logs", tint: .secondary)
+            }
+
+            if let heartbeatAt {
+                Text("Last heartbeat \(heartbeatAt, style: .relative)")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            } else if counts.hasAnyUnits {
+                Text("Waiting for the first worker heartbeat.")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+private struct ObjectiveWorkUnitRow: View {
+    let unit: WorkUnit
+
+    private var stateTint: Color {
+        switch unit.state {
+        case WorkUnitState.pending.rawValue:
+            return .orange
+        case WorkUnitState.inProgress.rawValue:
+            return .blue
+        case WorkUnitState.done.rawValue:
+            return .green
+        case WorkUnitState.blocked.rawValue:
+            return .red
+        default:
+            return .secondary
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(unit.title)
+                .font(.headline)
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 8) {
+                ObjectiveMetricChip(label: unit.workType.replacingOccurrences(of: "objective_", with: ""), tint: .secondary)
+                ObjectiveMetricChip(label: unit.state.replacingOccurrences(of: "_", with: " "), tint: stateTint)
+                if let workerLabel = unit.workerLabel, !workerLabel.isEmpty {
+                    ObjectiveMetricChip(label: workerLabel, tint: .blue)
+                }
+            }
+
+            if let phase = unit.activePhaseHint, !phase.isEmpty {
+                Text(phase.replacingOccurrences(of: "_", with: " ").capitalized)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let heartbeat = unit.lastHeartbeatAt {
+                Text("Heartbeat \(heartbeat, style: .relative)")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+private struct ObjectiveAgentLogRow: View {
+    let log: IOSBackendAgentLog
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(log.metadataJson["worker_label"]?.stringValue ?? log.missionName ?? log.phase)
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Text(log.timestamp, style: .relative)
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+
+            Text(log.phase.replacingOccurrences(of: "_", with: " ").capitalized)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Text(log.content)
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.vertical, 4)
     }
 }
 

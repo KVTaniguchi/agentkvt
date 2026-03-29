@@ -9,18 +9,23 @@ module V1
       objective = current_workspace.objectives.create!(objective_params)
 
       # Kick off LLM task decomposition for active objectives immediately
-      ObjectivePlanner.new.call(objective) if objective.status == "active"
+      kickoff_objective(objective) if objective.status == "active"
 
       render json: { objective: serialize_objective(objective) }, status: :created
     end
 
     def show
       objective = current_workspace.objectives.find(params[:id])
+      agent_logs = current_workspace.agent_logs
+        .where("metadata_json ->> 'objective_id' = ?", objective.id.to_s)
+        .recent_first
+        .limit(30)
 
       render json: {
         objective: serialize_objective(objective),
         tasks: objective.tasks.pending_first.map { |t| serialize_task(t) },
-        research_snapshots: objective.research_snapshots.recent_first.map { |s| serialize_research_snapshot(s) }
+        research_snapshots: objective.research_snapshots.recent_first.map { |s| serialize_research_snapshot(s) },
+        agent_logs: agent_logs.map { |log| serialize_agent_log(log) }
       }
     end
 
@@ -28,12 +33,19 @@ module V1
       objective = current_workspace.objectives.find(params[:id])
       objective.update!(objective_params)
 
-      # Activating an objective that never got tasks (e.g. was pending, or LLM failed earlier).
-      if objective.saved_change_to_status? && objective.status == "active" && objective.tasks.empty?
-        ObjectivePlanner.new.call(objective)
+      # Activating an objective should either create fresh tasks or re-enqueue pending ones.
+      if objective.saved_change_to_status? && objective.status == "active"
+        kickoff_objective(objective)
       end
 
       render json: { objective: serialize_objective(objective) }
+    end
+
+    def run_now
+      objective = current_workspace.objectives.find(params[:id])
+      kickoff_objective(objective)
+
+      render json: { objective: serialize_objective(objective.reload) }
     end
 
     def destroy
@@ -47,6 +59,23 @@ module V1
 
     def objective_params
       params.require(:objective).permit(:goal, :status, :priority)
+    end
+
+    def kickoff_objective(objective)
+      objective.update!(status: "active") unless objective.status == "active"
+
+      if objective.tasks.empty?
+        ObjectivePlanner.new.call(objective)
+        return
+      end
+
+      objective.tasks.where(status: "failed").find_each do |task|
+        task.update!(status: "pending", result_summary: nil)
+      end
+
+      objective.tasks.where(status: "pending").find_each do |task|
+        TaskExecutorJob.perform_later(task.id.to_s)
+      end
     end
   end
 end

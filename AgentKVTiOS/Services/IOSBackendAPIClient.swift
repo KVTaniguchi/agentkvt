@@ -201,6 +201,15 @@ struct IOSBackendObjectiveDetail: Codable, Sendable {
     let objective: IOSBackendObjective
     let tasks: [IOSBackendTask]
     let researchSnapshots: [IOSBackendResearchSnapshot]
+    let agentLogs: [IOSBackendAgentLog]
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        objective = try container.decode(IOSBackendObjective.self, forKey: .objective)
+        tasks = try container.decode([IOSBackendTask].self, forKey: .tasks)
+        researchSnapshots = try container.decode([IOSBackendResearchSnapshot].self, forKey: .researchSnapshots)
+        agentLogs = try container.decodeIfPresent([IOSBackendAgentLog].self, forKey: .agentLogs) ?? []
+    }
 }
 
 struct IOSBackendBootstrap: Codable, Sendable {
@@ -466,6 +475,14 @@ actor IOSBackendAPIClient {
             path: "v1/objectives/\(id.uuidString)",
             method: "PATCH",
             jsonBody: ["objective": ["goal": goal, "status": status, "priority": priority]]
+        )
+        return try decoder.decode(IOSBackendObjectiveEnvelope.self, from: data).objective
+    }
+
+    func runObjectiveNow(id: UUID) async throws -> IOSBackendObjective {
+        let data = try await performRequest(
+            path: "v1/objectives/\(id.uuidString)/run_now",
+            method: "POST"
         )
         return try decoder.decode(IOSBackendObjectiveEnvelope.self, from: data).objective
     }
@@ -1182,6 +1199,11 @@ final class IOSBackendSyncService {
     func updateObjectiveRemote(id: UUID, goal: String, status: String, priority: Int) async throws -> IOSBackendObjective {
         guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
         return try await client.updateObjective(id: id, goal: goal, status: status, priority: priority)
+    }
+
+    func runObjectiveNowRemote(id: UUID) async throws -> IOSBackendObjective {
+        guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
+        return try await client.runObjectiveNow(id: id)
     }
 
     func deleteObjectiveRemote(id: UUID) async throws {

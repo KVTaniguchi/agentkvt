@@ -33,6 +33,10 @@ public func makeWriteObjectiveSnapshotTool(backendClient: BackendAPIClient) -> T
                 "value": .init(
                     type: "string",
                     description: "The newly observed value (price, text, count, etc.)"
+                ),
+                "mark_task_completed": .init(
+                    type: "boolean",
+                    description: "Optional. Set true only when this snapshot should also mark the parent task complete. Defaults to true when task_id is provided and this field is omitted."
                 )
             ],
             required: ["objective_id", "key", "value"]
@@ -46,13 +50,15 @@ public func makeWriteObjectiveSnapshotTool(backendClient: BackendAPIClient) -> T
             }
 
             let taskId: UUID? = (args["task_id"] as? String).flatMap { UUID(uuidString: $0) }
+            let markTaskCompleted = args["mark_task_completed"] as? Bool
 
             do {
                 let snapshot = try await backendClient.writeResearchSnapshot(
                     objectiveId: objectiveId,
                     taskId: taskId,
                     key: key,
-                    value: value
+                    value: value,
+                    markTaskCompleted: markTaskCompleted
                 )
                 if let delta = snapshot.deltaNote {
                     return "changed: \(delta)"

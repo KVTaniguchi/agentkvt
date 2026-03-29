@@ -111,6 +111,15 @@ class V1ObjectivesTest < ActionDispatch::IntegrationTest
     _snapshot = objective.research_snapshots.create!(
       key: "cheapest_fare", value: "$299", task: task, checked_at: Time.current
     )
+    @workspace.agent_logs.create!(
+      phase: "worker_claim",
+      content: "Claimed a flight-research work unit",
+      metadata_json: {
+        "mission_name" => "Objective Worker alpha",
+        "objective_id" => objective.id.to_s,
+        "worker_label" => "objective-worker-1"
+      }
+    )
 
     get "/v1/objectives/#{objective.id}", headers: workspace_headers
     assert_response :success
@@ -123,6 +132,8 @@ class V1ObjectivesTest < ActionDispatch::IntegrationTest
     assert_equal "cheapest_fare",   body["research_snapshots"].first["key"]
     assert_equal "$299",            body["research_snapshots"].first["value"]
     assert_not_nil                  body["research_snapshots"].first["task_id"]
+    assert_equal 1,                 body["agent_logs"].length
+    assert_equal "Objective Worker alpha", body["agent_logs"].first["mission_name"]
   end
 
   test "show returns 404 for unknown objective" do
@@ -193,6 +204,107 @@ class V1ObjectivesTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_equal 0, call_count
+  end
+
+  test "update from pending to active re-enqueues pending tasks when they already exist" do
+    objective = @workspace.objectives.create!(goal: "Already has work", status: "pending", priority: 0)
+    task = objective.tasks.create!(description: "Existing task", status: "pending")
+    enqueued_task_ids = []
+
+    with_stubbed_task_executor do |stub|
+      stub.define_singleton_method(:perform_later) do |task_id|
+        enqueued_task_ids << task_id
+      end
+
+      patch "/v1/objectives/#{objective.id}",
+            params: { objective: { goal: "Already has work", status: "active", priority: 0 } },
+            as: :json, headers: workspace_headers
+    end
+
+    assert_response :success
+    assert_equal [task.id.to_s], enqueued_task_ids
+  end
+
+  test "run_now activates a pending objective and invokes ObjectivePlanner" do
+    planner_called = false
+    objective = @workspace.objectives.create!(goal: "Need kickoff", status: "pending", priority: 0)
+
+    with_stubbed_planner do |stub|
+      stub.define_singleton_method(:call) do |obj|
+        planner_called = true
+        assert_equal objective.id, obj.id
+        []
+      end
+
+      post "/v1/objectives/#{objective.id}/run_now", headers: workspace_headers
+    end
+
+    assert_response :success
+    assert planner_called
+    assert_equal "active", objective.reload.status
+  end
+
+  test "run_now retries planning for an active objective with no tasks" do
+    planner_call_count = 0
+    objective = @workspace.objectives.create!(goal: "Retry me", status: "active", priority: 0)
+
+    with_stubbed_planner do |stub|
+      stub.define_singleton_method(:call) do |obj|
+        planner_call_count += 1
+        assert_equal objective.id, obj.id
+        []
+      end
+
+      post "/v1/objectives/#{objective.id}/run_now", headers: workspace_headers
+    end
+
+    assert_response :success
+    assert_equal 1, planner_call_count
+  end
+
+  test "run_now re-enqueues pending tasks without invoking ObjectivePlanner" do
+    objective = @workspace.objectives.create!(goal: "Kick queued task", status: "active", priority: 0)
+    task = objective.tasks.create!(description: "Queued task", status: "pending")
+    planner_called = false
+    enqueued_task_ids = []
+
+    with_stubbed_planner do |planner_stub|
+      planner_stub.define_singleton_method(:call) do |_obj|
+        planner_called = true
+        []
+      end
+
+      with_stubbed_task_executor do |job_stub|
+        job_stub.define_singleton_method(:perform_later) do |task_id|
+          enqueued_task_ids << task_id
+        end
+
+        post "/v1/objectives/#{objective.id}/run_now", headers: workspace_headers
+      end
+    end
+
+    assert_response :success
+    assert_equal false, planner_called
+    assert_equal [task.id.to_s], enqueued_task_ids
+  end
+
+  test "run_now retries failed tasks by resetting them to pending and enqueueing them" do
+    objective = @workspace.objectives.create!(goal: "Retry failed task", status: "active", priority: 0)
+    task = objective.tasks.create!(description: "Recover task", status: "failed", result_summary: "Old failure")
+    enqueued_task_ids = []
+
+    with_stubbed_task_executor do |job_stub|
+      job_stub.define_singleton_method(:perform_later) do |task_id|
+        enqueued_task_ids << task_id
+      end
+
+      post "/v1/objectives/#{objective.id}/run_now", headers: workspace_headers
+    end
+
+    assert_response :success
+    assert_equal "pending", task.reload.status
+    assert_nil task.result_summary
+    assert_equal [task.id.to_s], enqueued_task_ids
   end
 
   test "update returns 404 for unknown objective" do
@@ -275,5 +387,15 @@ class V1ObjectivesTest < ActionDispatch::IntegrationTest
     yield stub
   ensure
     ObjectivePlanner.define_singleton_method(:new, &original)
+  end
+
+  def with_stubbed_task_executor
+    stub = Object.new
+    stub.define_singleton_method(:perform_later) { |_task_id| }
+    original = TaskExecutorJob.method(:perform_later)
+    TaskExecutorJob.define_singleton_method(:perform_later) { |task_id| stub.perform_later(task_id) }
+    yield stub
+  ensure
+    TaskExecutorJob.define_singleton_method(:perform_later, &original)
   end
 end

@@ -2,15 +2,14 @@ import Foundation
 import ManagerCore
 import SwiftData
 
-/// The strict serial execution engine for AgentKVT.
+/// The event router for AgentKVT.
 ///
 /// ## Why an actor?
 /// Swift actors guarantee that at most one method body runs at a time on their
-/// executor. Combined with `for await` (which suspends — not blocks — the loop
-/// body while awaiting the LLM), we get a single-inflight invariant enforced at
-/// the compiler level: while `missionRunner.run()` is suspended awaiting an
-/// Ollama response, new triggers are buffered inside `AgentQueue` and processed
-/// only after the current task completes.
+/// executor. We use that to keep chat, scheduled missions, and generic webhook
+/// dispatch serialized and responsive. Objective execution is intentionally
+/// handed off to a separate bounded worker pool so chat does not stall behind
+/// long-running research.
 ///
 /// ## Trigger priority
 /// | Source                     | Priority |
@@ -37,6 +36,7 @@ actor MissionExecutionQueue {
     private let emailIngestor: EmailIngestor
     private let cloudInbound: CloudInboundService
     private let backendClient: BackendAPIClient?
+    private let objectiveExecutionPool: ObjectiveExecutionPool
 
     // MARK: - Trigger buffer (priority-sorted, bounded)
 
@@ -51,7 +51,8 @@ actor MissionExecutionQueue {
         registry: ToolRegistry,
         backendClient: BackendAPIClient?,
         emailIngestor: EmailIngestor,
-        dropzoneDir: URL
+        dropzoneDir: URL,
+        objectiveWorkerConcurrency: Int
     ) {
         self.modelContext = modelContext.raw
         self.modelContainer = modelContainer
@@ -74,6 +75,24 @@ actor MissionExecutionQueue {
         self.emailIngestor = emailIngestor
         self.cloudInbound = CloudInboundService(modelContext: modelContext.raw, directory: dropzoneDir)
         self.agentQueue = AgentQueue()
+        let objectiveLogWriter: any MissionLogWriting = if let backendClient {
+            BackendWorkspaceLogWriter(backendClient: backendClient)
+        } else {
+            SwiftDataMissionLogWriter(modelContext: modelContext.raw)
+        }
+        let objectiveMissionRunner = MissionRunner(
+            modelContext: modelContext.raw,
+            client: client,
+            registry: registry,
+            logWriter: objectiveLogWriter
+        )
+        self.objectiveExecutionPool = ObjectiveExecutionPool(
+            modelContainer: modelContainer,
+            client: client,
+            missionRunner: objectiveMissionRunner,
+            backendClient: backendClient,
+            maxConcurrentWorkers: objectiveWorkerConcurrency
+        )
     }
 
     // MARK: - Producer API
@@ -99,6 +118,7 @@ actor MissionExecutionQueue {
     /// suspends here until the LLM call + tool loop completes — so the next item is
     /// never started while an inference is in flight.
     func run() async {
+        await objectiveExecutionPool.start()
         for await _ in agentQueue.workAvailable {
             while let item = await agentQueue.dequeueNext() {
                 do {
@@ -153,7 +173,7 @@ actor MissionExecutionQueue {
                     try fetchContext.save()
                     let summaries = existingActionSummaries(for: mission.id, in: fetchContext)
                     do {
-                        try await missionRunner.run(MissionRunner.Request(mission).with(existingActionItemSummaries: summaries))
+                        _ = try await missionRunner.run(MissionRunner.Request(mission).with(existingActionItemSummaries: summaries))
                         print("[MissionExecutionQueue] Ran work unit board mission: \(mission.missionName)")
                     } catch {
                         print("[MissionExecutionQueue] Work unit board mission '\(mission.missionName)' failed: \(error)")
@@ -167,7 +187,7 @@ actor MissionExecutionQueue {
                 try fetchContext.save()
                 let summaries = existingActionSummaries(for: mission.id, in: fetchContext)
                 do {
-                    try await missionRunner.run(MissionRunner.Request(mission).with(existingActionItemSummaries: summaries))
+                    _ = try await missionRunner.run(MissionRunner.Request(mission).with(existingActionItemSummaries: summaries))
                     print("[MissionExecutionQueue] Ran scheduled mission: \(mission.missionName)")
                 } catch {
                     print("[MissionExecutionQueue] Scheduled mission '\(mission.missionName)' failed: \(error)")
@@ -193,7 +213,7 @@ actor MissionExecutionQueue {
                 try fetchContext.save()
                 let summaries = existingActionSummaries(for: mission.id, in: fetchContext)
                 do {
-                    try await missionRunner.run(MissionRunner.Request(mission).with(existingActionItemSummaries: summaries))
+                    _ = try await missionRunner.run(MissionRunner.Request(mission).with(existingActionItemSummaries: summaries))
                     print("[MissionExecutionQueue] Ran email mission: \(mission.missionName)")
                 } catch {
                     print("[MissionExecutionQueue] Email mission '\(mission.missionName)' failed: \(error)")
@@ -224,7 +244,7 @@ actor MissionExecutionQueue {
                 try fetchContext.save()
                 let summaries = existingActionSummaries(for: mission.id, in: fetchContext)
                 do {
-                    try await missionRunner.run(MissionRunner.Request(mission).with(existingActionItemSummaries: summaries))
+                    _ = try await missionRunner.run(MissionRunner.Request(mission).with(existingActionItemSummaries: summaries))
                     print("[MissionExecutionQueue] Ran inbound file mission: \(mission.missionName)")
                 } catch {
                     print("[MissionExecutionQueue] Inbound file mission '\(mission.missionName)' failed: \(error)")
@@ -248,7 +268,7 @@ actor MissionExecutionQueue {
             // structured task execution, not a free-form webhook trigger.
             if let taskPayload = TaskSearchPayload(json: payload) {
                 print("[MissionExecutionQueue] Identified run_task_search for task=\(taskPayload.taskId)")
-                await runTaskSearch(taskPayload)
+                await objectiveExecutionPool.enqueue(taskPayload)
                 return
             }
 
@@ -267,7 +287,7 @@ actor MissionExecutionQueue {
                 try fetchContext.save()
                 let summaries = existingActionSummaries(for: mission.id, in: fetchContext)
                 do {
-                    try await missionRunner.run(MissionRunner.Request(mission).with(existingActionItemSummaries: summaries))
+                    _ = try await missionRunner.run(MissionRunner.Request(mission).with(existingActionItemSummaries: summaries))
                     print("[MissionExecutionQueue] Ran webhook mission: \(mission.missionName)")
                 } catch {
                     print("[MissionExecutionQueue] Webhook mission '\(mission.missionName)' failed: \(error)")
@@ -319,7 +339,7 @@ actor MissionExecutionQueue {
                 try fetchContext.save()
                 let summaries = existingActionSummaries(for: mission.id, in: fetchContext)
                 do {
-                    try await missionRunner.run(MissionRunner.Request(mission).with(existingActionItemSummaries: summaries))
+                    _ = try await missionRunner.run(MissionRunner.Request(mission).with(existingActionItemSummaries: summaries))
                     print("[MissionExecutionQueue] Ran CloudKit summary mission: \(mission.missionName)")
                 } catch {
                     print("[MissionExecutionQueue] CloudKit summary mission '\(mission.missionName)' failed: \(error)")
@@ -388,7 +408,7 @@ actor MissionExecutionQueue {
             }
 
             do {
-                try await missionRunner.run(mission.with(existingActionItemSummaries: existingSummaries))
+                _ = try await missionRunner.run(mission.with(existingActionItemSummaries: existingSummaries))
                 print("[MissionExecutionQueue] Ran \(reason): \(mission.missionName)")
             } catch {
                 print("[MissionExecutionQueue] \(reason.capitalized) '\(mission.missionName)' failed: \(error)")
@@ -448,47 +468,6 @@ actor MissionExecutionQueue {
         return formatter.string(from: date)
     }
 
-    // MARK: - run_task_search
-
-    /// Synthesises and executes a focused research mission from a Rails TaskExecutorJob payload.
-    /// No user-configured webhook mission is required — the mission is built from the payload
-    /// and run directly. After the LLM calls write_objective_snapshot, Rails records the result
-    /// and marks the task completed.
-    private func runTaskSearch(_ payload: TaskSearchPayload) async {
-        let systemPrompt = """
-            You are a focused research agent executing a single task for the AgentKVT Objectives system.
-
-            Task: \(payload.description)
-            Objective ID: \(payload.objectiveId)
-            Task ID: \(payload.taskId)
-
-            Instructions:
-            1. Use multi_step_search to research the task thoroughly.
-            2. After gathering results, call write_objective_snapshot exactly once with:
-               - objective_id: \(payload.objectiveId)
-               - task_id: \(payload.taskId)
-               - key: a stable snake_case identifier for the metric (e.g. "cheapest_flight_sfo_san")
-               - value: the key finding as a concise string
-
-            Do not call write_objective_snapshot more than once.
-            """
-        let request = MissionRunner.Request(
-            id: UUID(),
-            missionName: "Task: \(payload.description.prefix(60))",
-            systemPrompt: systemPrompt,
-            triggerSchedule: "webhook",
-            allowedToolIds: ["multi_step_search", "write_objective_snapshot"],
-            ownerProfileId: nil,
-            isEnabled: true,
-            lastRunAt: nil
-        )
-        do {
-            try await missionRunner.run(request)
-            print("[MissionExecutionQueue] run_task_search completed for task=\(payload.taskId)")
-        } catch {
-            print("[MissionExecutionQueue] run_task_search failed for task=\(payload.taskId): \(error)")
-        }
-    }
 }
 
 // MARK: - TaskSearchPayload

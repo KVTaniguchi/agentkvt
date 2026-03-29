@@ -30,6 +30,7 @@ struct RunnerSettings: Sendable {
     let configFileError: String?
     let runScheduler: Bool
     let schedulerIntervalSeconds: Int
+    let objectiveWorkerConcurrency: Int
     let ollamaBaseURL: URL
     let ollamaModel: String
     let ollamaAPIKey: String?
@@ -72,7 +73,7 @@ struct RunnerSettings: Sendable {
         let backend = backendBaseURL?.absoluteString ?? "disabled"
         let workspace = backendWorkspaceSlug ?? "-"
         messages.append(
-            "[Config] Mode: \(mode) | Ollama: \(ollamaModel) @ \(ollamaBaseURL.absoluteString) | Backend: \(backend) [workspace=\(workspace)] | Webhook: \(webhookPort) | Clock: \(schedulerIntervalSeconds)s | CloudKit: \(cloudKit)"
+            "[Config] Mode: \(mode) | Ollama: \(ollamaModel) @ \(ollamaBaseURL.absoluteString) | Backend: \(backend) [workspace=\(workspace)] | Objective workers: \(objectiveWorkerConcurrency) | Webhook: \(webhookPort) | Clock: \(schedulerIntervalSeconds)s | CloudKit: \(cloudKit)"
         )
         return messages
     }
@@ -85,6 +86,7 @@ struct RunnerSettings: Sendable {
 
         let runScheduler = resolver.bool(for: "RUN_SCHEDULER") ?? source.isAppBundle
         let schedulerIntervalSeconds = max(1, resolver.int(for: "SCHEDULER_INTERVAL_SECONDS") ?? 60)
+        let objectiveWorkerConcurrency = min(8, max(1, resolver.int(for: "OBJECTIVE_WORKER_CONCURRENCY") ?? 3))
         let baseURLString = resolver.string(for: "OLLAMA_BASE_URL") ?? "http://localhost:11434"
         let ollamaBaseURL = URL(string: baseURLString) ?? URL(string: "http://localhost:11434")!
         let ollamaModel = resolver.string(for: "OLLAMA_MODEL") ?? "llama4:latest"
@@ -114,6 +116,7 @@ struct RunnerSettings: Sendable {
             configFileError: fileLoad.error,
             runScheduler: runScheduler,
             schedulerIntervalSeconds: schedulerIntervalSeconds,
+            objectiveWorkerConcurrency: objectiveWorkerConcurrency,
             ollamaBaseURL: ollamaBaseURL,
             ollamaModel: ollamaModel,
             ollamaAPIKey: ollamaAPIKey,

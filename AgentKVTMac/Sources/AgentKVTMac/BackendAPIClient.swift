@@ -216,13 +216,8 @@ public actor BackendAPIClient {
         missionId: UUID,
         phase: String,
         content: String,
-        toolName: String? = nil
+        metadata: [String: String] = [:]
     ) async throws -> BackendAgentLog {
-        var metadata: [String: String] = [:]
-        if let toolName, !toolName.isEmpty {
-            metadata["tool_name"] = toolName
-        }
-
         let data = try await performRequest(
             path: "v1/agent/missions/\(missionId.uuidString)/logs",
             method: "POST",
@@ -231,6 +226,32 @@ public actor BackendAPIClient {
                     "phase": phase,
                     "content": content,
                     "metadata_json": metadata
+                ]
+            ],
+            requiresAgentAuth: true
+        )
+        return try decoder.decode(BackendAgentLogEnvelope.self, from: data).agentLog
+    }
+
+    public func createAgentLog(
+        missionName: String? = nil,
+        phase: String,
+        content: String,
+        metadata: [String: String] = [:]
+    ) async throws -> BackendAgentLog {
+        var mergedMetadata = metadata
+        if let missionName, !missionName.isEmpty {
+            mergedMetadata["mission_name"] = missionName
+        }
+
+        let data = try await performRequest(
+            path: "v1/agent/logs",
+            method: "POST",
+            jsonBody: [
+                "agent_log": [
+                    "phase": phase,
+                    "content": content,
+                    "metadata_json": mergedMetadata
                 ]
             ],
             requiresAgentAuth: true
@@ -255,12 +276,16 @@ public actor BackendAPIClient {
         objectiveId: UUID,
         taskId: UUID? = nil,
         key: String,
-        value: String
+        value: String,
+        markTaskCompleted: Bool? = nil
     ) async throws -> BackendResearchSnapshot {
-        var path = "v1/agent/objectives/\(objectiveId.uuidString)/research_snapshots"
+        let path = "v1/agent/objectives/\(objectiveId.uuidString)/research_snapshots"
         var queryItems: [URLQueryItem] = []
         if let taskId {
             queryItems.append(URLQueryItem(name: "task_id", value: taskId.uuidString))
+        }
+        if let markTaskCompleted {
+            queryItems.append(URLQueryItem(name: "mark_task_completed", value: markTaskCompleted ? "true" : "false"))
         }
         let data = try await performRequest(
             path: path,

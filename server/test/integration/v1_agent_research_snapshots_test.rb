@@ -82,6 +82,19 @@ class V1AgentResearchSnapshotsTest < ActionDispatch::IntegrationTest
     assert_not_nil @task.result_summary
   end
 
+  test "supplying task_id with mark_task_completed false keeps the task in progress" do
+    post "/v1/agent/objectives/#{@objective.id}/research_snapshots",
+         params: {
+           task_id: @task.id,
+           mark_task_completed: false,
+           research_snapshot: { key: "30yr_rate", value: "6.85%" }
+         },
+         as: :json, headers: agent_headers
+
+    assert_response :created
+    assert_equal "in_progress", @task.reload.status
+  end
+
   test "omitting task_id does not modify tasks" do
     post "/v1/agent/objectives/#{@objective.id}/research_snapshots",
          params: { research_snapshot: { key: "30yr_rate", value: "6.85%" } },
