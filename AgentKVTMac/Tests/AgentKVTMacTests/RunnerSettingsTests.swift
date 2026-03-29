@@ -16,7 +16,7 @@ struct RunnerSettingsTests {
         let settings = RunnerSettings.load(from: source)
 
         #expect(settings.runScheduler)
-        #expect(settings.ollamaModel == "llama3.2")
+        #expect(settings.ollamaModel == "llama4:latest")
         #expect(settings.webhookPort == 8765)
         #expect(settings.schedulerIntervalSeconds == 60)
         #expect(settings.configFileURL.path == "/tmp/agentkvt-runner-settings-home/.agentkvt/agentkvt-runner.plist")

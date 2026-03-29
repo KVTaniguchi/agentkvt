@@ -6,9 +6,9 @@
     <key>RUN_SCHEDULER</key>
     <true/>
 
-    <!-- Recommended for the current Ollama smoke-tested path. -->
+    <!-- Recommended for the current strongest-model Ollama path. -->
     <key>OLLAMA_MODEL</key>
-    <string>llama3.2:latest</string>
+    <string>llama4:latest</string>
 
     <!-- Optional overrides -->
     <key>OLLAMA_BASE_URL</key>

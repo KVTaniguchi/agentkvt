@@ -61,7 +61,7 @@ All major components are implemented with real business logic. This is no longer
 ### Implemented and verified by code review
 
 - **Rails API backend** — full CRUD for missions, action items, agent logs, family members; workspace isolation via `X-Workspace-Slug`; bearer token auth for Mac agent endpoints; `MissionSchedule` service with daily/weekly scheduling and `last_run_at` idempotency; integration tests covering the full agent workflow
-- **Mac runner** — scheduler, `OllamaClient` (llama3.2 on localhost:11434), tool registry with ~13 tools, `BackendAPIClient` for writing results back to the server, `MissionLogWriter` with structured phases
+- **Mac runner** — scheduler, `OllamaClient` (llama4:latest on localhost:11434), tool registry with ~13 tools, `BackendAPIClient` for writing results back to the server, `MissionLogWriter` with structured phases
 - **iOS app** — mission CRUD with validation, action item display with intent routing, backend sync via `IOSBackendSyncService`, bootstrap on launch, family member profiles, log view
 - **ManagerCore** — shared Swift package with `MissionDefinition`, `ActionItem`, `AgentLog`, `FamilyMember`, `LifeContext`, `ChatThread`, and supporting models
 - **Structured logging** — `AgentLog` phases include `start`, `tool_call`, `assistant`, `outcome`, and `error`; logs are stored in the backend and visible in iOS
@@ -94,7 +94,7 @@ All major components are implemented with real business logic. This is no longer
 | iOS deterministic remote + chat | Done | Full UI for actions, missions, context, logs, and chat tab. |
 | macOS brain | Done | Runner, scheduler, tool registry, and Ollama integration all implemented. |
 | Tool allowlisting | Done | Per-mission `allowed_mcp_tools` JSONB array; enforced in runner and tested. |
-| Local LLM usage | Done | Ollama integration with tool-calling support (llama3.2 default). |
+| Local LLM usage | Done | Ollama integration with tool-calling support (llama4:latest default). |
 | Rails backend as system of record | Done | Full API surface implemented; agent auth via bearer token. |
 | Scheduler idempotency | Done | `last_run_at` tracking in backend; daily/weekly schedule semantics tested. |
 | Structured audit logging | Done | Phase-based `AgentLog` in backend; exposed in iOS log view. |

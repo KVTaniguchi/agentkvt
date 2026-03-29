@@ -15,7 +15,7 @@ public final class OllamaClient: @unchecked Sendable {
     public let model: String
     private let session: URLSession
 
-    public init(baseURL: URL = URL(string: "http://localhost:11434")!, model: String = "llama3.2", session: URLSession = .shared) {
+    public init(baseURL: URL = URL(string: "http://localhost:11434")!, model: String = "llama4:latest", session: URLSession = .shared) {
         self.baseURL = baseURL
         self.model = model
         self.session = session

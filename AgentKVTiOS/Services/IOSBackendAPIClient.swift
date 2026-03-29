@@ -313,8 +313,12 @@ actor IOSBackendAPIClient {
         return try decoder.decode(IOSBackendMissionsEnvelope.self, from: data).missions
     }
 
-    func fetchActionItems(limit: Int = 200) async throws -> [IOSBackendActionItem] {
-        let data = try await performRequest(path: "v1/action_items?limit=\(limit)")
+    func fetchActionItems(limit: Int = 200, isHandled: Bool? = nil) async throws -> [IOSBackendActionItem] {
+        var path = "v1/action_items?limit=\(limit)"
+        if let isHandled {
+            path += "&is_handled=\(isHandled)"
+        }
+        let data = try await performRequest(path: path)
         return try decoder.decode(IOSBackendActionItemsEnvelope.self, from: data).actionItems
     }
 
@@ -455,6 +459,19 @@ actor IOSBackendAPIClient {
     func fetchObjectiveDetail(id: UUID) async throws -> IOSBackendObjectiveDetail {
         let data = try await performRequest(path: "v1/objectives/\(id.uuidString)")
         return try decoder.decode(IOSBackendObjectiveDetail.self, from: data)
+    }
+
+    func updateObjective(id: UUID, goal: String, status: String, priority: Int) async throws -> IOSBackendObjective {
+        let data = try await performRequest(
+            path: "v1/objectives/\(id.uuidString)",
+            method: "PATCH",
+            jsonBody: ["objective": ["goal": goal, "status": status, "priority": priority]]
+        )
+        return try decoder.decode(IOSBackendObjectiveEnvelope.self, from: data).objective
+    }
+
+    func deleteObjective(id: UUID) async throws {
+        _ = try await performRequest(path: "v1/objectives/\(id.uuidString)", method: "DELETE")
     }
 
     private func missionPayload(
@@ -1137,9 +1154,9 @@ final class IOSBackendSyncService {
 
     // MARK: - Remote passthrough (no SwiftData reconciliation)
 
-    func fetchActionItemsRemote() async throws -> [IOSBackendActionItem] {
+    func fetchActionItemsRemote(isHandled: Bool? = nil) async throws -> [IOSBackendActionItem] {
         guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
-        return try await client.fetchActionItems()
+        return try await client.fetchActionItems(isHandled: isHandled)
     }
 
     func handleActionItemRemote(id: UUID) async throws {
@@ -1160,5 +1177,15 @@ final class IOSBackendSyncService {
     func fetchObjectiveDetailRemote(id: UUID) async throws -> IOSBackendObjectiveDetail {
         guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
         return try await client.fetchObjectiveDetail(id: id)
+    }
+
+    func updateObjectiveRemote(id: UUID, goal: String, status: String, priority: Int) async throws -> IOSBackendObjective {
+        guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
+        return try await client.updateObjective(id: id, goal: goal, status: status, priority: priority)
+    }
+
+    func deleteObjectiveRemote(id: UUID) async throws {
+        guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
+        try await client.deleteObjective(id: id)
     }
 }

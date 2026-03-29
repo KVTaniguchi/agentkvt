@@ -138,6 +138,121 @@ class V1ObjectivesTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  # ── update ─────────────────────────────────────────────────────────────────
+
+  test "update changes goal and returns serialized objective" do
+    objective = @workspace.objectives.create!(goal: "Old goal", status: "active", priority: 1)
+
+    patch "/v1/objectives/#{objective.id}",
+          params: { objective: { goal: "New goal", status: "active", priority: 1 } },
+          as: :json, headers: workspace_headers
+
+    assert_response :success
+    body = JSON.parse(response.body)
+    assert_equal "New goal", body.dig("objective", "goal")
+    assert_equal "active",   body.dig("objective", "status")
+    assert_equal 1,          body.dig("objective", "priority")
+    assert_equal "New goal", objective.reload.goal
+  end
+
+  test "update from pending to active invokes ObjectivePlanner when there are no tasks yet" do
+    planner_called = false
+    objective = @workspace.objectives.create!(goal: "Activate me", status: "pending", priority: 0)
+
+    with_stubbed_planner do |stub|
+      stub.define_singleton_method(:call) do |obj|
+        planner_called = true
+        assert_equal objective.id, obj.id
+        []
+      end
+
+      patch "/v1/objectives/#{objective.id}",
+            params: { objective: { goal: "Activate me", status: "active", priority: 0 } },
+            as: :json, headers: workspace_headers
+    end
+
+    assert_response :success
+    assert planner_called, "ObjectivePlanner should run when activating a pending objective with no tasks"
+  end
+
+  test "update from pending to active does not invoke ObjectivePlanner when tasks already exist" do
+    call_count = 0
+    objective = @workspace.objectives.create!(goal: "Already has work", status: "pending", priority: 0)
+    objective.tasks.create!(description: "Existing task", status: "pending")
+
+    with_stubbed_planner do |stub|
+      stub.define_singleton_method(:call) do |_obj|
+        call_count += 1
+        []
+      end
+
+      patch "/v1/objectives/#{objective.id}",
+            params: { objective: { goal: "Already has work", status: "active", priority: 0 } },
+            as: :json, headers: workspace_headers
+    end
+
+    assert_response :success
+    assert_equal 0, call_count
+  end
+
+  test "update returns 404 for unknown objective" do
+    patch "/v1/objectives/#{SecureRandom.uuid}",
+          params: { objective: { goal: "X", status: "pending", priority: 0 } },
+          as: :json, headers: workspace_headers
+
+    assert_response :not_found
+  end
+
+  test "update rejects empty goal" do
+    objective = @workspace.objectives.create!(goal: "Has text", status: "active", priority: 1)
+
+    patch "/v1/objectives/#{objective.id}",
+          params: { objective: { goal: "", status: "active", priority: 1 } },
+          as: :json, headers: workspace_headers
+
+    assert_response :unprocessable_entity
+    assert_equal "Has text", objective.reload.goal
+  end
+
+  test "update does not modify another workspace objective" do
+    other     = Workspace.create!(name: "Other", slug: "other-#{SecureRandom.hex(4)}")
+    objective = other.objectives.create!(goal: "Secret", status: "pending", priority: 0)
+
+    patch "/v1/objectives/#{objective.id}",
+          params: { objective: { goal: "Hacked", status: "active", priority: 9 } },
+          as: :json, headers: workspace_headers
+
+    assert_response :not_found
+    assert_equal "Secret", objective.reload.goal
+  end
+
+  # ── destroy ──────────────────────────────────────────────────────────────
+
+  test "destroy removes objective and returns no content" do
+    objective = @workspace.objectives.create!(goal: "Temporary", status: "pending", priority: 0)
+
+    delete "/v1/objectives/#{objective.id}", headers: workspace_headers
+
+    assert_response :no_content
+    assert_raises(ActiveRecord::RecordNotFound) { objective.reload }
+  end
+
+  test "destroy returns 404 for unknown objective" do
+    delete "/v1/objectives/#{SecureRandom.uuid}", headers: workspace_headers
+
+    assert_response :not_found
+  end
+
+  test "destroy does not delete another workspace objective" do
+    other     = Workspace.create!(name: "Other", slug: "other-#{SecureRandom.hex(4)}")
+    objective = other.objectives.create!(goal: "Keep me", status: "pending")
+
+    delete "/v1/objectives/#{objective.id}", headers: workspace_headers
+
+    assert_response :not_found
+    assert_equal "Keep me", objective.reload.goal
+  end
+
   private
 
   def workspace_headers

@@ -34,7 +34,7 @@
 		<true/>
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>AgentKVT connects to your Mac-hosted AgentKVT server (LAN or Tailscale).</string>
+	<string>AgentKVT uses the local network to reach your Mac (Ollama, optional API) on LAN or Tailscale.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

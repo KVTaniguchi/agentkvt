@@ -5,19 +5,22 @@ import Testing
 // MARK: - Helpers
 
 private func makeItem(
+    id: UUID = UUID(),
+    title: String = "Test Action",
     systemIntent: String,
-    payload: [String: IOSBackendJSONValue] = [:]
+    payload: [String: IOSBackendJSONValue] = [:],
+    isHandled: Bool = false
 ) -> IOSBackendActionItem {
     IOSBackendActionItem(
-        id: UUID(),
+        id: id,
         workspaceId: UUID(),
         sourceMissionId: nil,
         ownerProfileId: nil,
-        title: "Test Action",
+        title: title,
         systemIntent: systemIntent,
         payloadJson: payload,
         relevanceScore: 0.9,
-        isHandled: false,
+        isHandled: isHandled,
         handledAt: nil,
         timestamp: Date(),
         createdBy: "agent",
@@ -186,5 +189,59 @@ struct RemoteIntentRouterTests {
             payload: ["url": .string("https://example.com")]
         )
         #expect(IntentRoute.route(for: item).label == "Open Link")
+    }
+}
+
+@Suite("ActionsStore")
+struct ActionsStoreTests {
+
+    final class MockActionItemsSyncService: ActionItemsSyncing {
+        var isEnabled = true
+        var fetchResults: [[IOSBackendActionItem]]
+        var handledIDs: [UUID] = []
+
+        init(fetchResults: [[IOSBackendActionItem]]) {
+            self.fetchResults = fetchResults
+        }
+
+        func fetchUnhandledActionItemsRemote() async throws -> [IOSBackendActionItem] {
+            guard !fetchResults.isEmpty else { return [] }
+            return fetchResults.removeFirst()
+        }
+
+        func handleActionItemRemote(id: UUID) async throws {
+            handledIDs.append(id)
+        }
+    }
+
+    @Test("refresh excludes handled items returned by the backend")
+    @MainActor
+    func refreshFiltersHandledItems() async {
+        let visibleItem = makeItem(title: "Visible", systemIntent: "url.open")
+        let handledItem = makeItem(title: "Handled", systemIntent: "url.open", isHandled: true)
+        let sync = MockActionItemsSyncService(fetchResults: [[visibleItem, handledItem]])
+        let store = ActionsStore(sync: sync)
+
+        await store.refresh()
+
+        #expect(store.items.map(\.id) == [visibleItem.id])
+    }
+
+    @Test("markHandled keeps an item hidden when a stale refresh returns it again")
+    @MainActor
+    func markHandledSuppressesStaleRefresh() async throws {
+        let item = makeItem(systemIntent: "url.open")
+        let sync = MockActionItemsSyncService(fetchResults: [[item], [item]])
+        let store = ActionsStore(sync: sync)
+
+        await store.refresh()
+        #expect(store.items.map(\.id) == [item.id])
+
+        try await store.markHandled(item)
+        #expect(sync.handledIDs == [item.id])
+        #expect(store.items.isEmpty)
+
+        await store.refresh()
+        #expect(store.items.isEmpty)
     }
 }

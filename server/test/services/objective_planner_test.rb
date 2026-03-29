@@ -38,28 +38,51 @@ class ObjectivePlannerTest < ActiveSupport::TestCase
     assert_equal "Valid task", tasks.first.description
   end
 
-  test "returns empty array and logs on JSON parse error" do
+  test "creates fallback tasks on JSON parse error" do
     tasks = ObjectivePlanner.new(client: stub_client("not json at all")).call(@objective)
 
-    assert_equal [], tasks
-    assert_equal 0, @objective.reload.tasks.count
+    assert_operator tasks.length, :>=, 1
+    assert_equal tasks.length, @objective.reload.tasks.count
   end
 
-  test "returns empty array when response is a JSON object instead of array" do
+  test "accepts a wrapped tasks array response" do
+    raw_json = JSON.generate({
+      "tasks" => [
+        { "description" => "Research family-friendly attractions in San Diego" },
+        { "description" => "Compare airport transfer options" }
+      ]
+    })
+
+    tasks = ObjectivePlanner.new(client: stub_client(raw_json)).call(@objective)
+
+    assert_equal 2, tasks.length
+    assert_equal "Research family-friendly attractions in San Diego", tasks.first.description
+    assert_equal 2, @objective.reload.tasks.count
+  end
+
+  test "creates fallback tasks when response is a JSON object instead of array" do
     raw_json = JSON.generate({ "description" => "Forgot to wrap in array" })
     tasks    = ObjectivePlanner.new(client: stub_client(raw_json)).call(@objective)
 
-    assert_equal [], tasks
-    assert_equal 0, @objective.reload.tasks.count
+    assert_operator tasks.length, :>=, 1
+    assert_equal tasks.length, @objective.reload.tasks.count
   end
 
-  test "returns empty array when the client raises" do
+  test "creates fallback tasks when the client raises" do
     raising_client = Object.new
     raising_client.define_singleton_method(:chat) { |**_| raise "connection refused" }
 
     tasks = ObjectivePlanner.new(client: raising_client).call(@objective)
 
-    assert_equal [], tasks
+    assert_operator tasks.length, :>=, 1
+    assert_equal tasks.length, @objective.reload.tasks.count
+  end
+
+  test "creates fallback tasks when LLM returns an empty array" do
+    tasks = ObjectivePlanner.new(client: stub_client("[]")).call(@objective)
+
+    assert_operator tasks.length, :>=, 1
+    assert_equal tasks.length, @objective.reload.tasks.count
   end
 
   private

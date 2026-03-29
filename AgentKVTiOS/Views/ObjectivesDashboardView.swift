@@ -3,6 +3,7 @@ import SwiftUI
 struct ObjectivesDashboardView: View {
     @Environment(ObjectivesStore.self) private var store
     @State private var showCreateSheet = false
+    @State private var deleteError: String?
 
     var body: some View {
         NavigationStack {
@@ -12,6 +13,7 @@ struct ObjectivesDashboardView: View {
                         ObjectiveRow(objective: objective)
                     }
                 }
+                .onDelete(perform: deleteObjectives)
             }
             .navigationTitle("Objectives")
             .refreshable { await store.refresh() }
@@ -35,8 +37,30 @@ struct ObjectivesDashboardView: View {
                 CreateObjectiveSheet()
             }
             .familyProfileToolbar()
+            .alert("Could Not Delete Objective", isPresented: Binding(
+                get: { deleteError != nil },
+                set: { if !$0 { deleteError = nil } }
+            )) {
+                Button("OK", role: .cancel) { deleteError = nil }
+            } message: {
+                Text(deleteError ?? "An error occurred.")
+            }
         }
         .task { await store.refresh() }
+    }
+
+    private func deleteObjectives(at offsets: IndexSet) {
+        let ids = offsets.compactMap { store.objectives.indices.contains($0) ? store.objectives[$0].id : nil }
+        Task { @MainActor in
+            for id in ids {
+                do {
+                    try await store.deleteObjective(id: id)
+                } catch {
+                    deleteError = error.localizedDescription
+                    IOSRuntimeLog.log("[ObjectivesDashboardView] Delete failed: \(error)")
+                }
+            }
+        }
     }
 }
 

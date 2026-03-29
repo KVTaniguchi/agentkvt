@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+
+<!--
+  AgentKVT Jobs — launchd User Agent
+  ==================================
+  Runs Solid Queue outside Puma so Active Job work keeps flowing on macOS
+  without triggering the Puma fork-safety crash.
+
+  Assumptions:
+  - the repo checkout lives at ~/AgentKVTMac
+  - ./bin/run_agentkvt_jobs.sh is the supported startup path
+  - server/.env already contains the production secrets
+
+  Install:
+    mkdir -p ~/.agentkvt/logs ~/Library/LaunchAgents
+    cp com.agentkvt.jobs.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.agentkvt.jobs.plist
+    launchctl enable gui/$(id -u)/com.agentkvt.jobs
+    launchctl kickstart -k gui/$(id -u)/com.agentkvt.jobs
+
+  Uninstall:
+    launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.agentkvt.jobs.plist
+    rm ~/Library/LaunchAgents/com.agentkvt.jobs.plist
+-->
+
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.agentkvt.jobs</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-lc</string>
+        <string>mkdir -p "$HOME/.agentkvt/logs" &amp;&amp; cd "$HOME/AgentKVTMac" &amp;&amp; exec ./bin/run_agentkvt_jobs.sh</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>ThrottleInterval</key>
+    <integer>15</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/familyagent/.agentkvt/logs/agentkvt-jobs-launchd.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/familyagent/.agentkvt/logs/agentkvt-jobs-launchd.err</string>
+</dict>
+</plist>

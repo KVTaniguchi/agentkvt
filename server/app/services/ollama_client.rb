@@ -3,7 +3,7 @@ require "json"
 
 class OllamaClient
   BASE_URL = ENV.fetch("OLLAMA_BASE_URL", "http://localhost:11434")
-  DEFAULT_MODEL = ENV.fetch("OLLAMA_MODEL", "qwen2.5")
+  DEFAULT_MODEL = ENV.fetch("OLLAMA_MODEL", "llama4:latest")
 
   # Sends a chat request to the local Ollama instance.
   # Returns the assistant's reply as a plain string.

@@ -30,7 +30,7 @@
 		<true/>
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>AgentKVT connects to your Mac-hosted AgentKVT server during development.</string>
+	<string>AgentKVT uses the local network to reach your Mac (Ollama, optional API) during development.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import AgentKVTMac
+import ManagerCore
 
 struct OllamaClientTests {
 

@@ -1,4 +1,5 @@
 import Foundation
+import ManagerCore
 
 /// Runs one agent turn: send messages to LLM, handle tool calls, repeat until done.
 public final class AgentLoop {

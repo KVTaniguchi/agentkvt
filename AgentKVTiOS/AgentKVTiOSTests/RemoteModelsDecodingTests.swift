@@ -60,6 +60,33 @@ struct IOSBackendObjectiveDecodingTests {
         #expect(obj.status == "pending")
         #expect(obj.priority == 0)
     }
+
+    @Test("Decodes single-objective envelope from create or PATCH response")
+    func decodesObjectiveEnvelope() throws {
+        let json = """
+        {
+          "objective": {
+            "id": "11111111-1111-1111-1111-111111111111",
+            "workspace_id": "22222222-2222-2222-2222-222222222222",
+            "goal": "Updated prompt",
+            "status": "active",
+            "priority": 2,
+            "created_at": "2026-03-28T10:00:00Z",
+            "updated_at": "2026-03-28T12:00:00Z"
+          }
+        }
+        """
+        let decoder = makeDecoder()
+        let envelope = try decoder.decode(IOSBackendObjectiveEnvelope.self, from: Data(json.utf8))
+        #expect(envelope.objective.goal == "Updated prompt")
+        #expect(envelope.objective.priority == 2)
+    }
+}
+
+// MARK: - IOSBackendObjective envelope (test-only type visibility)
+
+private struct IOSBackendObjectiveEnvelope: Decodable {
+    let objective: IOSBackendObjective
 }
 
 // MARK: - IOSBackendTask

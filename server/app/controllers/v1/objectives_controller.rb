@@ -24,6 +24,25 @@ module V1
       }
     end
 
+    def update
+      objective = current_workspace.objectives.find(params[:id])
+      objective.update!(objective_params)
+
+      # Activating an objective that never got tasks (e.g. was pending, or LLM failed earlier).
+      if objective.saved_change_to_status? && objective.status == "active" && objective.tasks.empty?
+        ObjectivePlanner.new.call(objective)
+      end
+
+      render json: { objective: serialize_objective(objective) }
+    end
+
+    def destroy
+      objective = current_workspace.objectives.find(params[:id])
+      objective.destroy!
+
+      head :no_content
+    end
+
     private
 
     def objective_params

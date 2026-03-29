@@ -18,15 +18,27 @@ struct IOSBackendSettings: Sendable {
     let configFileURL: URL?
     let apiBaseURL: URL?
     let workspaceSlug: String?
+    /// When set (with `ollamaModel`), chat sends directly to this Ollama HTTP API on Wi‑Fi/LAN instead of queueing for the Mac runner.
+    let ollamaBaseURL: URL?
+    let ollamaModel: String?
 
     var isEnabled: Bool {
         apiBaseURL != nil
     }
 
+    /// Direct Ollama chat on device (same host/model as the Mac runner typically uses).
+    var isDirectOllamaConfigured: Bool {
+        guard let ollamaBaseURL, let model = ollamaModel?.trimmingCharacters(in: .whitespacesAndNewlines), !model.isEmpty else {
+            return false
+        }
+        return true
+    }
+
     var startupMessage: String {
         let backend = apiBaseURL?.absoluteString ?? "disabled"
         let workspace = workspaceSlug ?? "-"
-        return "[Config] iOS backend: \(backend) [workspace=\(workspace)]"
+        let ollama = isDirectOllamaConfigured ? "direct Ollama \(ollamaModel ?? "") @ \(ollamaBaseURL!.absoluteString)" : "no direct Ollama"
+        return "[Config] iOS backend: \(backend) [workspace=\(workspace)] | \(ollama)"
     }
 
     static func load(from source: IOSBackendSettingsSource = .live()) -> IOSBackendSettings {
@@ -44,11 +56,18 @@ struct IOSBackendSettings: Sendable {
         )
         let apiBaseURL = resolver.string(for: "AGENTKVT_API_BASE_URL").flatMap(URL.init(string:))
         let workspaceSlug = resolver.string(for: "AGENTKVT_WORKSPACE_SLUG") ?? (apiBaseURL == nil ? nil : "default")
+        let ollamaURLString = resolver.string(for: "AGENTKVT_OLLAMA_BASE_URL")
+            ?? resolver.string(for: "OLLAMA_BASE_URL")
+        let ollamaBaseURL = ollamaURLString.flatMap(URL.init(string:))
+        let ollamaModel = resolver.string(for: "AGENTKVT_OLLAMA_MODEL")
+            ?? resolver.string(for: "OLLAMA_MODEL")
 
         return IOSBackendSettings(
             configFileURL: configFileURL,
             apiBaseURL: apiBaseURL,
-            workspaceSlug: workspaceSlug
+            workspaceSlug: workspaceSlug,
+            ollamaBaseURL: ollamaBaseURL,
+            ollamaModel: ollamaModel
         )
     }
 

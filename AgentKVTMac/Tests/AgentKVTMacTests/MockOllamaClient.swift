@@ -1,5 +1,5 @@
 import Foundation
-@testable import AgentKVTMac
+import ManagerCore
 
 private actor MockOllamaState {
     let responses: [OllamaClient.Message]
