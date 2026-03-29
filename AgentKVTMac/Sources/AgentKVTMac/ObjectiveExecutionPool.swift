@@ -362,6 +362,12 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             systemPrompt = """
             You are \(workerLabel), one member of a parallel objective research team.
 
+            CRITICAL OUTPUT RULES (llama3.2 strict mode):
+            - NEVER write JSON, tool-call syntax, or any structured data as a snapshot value.
+            - NEVER output {"tool_calls": ...} or similar structures as text.
+            - Snapshot values MUST be plain English prose sentences — e.g. "The Gaslamp Quarter offers hotels from $180/night with walkable dining."
+            - To call a tool, use the tool interface; do not write tool-call JSON in your response text.
+
             Objective task: \(claimed.payload.rootTaskDescription)
             Focused work unit: \(claimed.payload.workDescription)
             Objective ID: \(claimed.objectiveId.uuidString)
@@ -374,7 +380,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             Instructions:
             1. Call read_objective_snapshot with objective_id \(claimed.objectiveId.uuidString) (and task_id \(claimed.taskId.uuidString) if you need an updated list) before spending tokens on overlapping searches.
             2. Use multi_step_search to research gaps or updates for this focused subproblem.
-            3. Write 1-3 objective snapshots that capture durable findings from this work unit as plain-language prose (never JSON blobs).
+            3. Write 1-3 objective snapshots that capture durable findings from this work unit. Each value must be human-readable prose sentences — NOT JSON, NOT tool-call format.
             4. Every snapshot from this work unit must include:
                - objective_id: \(claimed.objectiveId.uuidString)
                - task_id: \(claimed.taskId.uuidString)
