@@ -60,12 +60,14 @@ module V1
       render json: { objective: serialize_objective(objective.reload) }
     end
 
-    # Resets every task to pending and re-dispatches so the user can redo research from the iOS app.
+    # Resets every task to pending, clears all research snapshots, and re-dispatches
+    # so the user can redo research from scratch from the iOS app.
     def rerun
       objective = current_workspace.objectives.find(params[:id])
       objective.tasks.find_each do |task|
         task.update!(status: "pending", result_summary: nil)
       end
+      objective.research_snapshots.destroy_all
       kickoff_objective(objective)
 
       render json: { objective: serialize_objective(objective.reload) }
