@@ -1,18 +1,14 @@
 # Email Ingestion
 
-The Mac agent can poll an IMAP mailbox and automatically process incoming emails as
-agent missions. This lets you use a dedicated address (e.g. `familykvtagent@tuta.com`)
-as a mailing list holding ground — subscribe to newsletters there instead of your
-personal email, and let the agent extract action items.
+The Mac agent polls `kvtingest@gmail.com` via IMAP and processes each incoming email
+as an agent mission. Subscribe to mailing lists and newsletters using that address
+instead of your personal email — the agent extracts action items and surfaces them
+in the iOS Actions tab.
 
 ## Architecture
 
 ```
-familykvtagent@tuta.com   (public address for subscriptions)
-        │
-        │  Tuta auto-forward rule
-        ▼
-familykvtagent.relay@gmail.com   (private relay, IMAP-accessible)
+kvtingest@gmail.com   (subscribe mailing lists here)
         │
         │  IMAPEmailPoller polls every 5 min via Python imaplib
         ▼
@@ -37,29 +33,15 @@ email pipeline at the inbox directory boundary.
 
 ## One-time setup
 
-### 1. Gmail relay account
+### 1. Enable IMAP and generate an app password
 
-Create a new private Gmail address — for example `familykvtagent.relay@gmail.com`.
-This address is never shared with anyone; it only exists so the agent can read via IMAP.
+In `kvtingest@gmail.com`:
 
-Enable IMAP:
 - Gmail Settings → See all settings → Forwarding and POP/IMAP → Enable IMAP → Save
-
-Generate an app password:
 - Google Account → Security → 2-Step Verification → App passwords
-- App: "AgentKVT" (or any label)
-- Copy the 16-character password — you'll need it below
+- Create one labelled "AgentKVT" — copy the 16-character password
 
-### 2. Tuta forwarding rule
-
-In Tuta (`familykvtagent@tuta.com`):
-- Settings → Inbox rules → Add rule
-- Condition: "All messages"
-- Action: Forward to `familykvtagent.relay@gmail.com`
-
-Verify by sending a test email to the Tuta address and confirming it arrives in Gmail.
-
-### 3. Configure the agent
+### 2. Configure the agent
 
 Add these keys to `~/.agentkvt/agentkvt-runner.plist` on the server Mac:
 
@@ -71,7 +53,7 @@ Add these keys to `~/.agentkvt/agentkvt-runner.plist` on the server Mac:
 <integer>993</integer>
 
 <key>AGENTKVT_IMAP_USERNAME</key>
-<string>familykvtagent.relay@gmail.com</string>
+<string>kvtingest@gmail.com</string>
 
 <key>AGENTKVT_IMAP_PASSWORD</key>
 <string>xxxx xxxx xxxx xxxx</string>
@@ -87,13 +69,13 @@ Optional (defaults shown):
 <integer>300</integer>
 ```
 
-Restart the Mac app (or the launchd service) to pick up the new config:
+Restart the Mac app to pick up the new config:
 
 ```bash
 launchctl kickstart -k gui/$(id -u)/com.agentkvt.api
 ```
 
-### 4. Create the "Mailing List Processor" mission
+### 3. Create the "Mailing List Processor" mission
 
 Open the iOS app → Missions → +
 
@@ -128,7 +110,7 @@ If the email is pure promotional noise with no actionable content, do not write 
 | `AGENTKVT_IMAP_HOST` | — | IMAP server hostname (required) |
 | `AGENTKVT_IMAP_PORT` | `993` | IMAP SSL port |
 | `AGENTKVT_IMAP_USERNAME` | — | IMAP login username (required) |
-| `AGENTKVT_IMAP_PASSWORD` | — | IMAP password or app password (required) |
+| `AGENTKVT_IMAP_PASSWORD` | — | Gmail app password (required) |
 | `AGENTKVT_IMAP_MAILBOX` | `INBOX` | Mailbox to poll |
 | `AGENTKVT_IMAP_POLL_SECONDS` | `300` | Poll interval in seconds (minimum 60) |
 
@@ -142,37 +124,35 @@ The poller is disabled unless all three required keys (`HOST`, `USERNAME`, `PASS
 `~/.agentkvt/imap_fetch.py` (written to disk on first use) via `/usr/bin/python3`.
 
 The script:
-1. Connects to the IMAP server over SSL
+1. Connects to `imap.gmail.com:993` over SSL
 2. Searches for `UNSEEN` messages
-3. Fetches each message body (`RFC822`) — this marks them as read on the server
-4. Writes each message to `~/.agentkvt/inbox/imap-{id}-{timestamp}.eml`
+3. Fetches each message body (`RFC822`) — Gmail marks these as read automatically
+4. Writes each to `~/.agentkvt/inbox/imap-{id}-{timestamp}.eml`
 5. Returns a JSON array of written paths
 
 `EmailIngestor` watches the inbox directory and enqueues each `.eml` for the
 `incoming_email_trigger` tool. The Mailing List Processor mission fires, reads the email,
-and writes action items. No additional configuration needed after the initial setup.
+and writes action items.
 
 ---
 
 ## Verification
 
-**1. Smoke-test IMAP credentials directly:**
+**1. Smoke-test credentials on the server Mac:**
 
 ```bash
 python3 ~/.agentkvt/imap_fetch.py \
   imap.gmail.com 993 \
-  familykvtagent.relay@gmail.com "app password" \
+  kvtingest@gmail.com "app password" \
   INBOX ~/.agentkvt/inbox
 ```
 
-Should print `[]` (no unseen messages) or a JSON array of written `.eml` paths.
+Should print `[]` (no unseen mail) or a JSON array of written `.eml` paths.
 
 **2. End-to-end test:**
 
-Send an email to `familykvtagent@tuta.com` from an external address.
-Within ~5 minutes, a `.eml` file should appear in `~/.agentkvt/inbox/`.
-
-Tail the log to confirm dispatch:
+Send an email to `kvtingest@gmail.com`. Within 5 minutes a `.eml` should appear in
+`~/.agentkvt/inbox/`. Tail the log to confirm:
 
 ```bash
 tail -f ~/.agentkvt/logs/agentkvt-mac.log | grep -E "IMAP|emailFile"
@@ -180,8 +160,8 @@ tail -f ~/.agentkvt/logs/agentkvt-mac.log | grep -E "IMAP|emailFile"
 
 **3. iOS confirmation:**
 
-Action items from the processed email appear in the iOS Actions tab within one poll cycle.
+Action items from the processed email appear in the iOS Actions tab.
 
 **4. Mark-read check:**
 
-In the Gmail relay inbox, processed messages should appear as read (not bold).
+The message should appear as read in the Gmail inbox after processing.
