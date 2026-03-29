@@ -31,6 +31,12 @@
     and copy the runtime plist to the home-path config file.
   - Runtime logs live at:
       ~/Library/Group Containers/group.com.agentkvt.shared/Library/Logs/agentkvt-mac.log
+  - If you need to change OLLAMA_MODEL in the app-group plist over SSH: do not run
+    PlistBuddy as root against another user's group container (often permission /
+    TCC issues). Use repo script set-ollama-model-in-group-plist.sh as admin, or run
+    PlistBuddy/python as that user, e.g. sudo -u familyagent python3 ... on the plist path.
+  - launchctl bootout/bootstrap must use the same account that owns the LaunchAgent
+    (e.g. sudo -u familyagent launchctl ...), not your personal GUI uid.
 -->
 
 <plist version="1.0">
