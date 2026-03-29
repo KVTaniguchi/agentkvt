@@ -69,13 +69,27 @@ if [[ ! -f "${SERVER_DIR}/config/application.rb" ]]; then
   exit 1
 fi
 
-# Match ./bin/run_agentkvt_api.sh so bundle/rails/psql agree with production.
+# Prefer Homebrew Ruby over /usr/bin/ruby (2.6). Prepending ~/.gem/.../bin first
+# can leave a stale `bundle` in PATH and triggers Gem::Resolver errors mixing runtimes.
 export PATH="/opt/homebrew/opt/ruby/bin:/usr/local/opt/ruby/bin:/opt/homebrew/opt/postgresql@16/bin:/usr/local/opt/postgresql@16/bin:${PATH}"
-USER_GEM_HOME="$(ruby -r rubygems -e 'print Gem.user_dir')"
-export GEM_HOME="${USER_GEM_HOME}"
-export GEM_PATH="${USER_GEM_HOME}"
-export PATH="${USER_GEM_HOME}/bin:${PATH}"
+unset GEM_HOME GEM_PATH || true
 export PGGSSENCMODE="${PGGSSENCMODE:-disable}"
+
+RUBY_BIN="$(command -v ruby || true)"
+if [[ -z "${RUBY_BIN}" || "${RUBY_BIN}" == /usr/bin/ruby ]]; then
+  echo "ERROR: Need Homebrew Ruby on PATH before system Ruby (got: ${RUBY_BIN:-missing})." >&2
+  echo "Install: brew install ruby   then ensure /opt/homebrew/opt/ruby/bin is before /usr/bin in PATH." >&2
+  exit 1
+fi
+
+# Same Ruby’s gem bindir (bundler/rails binstubs live here for Homebrew Ruby).
+export PATH="$(ruby -e 'print Gem.bindir'):${PATH}"
+
+BUNDLE_BIN="$(command -v bundle || true)"
+if [[ "${BUNDLE_BIN}" == /usr/bin/bundle ]]; then
+  echo "ERROR: Refusing to use system Bundler at /usr/bin/bundle (wrong Ruby). PATH=${PATH}" >&2
+  exit 1
+fi
 
 if [[ -f "${SERVER_DIR}/.env" ]]; then
   set -a
