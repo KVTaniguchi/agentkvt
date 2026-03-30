@@ -18,6 +18,7 @@ Rails.application.routes.draw do
       post :run_now, on: :member
       post :reset_stuck_tasks_and_run, on: :member
       post :rerun, on: :member
+      get :presentation, on: :member
     end
 
     namespace :agent do

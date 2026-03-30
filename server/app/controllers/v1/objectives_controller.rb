@@ -80,7 +80,37 @@ module V1
       head :no_content
     end
 
+    def presentation
+      objective = current_workspace.objectives.find(params[:id])
+
+      if objective.presentation_json.present? && !presentation_stale?(objective)
+        cached = JSON.parse(objective.presentation_json)
+        return render json: { layout: cached["layout"] }
+      end
+
+      result = ObjectivePresentationBuilder.new.call(objective)
+
+      if result
+        objective.update_columns(
+          presentation_json: result,
+          presentation_generated_at: Time.current
+        )
+        render json: { layout: JSON.parse(result)["layout"] }
+      else
+        render json: { layout: nil }
+      end
+    end
+
     private
+
+    def presentation_stale?(objective)
+      return true unless objective.presentation_generated_at
+
+      latest_snapshot_at = objective.research_snapshots.maximum(:updated_at)
+      return false if latest_snapshot_at.nil?
+
+      latest_snapshot_at > objective.presentation_generated_at
+    end
 
     def objective_params
       params.require(:objective).permit(:goal, :status, :priority)

@@ -212,16 +212,38 @@ struct ObjectiveDetailView: View {
     var body: some View {
         List {
             Section("Activity") {
-                ObjectiveActivityCard(
-                    summary: activitySummary,
-                    taskCounts: taskCounts,
-                    workUnitCounts: workUnitCounts,
-                    snapshotCount: snapshots.count,
-                    logCount: agentLogs.count,
-                    lastHeartbeatAt: lastHeartbeatAt,
-                    lastLoadedAt: lastLoadedAt,
-                    showBoardSyncHint: !workUnitCounts.hasAnyUnits && !agentLogs.isEmpty
-                )
+                if !snapshots.isEmpty {
+                    NavigationLink {
+                        GenerativeResultsView(
+                            objectiveId: displayedObjective.id,
+                            objectiveGoal: displayedObjective.goal,
+                            snapshots: snapshots
+                        )
+                    } label: {
+                        ObjectiveActivityCard(
+                            summary: activitySummary,
+                            taskCounts: taskCounts,
+                            workUnitCounts: workUnitCounts,
+                            snapshotCount: snapshots.count,
+                            logCount: agentLogs.count,
+                            lastHeartbeatAt: lastHeartbeatAt,
+                            lastLoadedAt: lastLoadedAt,
+                            showBoardSyncHint: !workUnitCounts.hasAnyUnits && !agentLogs.isEmpty,
+                            showsDisclosure: true
+                        )
+                    }
+                } else {
+                    ObjectiveActivityCard(
+                        summary: activitySummary,
+                        taskCounts: taskCounts,
+                        workUnitCounts: workUnitCounts,
+                        snapshotCount: snapshots.count,
+                        logCount: agentLogs.count,
+                        lastHeartbeatAt: lastHeartbeatAt,
+                        lastLoadedAt: lastLoadedAt,
+                        showBoardSyncHint: !workUnitCounts.hasAnyUnits && !agentLogs.isEmpty
+                    )
+                }
                 if !liveBoardWorkUnits.isEmpty {
                     ForEach(liveBoardWorkUnits, id: \.id) { unit in
                         ObjectiveWorkUnitRow(unit: unit)
@@ -558,6 +580,7 @@ private struct ObjectiveActivityCard: View {
     let lastHeartbeatAt: Date?
     let lastLoadedAt: Date?
     let showBoardSyncHint: Bool
+    var showsDisclosure = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -581,6 +604,12 @@ private struct ObjectiveActivityCard: View {
                 if summary.showsProgress {
                     ProgressView()
                         .tint(summary.tint)
+                }
+
+                if showsDisclosure {
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.tertiary)
                 }
             }
 
@@ -628,6 +657,29 @@ private struct ObjectiveActivityCard: View {
             }
         }
         .padding(.vertical, 4)
+    }
+}
+
+private struct ObjectiveResearchDetailView: View {
+    let objectiveGoal: String
+    let snapshots: [IOSBackendResearchSnapshot]
+
+    var body: some View {
+        List {
+            Section("Research Snapshots") {
+                if snapshots.isEmpty {
+                    Text("No research data yet.")
+                        .foregroundStyle(.secondary)
+                        .font(.subheadline)
+                } else {
+                    ForEach(snapshots) { snapshot in
+                        SnapshotRow(snapshot: snapshot)
+                    }
+                }
+            }
+        }
+        .navigationTitle("Research")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 

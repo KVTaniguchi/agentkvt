@@ -521,6 +521,11 @@ actor IOSBackendAPIClient {
         _ = try await performRequest(path: "v1/objectives/\(id.uuidString)", method: "DELETE")
     }
 
+    func fetchObjectivePresentation(id: UUID) async throws -> UIPresentation {
+        let data = try await performRequest(path: "v1/objectives/\(id.uuidString)/presentation")
+        return try decoder.decode(UIPresentation.self, from: data)
+    }
+
     private func missionPayload(
         id: UUID,
         missionName: String,
@@ -1249,5 +1254,10 @@ final class IOSBackendSyncService {
     func deleteObjectiveRemote(id: UUID) async throws {
         guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
         try await client.deleteObjective(id: id)
+    }
+
+    func fetchObjectivePresentationRemote(id: UUID) async throws -> UIPresentation {
+        guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
+        return try await client.fetchObjectivePresentation(id: id)
     }
 }

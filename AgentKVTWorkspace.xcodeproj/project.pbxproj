@@ -26,6 +26,7 @@
 		A1000017 /* ObjectivesStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000016 /* ObjectivesStore.swift */; };
 		A1000018 /* ObjectivesDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000017 /* ObjectivesDashboardView.swift */; };
 		A1000019 /* ObjectiveDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000018 /* ObjectiveDetailView.swift */; };
+		A1000020 /* GenerativeResultsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000019 /* GenerativeResultsView.swift */; };
 		B1000001 /* ManagerCore in Frameworks */ = {isa = PBXBuildFile; productRef = A3000001 /* ManagerCore */; };
 		B1000002 /* ManagerCoreIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000002 /* ManagerCoreIntegrationTests.swift */; };
 		B1000003 /* InboundFilesImportUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000003 /* InboundFilesImportUITests.swift */; };
@@ -70,6 +71,7 @@
 		A2000016 /* ObjectivesStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ObjectivesStore.swift; sourceTree = "<group>"; };
 		A2000017 /* ObjectivesDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ObjectivesDashboardView.swift; sourceTree = "<group>"; };
 		A2000018 /* ObjectiveDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ObjectiveDetailView.swift; sourceTree = "<group>"; };
+		A2000019 /* GenerativeResultsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenerativeResultsView.swift; sourceTree = "<group>"; };
 		B2000001 /* AgentKVTiOSTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AgentKVTiOSTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B2000002 /* ManagerCoreIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManagerCoreIntegrationTests.swift; sourceTree = "<group>"; };
 		B2000003 /* InboundFilesImportUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboundFilesImportUITests.swift; sourceTree = "<group>"; };
@@ -152,6 +154,7 @@
 				A2000006 /* ChatView.swift */,
 				A2000017 /* ObjectivesDashboardView.swift */,
 				A2000018 /* ObjectiveDetailView.swift */,
+				A2000019 /* GenerativeResultsView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -378,6 +381,7 @@
 				A1000017 /* ObjectivesStore.swift in Sources */,
 				A1000018 /* ObjectivesDashboardView.swift in Sources */,
 				A1000019 /* ObjectiveDetailView.swift in Sources */,
+				A1000020 /* GenerativeResultsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

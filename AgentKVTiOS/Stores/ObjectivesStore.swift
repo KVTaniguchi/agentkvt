@@ -12,6 +12,7 @@ protocol ObjectivesRemoteSyncing: Sendable {
     func resetStuckTasksAndRunObjectiveRemote(id: UUID) async throws -> IOSBackendObjective
     func rerunObjectiveRemote(id: UUID) async throws -> IOSBackendObjective
     func deleteObjectiveRemote(id: UUID) async throws
+    func fetchObjectivePresentationRemote(id: UUID) async throws -> UIPresentation
 }
 
 extension IOSBackendSyncService: ObjectivesRemoteSyncing {}
@@ -105,5 +106,10 @@ final class ObjectivesStore {
     func deleteObjective(id: UUID) async throws {
         try await sync.deleteObjectiveRemote(id: id)
         objectives.removeAll { $0.id == id }
+    }
+
+    /// Fetches the generative UI layout for the given objective's research results.
+    func fetchPresentation(for id: UUID) async throws -> UIPresentation {
+        try await sync.fetchObjectivePresentationRemote(id: id)
     }
 }

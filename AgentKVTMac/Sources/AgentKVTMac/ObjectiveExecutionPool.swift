@@ -29,13 +29,15 @@ actor ObjectiveExecutionPool {
         client: any OllamaClientProtocol,
         missionRunner: MissionRunner,
         backendClient: BackendAPIClient?,
-        maxConcurrentWorkers: Int
+        maxConcurrentWorkers: Int,
+        researchSettleTimeoutSeconds: TimeInterval = 600
     ) {
         self.processor = ObjectiveExecutionProcessor(
             modelContainer: modelContainer,
             client: client,
             missionRunner: missionRunner,
-            backendClient: backendClient
+            backendClient: backendClient,
+            researchSettleTimeoutSeconds: researchSettleTimeoutSeconds
         )
         self.maxConcurrentWorkers = max(1, maxConcurrentWorkers)
     }
@@ -133,6 +135,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
     private let client: any OllamaClientProtocol
     private let missionRunner: MissionRunner
     private let backendClient: BackendAPIClient?
+    private let researchSettleTimeoutSeconds: TimeInterval
     /// Serializes SwiftData claim read/modify/save so parallel workers cannot claim the same pending unit.
     private let claimLock = NSLock()
 
@@ -140,12 +143,14 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         modelContainer: ModelContainer,
         client: any OllamaClientProtocol,
         missionRunner: MissionRunner,
-        backendClient: BackendAPIClient?
+        backendClient: BackendAPIClient?,
+        researchSettleTimeoutSeconds: TimeInterval
     ) {
         self.modelContainer = modelContainer
         self.client = client
         self.missionRunner = missionRunner
         self.backendClient = backendClient
+        self.researchSettleTimeoutSeconds = max(0.1, researchSettleTimeoutSeconds)
     }
 
     func superviseObjective(payload: TaskSearchPayload) async {
@@ -1043,7 +1048,13 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         try context.save()
     }
 
-    private func waitForResearchToSettle(objectiveId: UUID, taskId: UUID) async throws {
+    private func waitForResearchToSettle(
+        objectiveId: UUID,
+        taskId: UUID,
+        timeout: TimeInterval? = nil
+    ) async throws {
+        let timeoutSeconds = timeout ?? researchSettleTimeoutSeconds
+        let startedAt = Date()
         while true {
             let context = freshContext()
             try requeueExpiredClaims(in: context)
@@ -1053,8 +1064,86 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                     ($0.state == WorkUnitState.pending.rawValue || $0.state == WorkUnitState.inProgress.rawValue)
                 }
             if remaining.isEmpty { return }
+            if Date().timeIntervalSince(startedAt) >= timeoutSeconds {
+                let detail = try handleResearchTimeout(objectiveId: objectiveId, taskId: taskId, timeout: timeoutSeconds)
+                throw NSError(
+                    domain: "ObjectiveExecution",
+                    code: 3,
+                    userInfo: [NSLocalizedDescriptionKey: detail]
+                )
+            }
             try? await Task.sleep(for: .seconds(2))
         }
+    }
+
+    /// Marks long-running research as timed out so the supervisor cannot wait forever after
+    /// restarts or silent worker failures.
+    private func handleResearchTimeout(
+        objectiveId: UUID,
+        taskId: UUID,
+        timeout: TimeInterval
+    ) throws -> String {
+        let context = freshContext()
+        let units = try objectiveWorkUnits(in: context, objectiveId: objectiveId, taskId: taskId)
+        let root = units.first(where: { $0.workType == Constants.rootType })
+        let trimmedRootTitle = root?.title.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let objectiveName = trimmedRootTitle.isEmpty
+            ? "Objective \(objectiveId.uuidString.prefix(8))"
+            : trimmedRootTitle
+        let timeoutMessage = "Research phase timed out after \(Int(timeout)) seconds without settling."
+
+        for unit in units where unit.workType == Constants.researchType &&
+            (unit.state == WorkUnitState.pending.rawValue || unit.state == WorkUnitState.inProgress.rawValue) {
+            unit.state = WorkUnitState.blocked.rawValue
+            unit.claimedByMissionId = nil
+            unit.claimedUntil = nil
+            unit.workerLabel = nil
+            unit.activePhaseHint = "timed_out"
+            unit.updatedAt = Date()
+            unit.lastHeartbeatAt = Date()
+            if var payload = decodePayload(unit.moundPayload) {
+                payload.lastError = timeoutMessage
+                unit.moundPayload = encodePayload(payload)
+            }
+        }
+        if let root {
+            root.state = WorkUnitState.blocked.rawValue
+            root.activePhaseHint = "timed_out"
+            root.updatedAt = Date()
+            root.lastHeartbeatAt = Date()
+        }
+        try context.save()
+
+        let actionTitle = "Agent Stalled: \(objectiveName) timed out."
+        createLocalActionItem(title: actionTitle, detail: timeoutMessage)
+        Task.detached(priority: .utility) { [weak self] in
+            await self?.logEvent(
+                phase: "error",
+                content: actionTitle,
+                objectiveId: objectiveId,
+                taskId: taskId,
+                missionName: "Objective Supervisor"
+            )
+        }
+        return actionTitle
+    }
+
+    private func createLocalActionItem(title: String, detail: String) {
+        let context = freshContext()
+        let payloadData: Data? = try? JSONSerialization.data(
+            withJSONObject: [
+                "reminderTitle": title,
+                "notes": detail
+            ],
+            options: []
+        )
+        let item = ActionItem(
+            title: title,
+            systemIntent: SystemIntent.reminderAdd.rawValue,
+            payloadData: payloadData
+        )
+        context.insert(item)
+        try? context.save()
     }
 
     private func waitForSynthesisToSettle(objectiveId: UUID, taskId: UUID) async throws {
