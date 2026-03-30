@@ -194,6 +194,19 @@ public final class MissionRunner: @unchecked Sendable {
                         toolTranscript: toolTranscript
                     )
                 }
+                if actionItemsCounter.count == 0,
+                   let actionNudge = actionItemMissionRetryNudge(request: request, firstOutcome: first, transcript: toolTranscript.entries) {
+                    let nudge = userMessage + "\n\n" + actionNudge
+                    first = try await runLoop(
+                        request: request,
+                        allowedToolIds: allowedTools,
+                        systemPrompt: systemPrompt,
+                        userMessage: nudge,
+                        maxRounds: 5,
+                        actionItemsCounter: actionItemsCounter,
+                        toolTranscript: toolTranscript
+                    )
+                }
                 result = first
             } catch {
                 await logWriter.writeLog(
@@ -278,6 +291,28 @@ public final class MissionRunner: @unchecked Sendable {
         let wroteSnapshot = transcript.contains { $0.contains("write_objective_snapshot") }
         if !wroteSnapshot {
             return "RETRY (mandatory): You completed searches but never called write_objective_snapshot. You MUST call write_objective_snapshot now using the tool API to persist your findings. Use objective_id and task_id from your instructions. Do not respond with plain text only."
+        }
+
+        return nil
+    }
+
+    /// Returns a retry nudge string for regular missions (those with `write_action_item`) when
+    /// the first loop ended without calling it. Covers two failure modes observed in production:
+    /// 1. Model emitted raw tool-call JSON as prose (`{"tool_calls":[...]}`) instead of using the tool API.
+    /// 2. Model called `write_action_item` in the same batch as a data-gathering tool, got deferred,
+    ///    then produced a final response without retrying.
+    private func actionItemMissionRetryNudge(request: Request, firstOutcome: String, transcript: [String]) -> String? {
+        guard request.allowedToolIds.contains("write_action_item") else { return nil }
+
+        if MetaRefusalText.looksLikeRawToolCallOutput(firstOutcome) {
+            return "RETRY (mandatory): Your previous response wrote raw JSON text instead of using the tool API. You MUST call write_action_item using the tool API — do NOT write JSON in your reply text. Call the tool now."
+        }
+
+        let deferrals = transcript.filter {
+            $0.contains("tool_result write_action_item:") && $0.contains("Deferred:")
+        }
+        if !deferrals.isEmpty {
+            return "RETRY (mandatory): write_action_item was deferred because you called it in the same response as a data-gathering tool. You MUST call write_action_item now via the tool API to create an action item for the user."
         }
 
         return nil

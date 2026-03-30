@@ -24,7 +24,7 @@ public func makeWriteObjectiveSnapshotTool(backendClient: BackendAPIClient) -> T
                 ),
                 "task_id": .init(
                     type: "string",
-                    description: "UUID of the Task that triggered this search (from the webhook payload). Providing this marks the task completed."
+                    description: "UUID of the Task that triggered this search (from the webhook payload)."
                 ),
                 "key": .init(
                     type: "string",
@@ -36,7 +36,7 @@ public func makeWriteObjectiveSnapshotTool(backendClient: BackendAPIClient) -> T
                 ),
                 "mark_task_completed": .init(
                     type: "boolean",
-                    description: "Optional. Set true only when this snapshot should also mark the parent task complete. Defaults to true when task_id is provided and this field is omitted."
+                    description: "Optional. Set true only on the final synthesis snapshot that should mark the parent task complete. Defaults to false."
                 )
             ],
             required: ["objective_id", "key", "value"]
@@ -50,7 +50,7 @@ public func makeWriteObjectiveSnapshotTool(backendClient: BackendAPIClient) -> T
             }
 
             let taskId: UUID? = (args["task_id"] as? String).flatMap { UUID(uuidString: $0) }
-            let markTaskCompleted = args["mark_task_completed"] as? Bool
+            let markTaskCompleted = (args["mark_task_completed"] as? Bool) ?? false
 
             if let msg = ObjectiveResearchSnapshotPayload.clientRejectionMessageIfInvalid(value) {
                 return "Error: \(msg)"

@@ -23,21 +23,38 @@ final class WebhookListener: @unchecked Sendable {
     }
 
     func start() {
+        attemptBind(attempt: 1)
+    }
+
+    private func attemptBind(attempt: Int) {
         guard let listener = try? NWListener(using: .tcp, on: port) else {
-            print("WebhookListener: failed to bind on port \(port)")
+            print("WebhookListener: failed to create listener on port \(port)")
             return
         }
         listener.newConnectionHandler = { [weak self] conn in
             self?.handle(conn)
         }
-        listener.stateUpdateHandler = { state in
-            if case .failed(let err) = state {
-                print("WebhookListener error: \(err)")
+        listener.stateUpdateHandler = { [weak self] state in
+            guard let self else { return }
+            switch state {
+            case .ready:
+                print("WebhookListener: listening on port \(self.port)")
+            case .failed(let err):
+                self.listener = nil
+                if attempt < 3 {
+                    print("WebhookListener: bind failed (\(err)), retrying in 2s (attempt \(attempt)/3)…")
+                    DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 2) {
+                        self.attemptBind(attempt: attempt + 1)
+                    }
+                } else {
+                    print("WebhookListener: could not bind port \(self.port) after 3 attempts: \(err)")
+                }
+            default:
+                break
             }
         }
         listener.start(queue: .global(qos: .utility))
         self.listener = listener
-        print("WebhookListener: listening on port \(port)")
     }
 
     func stop() {

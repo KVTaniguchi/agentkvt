@@ -361,9 +361,19 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                 let toolRow = existingSnaps?.first { $0.key == summaryKey }
                 let toolWroteSummary = toolRow.map { !$0.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } ?? false
 
-                if toolWroteSummary {
-                    // write_objective_snapshot already upserted task_summary_*; do not overwrite with the assistant's closing chit-chat.
-                } else {
+                if toolWroteSummary, let toolRow {
+                    // Tool already wrote task_summary_*. Re-upsert the same value with markTaskCompleted: true
+                    // so the task is guaranteed to be marked complete regardless of what mark_task_completed
+                    // value the model passed to the tool. This is idempotent: Rails only sets delta_note when
+                    // the value changes, so re-sending the same prose produces no spurious alert.
+                    _ = try? await backendClient.writeResearchSnapshot(
+                        objectiveId: claimed.objectiveId,
+                        taskId: claimed.taskId,
+                        key: summaryKey,
+                        value: String(toolRow.value.prefix(8000)),
+                        markTaskCompleted: true
+                    )
+                } else if !toolWroteSummary {
                     if looksLikeMetaRefusal(result) {
                         try blockWorkUnit(
                             claimed.workUnitId,
