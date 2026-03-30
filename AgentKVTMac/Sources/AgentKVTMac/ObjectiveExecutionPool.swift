@@ -7,6 +7,15 @@ private struct ObjectiveWorkerSlot: Sendable {
     let label: String
 }
 
+/// A (objectiveId, taskId) group that has research work units but no synthesis unit.
+/// Created at startup to resume objectives whose supervisor task was lost on app restart.
+private struct OrphanedObjectiveGroup: Sendable {
+    let objectiveId: UUID
+    let taskId: UUID
+    let rootTaskDescription: String
+    let parentObjectiveGoal: String?
+}
+
 actor ObjectiveExecutionPool {
     private let processor: ObjectiveExecutionProcessor
     private let maxConcurrentWorkers: Int
@@ -41,6 +50,28 @@ actor ObjectiveExecutionPool {
                 await processor.runWorkerLoop(slot: slot)
             }
             workerTasks.append(task)
+        }
+        // Sweep for objectives whose supervisor was lost when the app last restarted.
+        Task.detached(priority: .utility) { [self] in
+            await self.sweepOrphanedObjectives()
+        }
+    }
+
+    /// Finds objective/task groups that have research work units but no synthesis unit,
+    /// then spawns a recovery supervisor for each one. Called once at startup.
+    private func sweepOrphanedObjectives() async {
+        let orphans = processor.findOrphanedObjectiveGroups()
+        guard !orphans.isEmpty else { return }
+        print("[ObjectiveExecutionPool] Startup sweep: found \(orphans.count) orphaned objective(s) — resuming synthesis")
+        for orphan in orphans {
+            guard supervisorTaskIds.insert(orphan.taskId.uuidString).inserted else {
+                print("[ObjectiveExecutionPool] recovery: task \(orphan.taskId) already supervised, skipping")
+                continue
+            }
+            Task.detached(priority: .utility) { [processor, taskId = orphan.taskId.uuidString] in
+                await processor.resumeFromSynthesis(orphan: orphan)
+                await self.finishSupervision(taskId: taskId)
+            }
         }
     }
 
@@ -1117,6 +1148,88 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         }
         if didChange {
             try context.save()
+        }
+    }
+
+    // MARK: - Startup orphan recovery
+
+    /// Scans SwiftData for (objectiveId, taskId) groups that have at least one research work unit
+    /// but no synthesis work unit. These are objectives whose supervisor task was lost when the app
+    /// last restarted mid-execution. Called once at startup; safe to call again (idempotent).
+    func findOrphanedObjectiveGroups() -> [OrphanedObjectiveGroup] {
+        let context = freshContext()
+        guard let allUnits = try? objectiveBoardUnits(in: context) else { return [] }
+
+        // Group non-root work units by (objectiveId, taskId).
+        var groups: [String: [WorkUnit]] = [:]
+        for unit in allUnits where unit.workType != Constants.rootType {
+            guard let objId = unit.objectiveId, let taskId = unit.sourceTaskId else { continue }
+            let key = "\(objId.uuidString)/\(taskId.uuidString)"
+            groups[key, default: []].append(unit)
+        }
+
+        var orphans: [OrphanedObjectiveGroup] = []
+        for (_, units) in groups {
+            let hasSynthesis = units.contains { $0.workType == Constants.synthesisType }
+            let researchUnits = units.filter { $0.workType == Constants.researchType }
+            guard !researchUnits.isEmpty, !hasSynthesis else { continue }
+
+            guard let firstUnit = researchUnits.first,
+                  let objId = firstUnit.objectiveId,
+                  let taskId = firstUnit.sourceTaskId,
+                  let payload = decodePayload(firstUnit.moundPayload) else { continue }
+
+            orphans.append(OrphanedObjectiveGroup(
+                objectiveId: objId,
+                taskId: taskId,
+                rootTaskDescription: payload.rootTaskDescription,
+                parentObjectiveGoal: payload.parentObjectiveGoal
+            ))
+        }
+        return orphans
+    }
+
+    /// Recovery supervisor: waits for any in-flight research to settle, creates the synthesis
+    /// work unit, then waits for synthesis to complete. Mirrors the tail of `superviseObjective`.
+    func resumeFromSynthesis(orphan: OrphanedObjectiveGroup) async {
+        await logEvent(
+            phase: "objective_supervisor",
+            content: "Recovery supervisor started — resuming synthesis for orphaned task: \(orphan.rootTaskDescription)",
+            objectiveId: orphan.objectiveId,
+            taskId: orphan.taskId,
+            missionName: "Objective Recovery Supervisor"
+        )
+        do {
+            try await waitForResearchToSettle(objectiveId: orphan.objectiveId, taskId: orphan.taskId)
+            _ = try ensureSynthesisWorkUnit(
+                objectiveId: orphan.objectiveId,
+                taskId: orphan.taskId,
+                rootTaskDescription: orphan.rootTaskDescription,
+                parentObjectiveGoal: orphan.parentObjectiveGoal
+            )
+            try await waitForSynthesisToSettle(objectiveId: orphan.objectiveId, taskId: orphan.taskId)
+
+            let context = freshContext()
+            if let root = (try? objectiveWorkUnits(in: context, objectiveId: orphan.objectiveId, taskId: orphan.taskId))?
+                .first(where: { $0.workType == Constants.rootType }) {
+                try? updateRootState(rootId: root.id, state: WorkUnitState.done.rawValue, phase: "complete")
+            }
+
+            await logEvent(
+                phase: "objective_supervisor",
+                content: "Recovery supervisor completed synthesis for task: \(orphan.rootTaskDescription)",
+                objectiveId: orphan.objectiveId,
+                taskId: orphan.taskId,
+                missionName: "Objective Recovery Supervisor"
+            )
+        } catch {
+            await logEvent(
+                phase: "error",
+                content: "Recovery supervisor failed: \(error)",
+                objectiveId: orphan.objectiveId,
+                taskId: orphan.taskId,
+                missionName: "Objective Recovery Supervisor"
+            )
         }
     }
 
