@@ -28,7 +28,7 @@ struct IOSBackendSettings: Sendable {
 
     /// Direct Ollama chat on device (same host/model as the Mac runner typically uses).
     var isDirectOllamaConfigured: Bool {
-        guard let ollamaBaseURL, let model = ollamaModel?.trimmingCharacters(in: .whitespacesAndNewlines), !model.isEmpty else {
+        guard ollamaBaseURL != nil, let model = ollamaModel?.trimmingCharacters(in: .whitespacesAndNewlines), !model.isEmpty else {
             return false
         }
         return true

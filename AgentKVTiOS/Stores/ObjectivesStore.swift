@@ -15,8 +15,6 @@ protocol ObjectivesRemoteSyncing: Sendable {
     func fetchObjectivePresentationRemote(id: UUID) async throws -> UIPresentation
 }
 
-extension IOSBackendSyncService: ObjectivesRemoteSyncing {}
-
 @Observable
 final class ObjectivesStore {
     private(set) var objectives: [IOSBackendObjective] = []

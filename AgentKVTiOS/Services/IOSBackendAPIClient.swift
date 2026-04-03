@@ -1261,3 +1261,5 @@ final class IOSBackendSyncService {
         return try await client.fetchObjectivePresentation(id: id)
     }
 }
+
+extension IOSBackendSyncService: ObjectivesRemoteSyncing {}
