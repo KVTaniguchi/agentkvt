@@ -9,8 +9,8 @@ description: Pull and analyze live AgentKVT production logs from familyagent@192
 
 Use this skill to inspect the live AgentKVT production environment over SSH.
 
-- Prefer the plugin wrapper script `../../scripts/analyze_production_logs.sh`.
-- The wrapper delegates to the repo-local analyzer at `bin/analyze_production_logs.sh`.
+- Prefer the plugin wrapper script `../../scripts/analyze_agent_logs.sh`.
+- The wrapper delegates to the repo-local analyzer at `bin/analyze_agent_logs.sh`.
 - By default it targets `familyagent@192.168.4.144`.
 
 ## Default Workflow
@@ -24,9 +24,9 @@ Use this skill to inspect the live AgentKVT production environment over SSH.
 ## Command Forms
 
 ```bash
-../../scripts/analyze_production_logs.sh
-../../scripts/analyze_production_logs.sh --raw
-../../scripts/analyze_production_logs.sh --host familyagent@192.168.4.144
+../../scripts/analyze_agent_logs.sh
+../../scripts/analyze_agent_logs.sh --raw
+../../scripts/analyze_agent_logs.sh --host familyagent@192.168.4.144
 ```
 
 ## Interpretation Guide

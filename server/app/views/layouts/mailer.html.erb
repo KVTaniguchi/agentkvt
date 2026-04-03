@@ -1,3 +1,16 @@
+<%# TODO: Email integration is not yet implemented. %>
+<%#
+  This is the shared HTML layout for all mailer views. <%= yield %> renders the
+  specific email body from each mailer action's template.
+
+  To activate this layout, an agent needs to:
+  1. Add real inline CSS styles inside <style> — email clients strip external
+     stylesheets, so all styling must be inlined or written as inline style attributes.
+     Consider using the `premailer-rails` gem to automate CSS inlining.
+  2. Add any shared header/footer HTML (logo, unsubscribe link, etc.) around <%= yield %>.
+  3. Ensure the SMTP delivery method is configured in config/environments/production.rb
+     (see app/mailers/application_mailer.rb for full setup instructions).
+%>
 <!DOCTYPE html>
 <html>
   <head>

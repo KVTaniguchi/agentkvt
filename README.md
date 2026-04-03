@@ -57,7 +57,7 @@ iOS → shared SwiftData store → Mac scheduler → MissionRunner → AgentLoop
 
 ## Operations
 
-- **Analyze production logs over SSH:** `./bin/analyze_production_logs.sh`
+- **Analyze agent logs over SSH:** `./bin/analyze_agent_logs.sh`
 - Defaults to `familyagent@192.168.4.144`; override with `--host` or `AGENTKVT_PROD_HOST`.
 - Add `--raw` to print the sampled log excerpts after the summary.
 
