@@ -1,4 +1,3 @@
-import ManagerCore
 import SwiftUI
 
 // MARK: - UINode model

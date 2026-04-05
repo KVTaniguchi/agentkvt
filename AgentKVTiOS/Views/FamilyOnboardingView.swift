@@ -1,18 +1,14 @@
 import SwiftUI
-import SwiftData
-import ManagerCore
 
 /// First-run: create the first family profile for this device/workspace.
 struct FamilyOnboardingView: View {
-    @Environment(\.modelContext) private var modelContext
+    @Environment(FamilyMembersStore.self) private var familyMembersStore
     @ObservedObject var profileStore: FamilyProfileStore
 
     @State private var displayName = ""
     @State private var symbol = ""
     @State private var errorMessage: String?
     @State private var isSaving = false
-
-    private let backendSync = IOSBackendSyncService()
 
     var body: some View {
         NavigationStack {
@@ -66,11 +62,7 @@ struct FamilyOnboardingView: View {
         isSaving = true
         Task { @MainActor in
             do {
-                let member = try await backendSync.createFamilyMember(
-                    displayName: name,
-                    symbol: sym,
-                    modelContext: modelContext
-                )
+                let member = try await familyMembersStore.createFamilyMember(displayName: name, symbol: sym)
                 profileStore.selectProfile(member.id)
                 errorMessage = nil
                 IOSRuntimeLog.log("[FamilyOnboardingView] Created initial family member id=\(member.id.uuidString)")
@@ -87,14 +79,12 @@ struct FamilyOnboardingView: View {
 /// Add another person after the first profile exists.
 struct AddFamilyMemberSheet: View {
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var modelContext
+    @Environment(FamilyMembersStore.self) private var familyMembersStore
 
     @State private var displayName = ""
     @State private var symbol = ""
     @State private var errorMessage: String?
     @State private var isSaving = false
-
-    private let backendSync = IOSBackendSyncService()
 
     var body: some View {
         NavigationStack {
@@ -129,11 +119,7 @@ struct AddFamilyMemberSheet: View {
         isSaving = true
         Task { @MainActor in
             do {
-                _ = try await backendSync.createFamilyMember(
-                    displayName: name,
-                    symbol: sym,
-                    modelContext: modelContext
-                )
+                _ = try await familyMembersStore.createFamilyMember(displayName: name, symbol: sym)
                 IOSRuntimeLog.log("[AddFamilyMemberSheet] Created family member '\(name)'")
                 dismiss()
             } catch {
@@ -146,7 +132,7 @@ struct AddFamilyMemberSheet: View {
 }
 
 struct ProfilePickerView: View {
-    let members: [FamilyMember]
+    let members: [IOSBackendFamilyMember]
     @ObservedObject var profileStore: FamilyProfileStore
 
     var body: some View {
@@ -156,8 +142,8 @@ struct ProfilePickerView: View {
                     profileStore.selectProfile(m.id)
                 } label: {
                     HStack {
-                        if !m.symbol.isEmpty {
-                            Text(m.symbol)
+                        if let symbol = m.symbol?.trimmingCharacters(in: .whitespacesAndNewlines), !symbol.isEmpty {
+                            Text(symbol)
                         }
                         VStack(alignment: .leading) {
                             Text(m.displayName)

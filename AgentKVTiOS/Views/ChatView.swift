@@ -1,43 +1,44 @@
 import SwiftUI
-import SwiftData
-import ManagerCore
 
 struct ChatView: View {
-    @Environment(\.modelContext) private var modelContext
+    @Environment(ChatStore.self) private var chatStore
     @EnvironmentObject private var profileStore: FamilyProfileStore
-    @Query(sort: \ChatThread.updatedAt, order: .reverse) private var threads: [ChatThread]
-    @State private var draftedMessage = ""
 
-    private var appSettings: IOSBackendSettings {
-        IOSBackendSettings.load()
-    }
+    @State private var path: [UUID] = []
+    @State private var creationErrorMessage: String?
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if let thread = threads.first {
-                    ChatThreadDetailView(
-                        thread: thread,
-                        draftedMessage: $draftedMessage,
-                        currentProfileId: profileStore.currentProfileId
-                    )
-                } else {
+        NavigationStack(path: $path) {
+            List {
+                ForEach(chatStore.threads, id: \.id) { thread in
+                    NavigationLink(value: thread.id) {
+                        ChatThreadRow(thread: thread)
+                    }
+                }
+            }
+            .listStyle(.plain)
+            .navigationTitle("Chat")
+            .navigationDestination(for: UUID.self) { threadID in
+                ChatThreadDetailView(threadID: threadID)
+            }
+            .refreshable {
+                await chatStore.refreshThreads()
+            }
+            .overlay {
+                if chatStore.isLoadingThreads && chatStore.threads.isEmpty {
+                    ProgressView("Loading chats…")
+                } else if chatStore.threads.isEmpty {
                     ContentUnavailableView(
                         "No Chat Yet",
                         systemImage: "message",
-                        description: Text(
-                            appSettings.isDirectOllamaConfigured
-                                ? "Create a thread to chat. Replies come directly from Ollama on your network."
-                                : "Create an optional assistant thread. The Mac answers after messages sync from this device."
-                        )
+                        description: Text("Create a thread to message the family assistant through the server-backed chat queue.")
                     )
                 }
             }
-            .navigationTitle("Chat")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
-                        createThreadIfNeeded()
+                        Task { await createThread() }
                     } label: {
                         Label("New Chat", systemImage: "plus")
                     }
@@ -45,83 +46,147 @@ struct ChatView: View {
             }
             .familyProfileToolbar()
         }
+        .task {
+            await chatStore.refreshThreads()
+        }
+        .alert("Could Not Create Chat", isPresented: Binding(
+            get: { creationErrorMessage != nil },
+            set: { if !$0 { creationErrorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) { creationErrorMessage = nil }
+        } message: {
+            Text(creationErrorMessage ?? "The chat thread could not be created.")
+        }
     }
 
-    private func createThreadIfNeeded() {
-        let thread = ChatThread(createdByProfileId: profileStore.currentProfileId)
-        modelContext.insert(thread)
-        try? modelContext.save()
+    @MainActor
+    private func createThread() async {
+        do {
+            let thread = try await chatStore.createThread(createdByProfileId: profileStore.currentProfileId)
+            path = [thread.id]
+            await chatStore.refreshThread(id: thread.id)
+        } catch {
+            creationErrorMessage = error.localizedDescription
+            IOSRuntimeLog.log("[ChatView] Thread creation failed: \(error)")
+        }
+    }
+}
+
+private struct ChatThreadRow: View {
+    let thread: IOSBackendChatThread
+
+    private var subtitle: String {
+        if let preview = thread.latestMessagePreview?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !preview.isEmpty {
+            return preview
+        }
+        return "No messages yet"
+    }
+
+    private var statusLabel: String? {
+        guard thread.pendingMessageCount > 0 else { return nil }
+        if thread.pendingMessageCount == 1 {
+            return "1 pending"
+        }
+        return "\(thread.pendingMessageCount) pending"
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "message")
+                .font(.title3)
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 28, height: 28)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(thread.title)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                Text(subtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                HStack(spacing: 8) {
+                    if let statusLabel {
+                        Text(statusLabel)
+                            .font(.caption2.weight(.medium))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.orange.opacity(0.15))
+                            .foregroundStyle(.orange)
+                            .clipShape(Capsule())
+                    }
+                    if let latestMessageAt = thread.latestMessageAt {
+                        Text(latestMessageAt, style: .relative)
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 4)
     }
 }
 
 private struct ChatThreadDetailView: View {
-    let thread: ChatThread
-    @Binding var draftedMessage: String
-    let currentProfileId: UUID?
+    let threadID: UUID
 
-    private let backendSync = IOSBackendSyncService()
+    @Environment(ChatStore.self) private var chatStore
+    @Environment(FamilyMembersStore.self) private var familyMembersStore
+    @EnvironmentObject private var profileStore: FamilyProfileStore
 
-    @Environment(\.modelContext) private var modelContext
-    @Query(sort: \ChatMessage.timestamp, order: .forward) private var allMessages: [ChatMessage]
-    @Query(sort: \FamilyMember.createdAt, order: .forward) private var familyMembers: [FamilyMember]
+    @State private var draftedMessage = ""
+    @State private var sendErrorMessage: String?
 
-    @State private var showClearChatConfirmation = false
-
-    private var appSettings: IOSBackendSettings {
-        IOSBackendSettings.load()
+    private var thread: IOSBackendChatThread? {
+        chatStore.thread(for: threadID)
     }
 
-    private var threadMessages: [ChatMessage] {
-        allMessages.filter { $0.threadId == thread.id }
+    private var messages: [IOSBackendChatMessage] {
+        chatStore.messages(for: threadID)
     }
 
-    private var hasPendingReply: Bool {
-        threadMessages.contains {
-            $0.role == "user" && (
-                $0.status == ChatMessageStatus.pending.rawValue ||
-                $0.status == ChatMessageStatus.processing.rawValue
-            )
-        }
+    private var pendingStatusText: String {
+        "Waiting for the family server agent to respond…"
+    }
+
+    private var messageIDs: [UUID] {
+        messages.map(\.id)
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            if threadMessages.isEmpty {
+            if messages.isEmpty {
                 ContentUnavailableView(
                     "Start A Conversation",
                     systemImage: "text.bubble",
-                    description: Text(
-                        appSettings.isDirectOllamaConfigured
-                            ? "Messages go straight to Ollama on your network (no tools). Configure the same model as your Mac runner."
-                            : "Messages sync to your Mac; the runner replies using the same tool-aware agent loop as missions."
-                    )
+                    description: Text("Messages go to the family server and the Mac runner replies through the shared Postgres-backed chat queue.")
                 )
             } else {
                 ScrollViewReader { proxy in
                     List {
-                        ForEach(threadMessages, id: \.id) { message in
+                        ForEach(messages, id: \.id) { message in
                             ChatMessageRow(
                                 message: message,
-                                senderLabel: senderLabel(for: message),
-                                directOllama: appSettings.isDirectOllamaConfigured
+                                senderLabel: senderLabel(for: message)
                             )
+                            .id(message.id)
                             .listRowSeparator(.hidden)
                             .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                         }
-                        .onDelete(perform: deleteMessages)
                     }
                     .listStyle(.plain)
                     .onAppear {
                         scrollToLatest(proxy: proxy)
                     }
-                    .onChange(of: threadMessages.count) { _, _ in
+                    .onChange(of: messageIDs) { _, _ in
                         scrollToLatest(proxy: proxy)
                     }
                 }
             }
 
             VStack(alignment: .leading, spacing: 8) {
-                if hasPendingReply {
+                if chatStore.hasPendingMessages(threadId: threadID) {
                     Label(pendingStatusText, systemImage: "clock")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -133,167 +198,83 @@ private struct ChatThreadDetailView: View {
                         .lineLimit(1...4)
 
                     Button("Send") {
-                        sendMessage()
+                        Task { await sendMessage() }
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(draftedMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(
+                        draftedMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                        chatStore.sendingThreadIDs.contains(threadID)
+                    )
                 }
             }
             .padding()
             .background(.thinMaterial)
         }
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    showClearChatConfirmation = true
-                } label: {
-                    Label("Clear messages", systemImage: "trash")
-                }
-                .disabled(threadMessages.isEmpty)
-            }
+        .navigationTitle(thread?.title ?? "Chat")
+        .navigationBarTitleDisplayMode(.inline)
+        .refreshable {
+            await chatStore.refreshThread(id: threadID)
         }
-        .confirmationDialog(
-            "Remove all messages in this chat?",
-            isPresented: $showClearChatConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("Clear All", role: .destructive) {
-                clearAllMessagesInThread()
-            }
-            Button("Cancel", role: .cancel) {}
+        .task {
+            await chatStore.refreshThread(id: threadID)
+        }
+        .alert("Could Not Send Message", isPresented: Binding(
+            get: { sendErrorMessage != nil },
+            set: { if !$0 { sendErrorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) { sendErrorMessage = nil }
         } message: {
-            Text("This cannot be undone. The thread stays open.")
+            Text(sendErrorMessage ?? "The message could not be queued.")
         }
     }
 
-    private var pendingStatusText: String {
-        if appSettings.isDirectOllamaConfigured {
-            return "Contacting Ollama…"
-        }
-        return "Waiting for the Mac runner to respond…"
-    }
-
-    private func senderLabel(for message: ChatMessage) -> String {
+    private func senderLabel(for message: IOSBackendChatMessage) -> String {
         if message.role != "user" { return "Agent" }
         if let id = message.authorProfileId,
-           let m = familyMembers.first(where: { $0.id == id }) {
-            return m.displayName
+           let member = familyMembersStore.members.first(where: { $0.id == id }) {
+            return member.displayName
         }
         return "You"
     }
 
     private func scrollToLatest(proxy: ScrollViewProxy) {
-        guard let lastId = threadMessages.last?.id else { return }
+        guard let lastID = messages.last?.id else { return }
         DispatchQueue.main.async {
             withAnimation {
-                proxy.scrollTo(lastId, anchor: .bottom)
+                proxy.scrollTo(lastID, anchor: .bottom)
             }
-        }
-    }
-
-    private func deleteMessages(at offsets: IndexSet) {
-        let toRemove = offsets.compactMap { threadMessages.indices.contains($0) ? threadMessages[$0] : nil }
-        for msg in toRemove {
-            modelContext.delete(msg)
-        }
-        thread.updatedAt = Date()
-        try? modelContext.save()
-    }
-
-    private func clearAllMessagesInThread() {
-        for message in threadMessages {
-            modelContext.delete(message)
-        }
-        thread.updatedAt = Date()
-        try? modelContext.save()
-    }
-
-    private func sendMessage() {
-        let trimmed = draftedMessage.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-
-        let settings = IOSBackendSettings.load()
-        if settings.isDirectOllamaConfigured,
-           let baseURL = settings.ollamaBaseURL,
-           let model = settings.ollamaModel?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !model.isEmpty {
-            let message = ChatMessage(
-                threadId: thread.id,
-                role: "user",
-                content: trimmed,
-                status: ChatMessageStatus.processing.rawValue,
-                authorProfileId: currentProfileId
-            )
-            modelContext.insert(message)
-            thread.updatedAt = Date()
-            try? modelContext.save()
-            draftedMessage = ""
-            Task {
-                await completeDirectOllama(userMessage: message, baseURL: baseURL, model: model)
-            }
-            return
-        }
-
-        let message = ChatMessage(
-            threadId: thread.id,
-            role: "user",
-            content: trimmed,
-            status: ChatMessageStatus.pending.rawValue,
-            authorProfileId: currentProfileId
-        )
-        modelContext.insert(message)
-        thread.updatedAt = Date()
-        try? modelContext.save()
-        draftedMessage = ""
-        Task {
-            await backendSync.notifyChatWakeIfNeeded()
         }
     }
 
     @MainActor
-    private func completeDirectOllama(userMessage: ChatMessage, baseURL: URL, model: String) async {
-        let client = OllamaClient(baseURL: baseURL, model: model)
-        let messages = ollamaMessagesForAPI()
+    private func sendMessage() async {
         do {
-            let reply = try await client.chat(messages: messages, tools: nil)
-            let text = reply.content?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            userMessage.status = ChatMessageStatus.completed.rawValue
-            userMessage.errorMessage = nil
-            let assistant = ChatMessage(
-                threadId: thread.id,
-                role: "assistant",
-                content: text.isEmpty ? "(empty reply)" : text,
-                status: ChatMessageStatus.completed.rawValue
+            try await chatStore.sendMessage(
+                threadId: threadID,
+                content: draftedMessage,
+                authorProfileId: profileStore.currentProfileId
             )
-            modelContext.insert(assistant)
-            thread.updatedAt = Date()
-            try modelContext.save()
+            draftedMessage = ""
         } catch {
-            userMessage.status = ChatMessageStatus.failed.rawValue
-            userMessage.errorMessage = error.localizedDescription
-            thread.updatedAt = Date()
-            try? modelContext.save()
+            sendErrorMessage = error.localizedDescription
+            IOSRuntimeLog.log("[ChatThreadDetailView] Send failed for \(threadID): \(error)")
         }
-    }
-
-    /// Transcript for Ollama `/api/chat` (direct path: no tool execution on iOS).
-    private func ollamaMessagesForAPI() -> [OllamaClient.Message] {
-        ChatOllamaTranscript.messagesForAPI(systemPrompt: thread.systemPrompt, threadMessages: threadMessages)
     }
 }
 
 private struct ChatMessageRow: View {
-    let message: ChatMessage
+    let message: IOSBackendChatMessage
     let senderLabel: String
-    var directOllama: Bool = false
 
-    private var isUser: Bool { message.role == "user" }
+    private var isUser: Bool {
+        message.role == "user"
+    }
 
     private var bubbleColor: Color {
         if isUser {
             return .blue
         }
-        if message.status == ChatMessageStatus.failed.rawValue {
+        if message.status == "failed" {
             return .red
         }
         return Color(.secondarySystemBackground)
@@ -304,13 +285,14 @@ private struct ChatMessageRow: View {
     }
 
     private var statusCaption: String? {
-        if let errorMessage = message.errorMessage, message.status == ChatMessageStatus.failed.rawValue {
+        if let errorMessage = message.errorMessage,
+           message.status == "failed" {
             return errorMessage
         }
-        if isUser && message.status == ChatMessageStatus.processing.rawValue {
-            return directOllama ? "Thinking…" : "Processing"
+        if isUser && message.status == "processing" {
+            return "Processing"
         }
-        if isUser && message.status == ChatMessageStatus.pending.rawValue {
+        if isUser && message.status == "pending" {
             return "Queued"
         }
         return nil
@@ -318,26 +300,29 @@ private struct ChatMessageRow: View {
 
     var body: some View {
         HStack {
-            if isUser { Spacer(minLength: 48) }
-            VStack(alignment: .leading, spacing: 6) {
+            if isUser { Spacer(minLength: 28) }
+
+            VStack(alignment: isUser ? .trailing : .leading, spacing: 4) {
+                Text(senderLabel)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
                 Text(message.content)
                     .foregroundStyle(textColor)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                HStack(spacing: 6) {
-                    Text(senderLabel)
-                    Text(message.timestamp, style: .time)
-                    if let statusCaption {
-                        Text(statusCaption)
-                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(bubbleColor)
+                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .textSelection(.enabled)
+
+                if let statusCaption {
+                    Text(statusCaption)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
-                .font(.caption2)
-                .foregroundStyle(isUser ? .white.opacity(0.85) : .secondary)
             }
-            .padding(12)
-            .background(bubbleColor)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .id(message.id)
-            if !isUser { Spacer(minLength: 48) }
+
+            if !isUser { Spacer(minLength: 28) }
         }
     }
 }

@@ -14,7 +14,7 @@ public func runAgentKVTMacRunner() async {
     for message in settings.startupMessages {
         print(message)
     }
-    let shouldAttemptCloudKit = !settings.disableCloudKit && settings.isAppBundle
+    let shouldAttemptCloudKit = !settings.disableCloudKit && settings.isAppBundle && settings.backendBaseURL == nil
     if shouldAttemptCloudKit {
         logMacCloudKitDiagnostics()
     } else {
@@ -306,14 +306,16 @@ private func runScheduler(
     }
     webhookListener.start()
 
-    // ── CloudKit observer (reactive iOS→Mac bridge) ──────────────────────────────
-    // Fires on any remote SwiftData change (chat messages, IncomingEmailSummary, etc.).
-    // High priority so pending chat is processed promptly instead of waiting behind the
-    // 60s clock tick. No ModelContext access here — work runs in dispatch(.cloudKitSync).
-    let cloudKitObserver = CloudKitObserver {
-        executionQueue.enqueue(.cloudKitSync, priority: .high)
+    if backendClient == nil {
+        // ── CloudKit observer (reactive iOS→Mac bridge) ──────────────────────────
+        // Fires on any remote SwiftData change (chat messages, IncomingEmailSummary, etc.).
+        // High priority so pending chat is processed promptly instead of waiting behind the
+        // clock tick. No ModelContext access here — work runs in dispatch(.cloudKitSync).
+        let cloudKitObserver = CloudKitObserver {
+            executionQueue.enqueue(.cloudKitSync, priority: .high)
+        }
+        cloudKitObserver.start()
     }
-    cloudKitObserver.start()
 
     // ── 60-second clock (lowest priority — background heartbeat) ─────────────────
     // Checks due CRON missions and pending chat messages. Arrives last in line when
@@ -377,10 +379,10 @@ private func runScheduler(
           Inbound:  \(dropzoneDir.path)
           Webhook:  port \(webhookPort) (chat wake: POST JSON {"agentkvt":"process_chat"})
           Clock:    every \(clockIntervalSeconds)s
-          CloudKit: listening for NSPersistentStoreRemoteChangeNotification
+          CloudKit: \(backendClient == nil ? "listening for NSPersistentStoreRemoteChangeNotification" : "disabled (backend mode)")
         """)
     if backendClient != nil {
-        print("  Remote:   backend chat_wake poll every 15s (iOS POST /v1/chat_wake when API is configured)")
+        print("  Remote:   backend chat queue, chat_wake long-poll, and inbound-file sync enabled")
     }
 
     // ── Run forever — drain loop blocks (async suspends) until the process exits ──

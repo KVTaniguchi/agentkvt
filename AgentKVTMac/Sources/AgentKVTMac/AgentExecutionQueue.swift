@@ -21,6 +21,7 @@ actor AgentExecutionQueue {
     private let dropzoneDir: URL
     private let emailIngestor: EmailIngestor
     private let cloudInbound: CloudInboundService
+    private let backendInbound: BackendInboundService?
     private let backendClient: BackendAPIClient?
     private let objectiveExecutionPool: ObjectiveExecutionPool
 
@@ -43,7 +44,13 @@ actor AgentExecutionQueue {
         self.modelContext = modelContext.raw
         self.modelContainer = modelContainer
         self.backendClient = backendClient
-        self.chatRunner = ChatRunner(modelContext: modelContext.raw, client: client, registry: registry)
+        if let backendClient {
+            self.chatRunner = ChatRunner(backendClient: backendClient, client: client, registry: registry)
+            self.backendInbound = BackendInboundService(backendClient: backendClient, directory: dropzoneDir)
+        } else {
+            self.chatRunner = ChatRunner(modelContext: modelContext.raw, client: client, registry: registry)
+            self.backendInbound = nil
+        }
         self.dropzoneDir = dropzoneDir
         self.dropzone = DropzoneService(directory: dropzoneDir)
         self.emailIngestor = emailIngestor
@@ -98,7 +105,11 @@ actor AgentExecutionQueue {
 
         // ── Clock tick ──────────────────────────────────────────────────────────
         case .clockTick:
-            cloudInbound.syncInboundFiles()
+            if let backendInbound {
+                await backendInbound.syncInboundFiles()
+            } else {
+                cloudInbound.syncInboundFiles()
+            }
             do {
                 try StigmergyBoardMaintenance.evictExpiredEphemeralPins(modelContext: modelContext)
             } catch {
@@ -138,6 +149,9 @@ actor AgentExecutionQueue {
 
         // ── CloudKit sync: iOS→Mac SwiftData changes (chat, email summaries, etc.) ─
         case .cloudKitSync:
+            guard backendClient == nil else {
+                return
+            }
             do {
                 while try await chatRunner.processNextPendingMessage() {}
             } catch {

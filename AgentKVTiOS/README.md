@@ -1,6 +1,6 @@
 # AgentKVTiOS (Remote)
 
-SwiftUI dashboard for the AgentKVT system. Displays dynamic action items from the Mac agent and provides mission authoring and life context editing.
+SwiftUI iPhone client for the AgentKVT family server. The app reads shared family state from the Rails/Postgres backend and sends mutations back to the server instead of relying on a shared SwiftData store.
 
 ## Run the app in the Simulator
 
@@ -9,7 +9,7 @@ SwiftUI dashboard for the AgentKVT system. Displays dynamic action items from th
 ## Requirements
 
 - Xcode 15+ (iOS 17)
-- ManagerCore package (../ManagerCore)
+- reachable AgentKVT family server API
 
 ## Setup
 
@@ -21,10 +21,11 @@ SwiftUI dashboard for the AgentKVT system. Displays dynamic action items from th
 
 ## Features
 
-- **Actions tab:** Lists `ActionItem` entries (dynamic buttons from the Mac). Tap to mark as handled.
-- **Missions tab:** Create and edit `MissionDefinition` (name, system prompt, trigger schedule, allowed MCP tools).
-- **Context tab:** Edit `LifeContext` (static facts the agent uses: goals, location, dates).
+- **Objectives tab:** View and manage server-backed family objectives and their task progress.
+- **Actions tab:** Lists server-backed `ActionItem` entries with native intent buttons.
+- **Context tab:** Edit server-backed `LifeContext` entries.
+- **Log tab:** Review recent family-server agent logs.
 
-Sync with the Mac (SwiftData/CloudKit or local) must be configured so that missions and action items are shared; see `Docs/SYNC.md`.
+For the current backend-first sync model, see `Docs/SYNC.md`.
 
 **Build succeeds but nothing launches?** See [RUN_TROUBLESHOOTING.md](RUN_TROUBLESHOOTING.md) (scheme, destination, simulator, and Run settings).

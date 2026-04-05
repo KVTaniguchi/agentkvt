@@ -1,6 +1,4 @@
 import SwiftUI
-import SwiftData
-import ManagerCore
 
 /// Simple audit view: list recent AgentLog entries (reasoning, tool calls, outcomes).
 struct AgentLogView: View {
@@ -13,14 +11,11 @@ struct AgentLogView: View {
         var id: String { rawValue }
     }
 
-    @Environment(\.modelContext) private var modelContext
-    @Query(sort: \AgentLog.timestamp, order: .reverse) private var logs: [AgentLog]
+    @Environment(AgentLogsStore.self) private var store
     @State private var selectedFilter: Filter = .all
 
-    private let backendSync = IOSBackendSyncService()
-
-    private var filteredLogs: [AgentLog] {
-        logs.filter { log in
+    private var filteredLogs: [IOSBackendAgentLog] {
+        store.logs.filter { log in
             switch selectedFilter {
             case .all:
                 return true
@@ -51,9 +46,7 @@ struct AgentLogView: View {
                         AgentLogRow(log: log)
                     }
                 }
-                .refreshable {
-                    await backendSync.syncAgentLogs(modelContext: modelContext)
-                }
+                .refreshable { await store.refresh() }
                 .emptyState(filteredLogs.isEmpty, message: emptyMessage)
             }
             .navigationTitle("Agent Log")
@@ -69,7 +62,9 @@ struct AgentLogView: View {
             .familyProfileToolbar()
         }
         .task {
-            await backendSync.syncAgentLogs(modelContext: modelContext)
+            if store.logs.isEmpty {
+                await store.refresh()
+            }
         }
     }
 
@@ -88,7 +83,7 @@ struct AgentLogView: View {
 }
 
 private struct AgentLogRow: View {
-    let log: AgentLog
+    let log: IOSBackendAgentLog
 
     private var phaseColor: Color {
         switch log.phase {

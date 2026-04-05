@@ -1,7 +1,5 @@
 import Foundation
 import NaturalLanguage
-import SwiftData
-import ManagerCore
 import UIKit
 
 // MARK: - EdgeSummarizationService
@@ -13,33 +11,25 @@ import UIKit
 /// 2. Produce a compact 1-3 sentence summary using Apple Intelligence writing tools
 ///    (`UIWritingToolsCoordinator`, iOS 18.1+) when available, falling back to
 ///    an extractive first-sentence heuristic on older OS versions.
-/// 3. Persist the result as an `IncomingEmailSummary` into the shared SwiftData container
-///    so it syncs via CloudKit to the Mac agent for reasoning.
+/// 3. Return a lightweight summary payload that callers can upload to the family server.
 ///
 /// Call `process(subject:body:)` once per received email. The method is async and
-/// safe to call from any actor — all SwiftData writes are dispatched onto `@MainActor`.
+/// safe to call from any actor.
 @MainActor
 public final class EdgeSummarizationService {
-
-    // MARK: - Init
-
-    private let modelContext: ModelContext
-
-    public init(modelContext: ModelContext) {
-        self.modelContext = modelContext
-    }
+    public init() {}
 
     // MARK: - Public API
 
-    /// Summarize one email and persist the result.
+    /// Summarize one email and return the extracted payload.
     ///
     /// - Parameters:
     ///   - subject: The email subject line (stored verbatim, not summarized).
     ///   - body: Full plain-text body of the email.
     ///   - classifiedIntent: Optional caller-provided intent tag (e.g. from a regex pre-filter).
-    /// - Returns: The persisted `IncomingEmailSummary` record.
+    /// - Returns: A lightweight summary ready for transport to the family server.
     @discardableResult
-    public func process(subject: String, body: String, classifiedIntent: String? = nil) async -> IncomingEmailSummary {
+    public func process(subject: String, body: String, classifiedIntent: String? = nil) async -> EdgeEmailSummary {
         let entities = extractEntities(from: body)
         let summary: String
 
@@ -51,16 +41,13 @@ public final class EdgeSummarizationService {
 
         let intent = classifiedIntent ?? classifyIntent(subject: subject, body: body)
 
-        let record = IncomingEmailSummary(
+        return EdgeEmailSummary(
             subject: subject,
             summary: summary,
             keyEntities: entities,
             classifiedIntent: intent.isEmpty ? nil : intent,
             summarizedOnDevice: UIDevice.current.name
         )
-        modelContext.insert(record)
-        try? modelContext.save()
-        return record
     }
 
     // MARK: - Named Entity Recognition
@@ -143,6 +130,28 @@ public final class EdgeSummarizationService {
             }
         }
         return ""
+    }
+}
+
+public struct EdgeEmailSummary: Codable, Equatable, Sendable {
+    public let subject: String
+    public let summary: String
+    public let keyEntities: [String]
+    public let classifiedIntent: String?
+    public let summarizedOnDevice: String
+
+    public init(
+        subject: String,
+        summary: String,
+        keyEntities: [String],
+        classifiedIntent: String?,
+        summarizedOnDevice: String
+    ) {
+        self.subject = subject
+        self.summary = summary
+        self.keyEntities = keyEntities
+        self.classifiedIntent = classifiedIntent
+        self.summarizedOnDevice = summarizedOnDevice
     }
 }
 

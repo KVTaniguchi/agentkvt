@@ -1,8 +1,7 @@
 import Foundation
 import SwiftUI
-import ManagerCore
 
-/// Persists which `FamilyMember` is active on this device (`UserDefaults`, not CloudKit — per-device preference).
+/// Persists which family profile is active on this device (`UserDefaults`, per-device preference).
 public final class FamilyProfileStore: ObservableObject {
     private let defaultsKey = "agentkvt.currentProfileId"
 
@@ -25,9 +24,9 @@ public final class FamilyProfileStore: ObservableObject {
         }
     }
 
-    public func hasValidSelection(members: [FamilyMember]) -> Bool {
+    public func hasValidSelection(memberIDs: [UUID]) -> Bool {
         guard let id = currentProfileId else { return false }
-        return members.contains { $0.id == id }
+        return memberIDs.contains(id)
     }
 
     public func selectProfile(_ id: UUID) {

@@ -1,12 +1,12 @@
 import SwiftUI
-import SwiftData
-import ManagerCore
 
 /// Routes between onboarding, profile selection, and the main dashboard.
 struct RootView: View {
-    @Environment(\.modelContext) private var modelContext
-    @Query(sort: \FamilyMember.createdAt, order: .forward) private var members: [FamilyMember]
     @EnvironmentObject private var profileStore: FamilyProfileStore
+    @Environment(FamilyMembersStore.self) private var familyMembersStore
+    @Environment(LifeContextStore.self) private var lifeContextStore
+    @Environment(AgentLogsStore.self) private var agentLogsStore
+    @Environment(ActionsStore.self) private var actionsStore
     @State private var bootstrapState: BackendBootstrapState = .idle
 
     private let backendSync = IOSBackendSyncService()
@@ -16,8 +16,10 @@ struct RootView: View {
             switch RootViewStateResolver.destination(
                 isBackendEnabled: backendSync.isEnabled,
                 bootstrapState: bootstrapState,
-                memberCount: members.count,
-                hasValidSelection: profileStore.hasValidSelection(members: members)
+                memberCount: familyMembersStore.members.count,
+                hasValidSelection: profileStore.hasValidSelection(
+                    memberIDs: familyMembersStore.members.map(\.id)
+                )
             ) {
             case .loading:
                 ProgressView("Syncing with server…")
@@ -30,7 +32,7 @@ struct RootView: View {
             case .onboarding:
                 FamilyOnboardingView(profileStore: profileStore)
             case .profilePicker:
-                ProfilePickerView(members: members, profileStore: profileStore)
+                ProfilePickerView(members: familyMembersStore.members, profileStore: profileStore)
             case .dashboard:
                 DashboardView()
             }
@@ -50,7 +52,11 @@ struct RootView: View {
 
         bootstrapState = .loading
         do {
-            try await backendSync.bootstrap(modelContext: modelContext)
+            let snapshot = try await backendSync.fetchBootstrapRemote()
+            familyMembersStore.replaceMembers(snapshot.familyMembers)
+            lifeContextStore.replaceEntries(snapshot.lifeContextEntries)
+            agentLogsStore.replaceLogs(snapshot.agentLogs)
+            actionsStore.replaceItems(snapshot.actionItems)
             bootstrapState = .loaded
         } catch {
             IOSRuntimeLog.log("[RootView] Backend bootstrap failed: \(error)")

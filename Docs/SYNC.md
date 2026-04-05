@@ -1,72 +1,73 @@
-# Sync: Bridge Between Mac and iOS
+# Sync: Backend-First Family State
 
-The **Bridge** is shared state between the Brain (macOS) and the Remote (iOS). The macOS app is the writer/processor; the iOS app is the observer/controller.
+AgentKVT is moving to a backend-first sync model.
 
-## Requirement for syncing to work
+For shared family data, the Rails API and Postgres database on the family server are the source of truth. The iOS client should behave like a thin remote client: fetch shared state from the server, send mutations back to the server, and avoid maintaining a second persisted database on-device.
 
-For syncing to actually work, the two apps must share data in a **shared SwiftData store**. That means a **shared CloudKit container**: both the iOS app and the Mac app use the same CloudKit container identifier so that SwiftData + CloudKit syncs the same schema (ManagerCore) between devices. Without a shared container, each app has its own local store and no data flows between them.
+## Current Direction
 
-## Family identity model (current direction)
+- Shared family data lives on the family server.
+- The iOS app no longer depends on a shared SwiftData store, CloudKit container, or app-group container for startup.
+- Per-device preferences such as the selected family profile can stay local in lightweight storage such as `UserDefaults`.
+- The Mac runner still has some legacy SwiftData/CloudKit paths and should be migrated in a follow-up phase.
 
-This project now assumes a **single shared family Apple ID** for the AgentKVT system (Mac brain + iOS clients), with **in-app per-person profiles**:
+## iOS Data Ownership
 
-- iCloud auth is handled by iOS/macOS Settings using the family Apple ID.
-- AgentKVT does **not** collect Apple ID passwords in-app.
-- Each person creates a `FamilyMember` profile in the app.
-- User attribution is stored in shared records (for example `ChatMessage.authorProfileId`, `InboundFile.uploadedByProfileId`).
-- Per-device active profile selection is local (`UserDefaults`), while `FamilyMember` rows sync through CloudKit.
+These flows should be server-owned:
 
-## CloudKit approach (recommended)
+- `FamilyMember`
+- `LifeContext`
+- `ActionItem`
+- `AgentLog`
+- `Objective`
+- `Task`
+- `ResearchSnapshot`
 
-- Use SwiftData's CloudKit integration with one **shared CloudKit container** for both apps.
-- **In Xcode:** Enable the **iCloud** capability (CloudKit) on both the iOS and Mac targets, and select the **same** CloudKit container (e.g. `iCloud.com.yourteam.AgentKVT`) for both. Create the container in the Apple Developer portal if needed.
-- **In code:** Both apps create a `ModelContainer` with the same `Schema` (ManagerCore) and the same `cloudKitContainerIdentifier` in `ModelConfiguration`. The Mac writes missions, ActionItems, and AgentLog; the iOS app reads and displays them. Sync happens via iCloud.
+These flows are still in migration and should move to the family server next:
 
-## Alternative: local network / Tailscale
+- chat threads and messages
+- inbound files
+- objective work-unit / board state
 
-- Run a shared persistence layer on the Mac and have iOS connect over the local network or Tailscale. Requires custom sync service or shared DB; both apps still need the same schema (ManagerCore). More setup; data stays on your network.
+These values can remain device-local:
 
-## Production CloudKit note
+- selected family profile
+- draft text that has not been submitted
+- transient UI state
 
-If the iPhone client is installed through TestFlight, the Mac side should also be distributed in a production-style way instead of being run only from Xcode. See [Docs/MAC_PRODUCTION_DEPLOYMENT.md](MAC_PRODUCTION_DEPLOYMENT.md).
+## Why We Are Favoring Postgres
 
-## Enabling the Mac app to use the shared CloudKit container
+- one source of truth for family data
+- no iCloud sign-in requirement for the iPhone client
+- no CloudKit/app-group entitlement coupling between iOS and Mac
+- less stale-cache and reconciliation debugging
+- TestFlight behavior is easier to reason about because the app reflects server state directly
 
-The Mac side is currently a **Swift Package executable** (`swift run AgentKVTMacRunner`). Executables built with SPM do not get code-signed with entitlements, so they cannot use iCloud/CloudKit. To share the same container as iOS, the Mac must run as an **Xcode-built macOS app** that has the iCloud capability.
+## Operational Model
 
-### Option A: Add a macOS app target in Xcode
+- The iOS app must be configured with a reachable family-server API base URL.
+- A TestFlight build only picks up API host changes after a new archive is uploaded.
+- If the phone is off the family network, the configured host must still be reachable from that network path.
 
-1. **Create a new macOS app target** (or a new Xcode project for Mac) that builds an `.app` bundle.
-2. **Add the iCloud capability** to that target:
-   - Select the Mac app target → **Signing & Capabilities** → **+ Capability** → **iCloud**.
-   - Under **Services**, check **CloudKit** (same as iOS).
-   - Under **Containers**, add or select the **same** container as iOS: `iCloud.AgentKVT`. Use the same container for both targets; do not create a second container for Mac.
-3. **Attach the entitlements file**: Use `AgentKVTMac/AgentKVTMac.entitlements` (same container and CloudKit service as iOS). In the target’s **Build Settings**, set **Code Signing Entitlements** to that file.
-4. **Wire in the runner**: Have the Mac app depend on the AgentKVTMac package (or embed its code) and run the same scheduler/runner logic from the app’s main entry point (e.g. `@main` struct that calls into AgentKVTMacRunner). Ensure the runner uses `ModelConfiguration(..., cloudKitContainerIdentifier: "iCloud.AgentKVT")` when creating the `ModelContainer` so SwiftData uses the shared CloudKit container.
-5. **Run the Mac app** from Xcode (or as a signed `.app`) instead of `swift run AgentKVTMacRunner`. For headless/scheduler use, you can run the built app from Terminal or launchd with the same env vars (e.g. `RUN_SCHEDULER=1`).
+## Migration Status
 
-### Option B: Use the existing entitlements file only
+Completed on iOS:
 
-The repo includes `AgentKVTMac/AgentKVTMac.entitlements` with the same iCloud container (`iCloud.AgentKVT`) and CloudKit service as the iOS app. When you create the Mac app target in Xcode, assign this file to the target’s **Code Signing Entitlements** and add the iCloud capability as above; Xcode will keep the capability and entitlements in sync.
+- backend bootstrap for family members, life context, action items, agent logs, and objectives
+- removal of the shared SwiftData model container from app startup
+- removal of iCloud and app-group entitlements from the iOS target
+- replacement of local chat and inbound-file persistence with explicit migration placeholders
 
-### Summary
+Still pending:
 
-| Step | iOS (AgentKVTiOS) | Mac (new app target) |
-|------|-------------------|------------------------|
-| Capability | iCloud → CloudKit ✓ | iCloud → CloudKit ✓ |
-| Container | `iCloud.AgentKVT` | **Same:** `iCloud.AgentKVT` |
-| ModelConfiguration | `cloudKitContainerIdentifier: "iCloud.AgentKVT"` | Same in runner code when run as app |
+- server endpoints for chat, inbound files, and any remaining worker-board state the iPhone needs
+- Mac runner migration away from legacy SwiftData/CloudKit dependencies
 
-## Implementation checklist (CloudKit)
+## Recommended Sequence
 
-- [ ] Create one CloudKit container in Apple Developer (e.g. `iCloud.AgentKVT` — already used by iOS).
-- [ ] Enable iCloud capability + CloudKit on **AgentKVTiOS** and on a **macOS app target** that runs the AgentKVTMac logic; assign the **same** container (`iCloud.AgentKVT`) to both.
-- [ ] Both apps use **ManagerCore** and the same schema list, including family/stigmergy models:
-  - `LifeContext`, `MissionDefinition`, `ActionItem`, `AgentLog`, `InboundFile`
-  - `ChatThread`, `ChatMessage`, `IncomingEmailSummary`
-  - `WorkUnit`, `EphemeralPin`, `ResourceHealth`, `FamilyMember`
-- [ ] Configure `ModelConfiguration` with the same `cloudKitContainerIdentifier: "iCloud.AgentKVT"` (and optional `allowsSave: true` where needed). See Apple's SwiftData + CloudKit documentation for the exact API.
+1. Keep Postgres/Rails as the canonical shared family database.
+2. Finish the remaining server endpoints needed by iOS.
+3. Remove any remaining iOS features that still assume local persisted shared models.
+4. Migrate the Mac runner off the old CloudKit/shared-SwiftData bridge.
 
-## Status
-
-**Current direction:** CloudKit-backed shared store with one family Apple ID for AgentKVT devices, plus in-app family profiles (`FamilyMember`) for per-person attribution.
+This sequence keeps the phone simple first, which makes TestFlight validation and production debugging much easier.

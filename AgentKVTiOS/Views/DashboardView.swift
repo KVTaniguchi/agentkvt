@@ -1,16 +1,14 @@
 import SwiftUI
-import SwiftData
-import ManagerCore
+import UniformTypeIdentifiers
 
-/// Dashboard: main iOS surface for objectives, actions, logs, files, and chat.
+/// Dashboard: main iOS surface for server-backed family data.
 struct DashboardView: View {
-    @Environment(\.modelContext) private var modelContext
+    @Environment(InboundFilesStore.self) private var inboundFilesStore
     @EnvironmentObject private var profileStore: FamilyProfileStore
-    @Query(sort: \FamilyMember.createdAt, order: .forward) private var familyMembers: [FamilyMember]
-    @Query(sort: \InboundFile.timestamp, order: .reverse) private var inboundFiles: [InboundFile]
+
     @State private var selectedTab = 0
     @State private var isImporterPresented = false
-    @State private var importError: String?
+    @State private var importErrorMessage: String?
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -30,51 +28,71 @@ struct DashboardView: View {
             ChatView()
                 .tabItem { Label("Chat", systemImage: "message") }
                 .tag(5)
-            InboundFilesView(
-                files: inboundFiles,
-                familyMembers: familyMembers,
-                isImporterPresented: $isImporterPresented
-            )
+            InboundFilesView(isImporterPresented: $isImporterPresented)
                 .tabItem { Label("Files", systemImage: "doc") }
                 .tag(6)
         }
         .fileImporter(
             isPresented: $isImporterPresented,
-            allowedContentTypes: [.pdf, .plainText, .commaSeparatedText],
+            allowedContentTypes: [.item],
             allowsMultipleSelection: false
         ) { result in
-            switch result {
-            case .success(let urls):
-                guard let url = urls.first else { return }
-                // Picked URLs are security-scoped; reading without this yields "permission" errors.
-                guard url.startAccessingSecurityScopedResource() else {
-                    importError = "Failed to import file: Could not access the selected file."
-                    return
-                }
-                defer { url.stopAccessingSecurityScopedResource() }
-                do {
-                    let data = try Data(contentsOf: url)
-                    let inbound = InboundFile(
-                        fileName: url.lastPathComponent,
-                        fileData: data,
-                        uploadedByProfileId: profileStore.currentProfileId
-                    )
-                    modelContext.insert(inbound)
-                    try modelContext.save()
-                } catch {
-                    importError = "Failed to import file: \(error.localizedDescription)"
-                }
-            case .failure(let error):
-                importError = "File import failed: \(error.localizedDescription)"
-            }
+            Task { await handleImport(result) }
         }
-        .alert("File Import Error", isPresented: .constant(importError != nil)) {
-            Button("OK") { importError = nil }
+        .alert("Could Not Upload File", isPresented: Binding(
+            get: { importErrorMessage != nil },
+            set: { if !$0 { importErrorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) { importErrorMessage = nil }
         } message: {
-            if let importError {
-                Text(importError)
+            Text(importErrorMessage ?? "The selected file could not be uploaded.")
+        }
+    }
+
+    @MainActor
+    private func handleImport(_ result: Result<[URL], Error>) async {
+        let fileURL: URL
+        switch result {
+        case .success(let urls):
+            guard let selectedURL = urls.first else { return }
+            fileURL = selectedURL
+        case .failure(let error):
+            importErrorMessage = error.localizedDescription
+            IOSRuntimeLog.log("[DashboardView] File importer failed: \(error)")
+            return
+        }
+
+        let didAccess = fileURL.startAccessingSecurityScopedResource()
+        defer {
+            if didAccess {
+                fileURL.stopAccessingSecurityScopedResource()
             }
         }
+
+        do {
+            let fileData = try Data(contentsOf: fileURL, options: [.mappedIfSafe])
+            let uploaded = try await inboundFilesStore.uploadFile(
+                fileName: fileURL.lastPathComponent,
+                contentType: resolvedContentType(for: fileURL),
+                fileData: fileData,
+                uploadedByProfileId: profileStore.currentProfileId
+            )
+            IOSRuntimeLog.log("[DashboardView] Uploaded inbound file id=\(uploaded.id.uuidString)")
+        } catch {
+            importErrorMessage = error.localizedDescription
+            IOSRuntimeLog.log("[DashboardView] Inbound file upload failed: \(error)")
+        }
+    }
+
+    private func resolvedContentType(for fileURL: URL) -> String? {
+        if let values = try? fileURL.resourceValues(forKeys: [.contentTypeKey]),
+           let contentType = values.contentType?.preferredMIMEType {
+            return contentType
+        }
+
+        let pathExtension = fileURL.pathExtension.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !pathExtension.isEmpty else { return nil }
+        return UTType(filenameExtension: pathExtension)?.preferredMIMEType
     }
 }
 
@@ -255,25 +273,28 @@ enum InboundFilesImportUI {
 }
 
 struct InboundFilesView: View {
-    let files: [InboundFile]
-    let familyMembers: [FamilyMember]
+    @Environment(InboundFilesStore.self) private var store
+    @Environment(FamilyMembersStore.self) private var familyMembersStore
+
     @Binding var isImporterPresented: Bool
 
-    private let staleInterval: TimeInterval = 5 * 60 // 5 minutes
+    private let staleInterval: TimeInterval = 5 * 60
 
-    private func uploaderName(for file: InboundFile) -> String? {
+    private func uploaderName(for file: IOSBackendInboundFile) -> String? {
         guard let id = file.uploadedByProfileId,
-              let m = familyMembers.first(where: { $0.id == id }) else { return nil }
-        return m.displayName
+              let member = familyMembersStore.members.first(where: { $0.id == id }) else {
+            return nil
+        }
+        return member.displayName
     }
 
-    private func status(for file: InboundFile) -> (label: String, color: Color, note: String?) {
+    private func status(for file: IOSBackendInboundFile) -> (label: String, color: Color, note: String?) {
         if file.isProcessed {
             return ("Processed", .green, nil)
         }
         let age = Date().timeIntervalSince(file.timestamp)
         if age > staleInterval {
-            return ("Pending", .orange, "Waiting for Mac to sync…")
+            return ("Pending", .orange, "Waiting for the Mac runner to process this file.")
         }
         return ("Pending", .orange, nil)
     }
@@ -281,38 +302,60 @@ struct InboundFilesView: View {
     var body: some View {
         NavigationStack {
             List {
-                ForEach(files, id: \.id) { file in
-                    let s = status(for: file)
+                if let errorMessage = store.errorMessage {
+                    Section {
+                        Text(errorMessage)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                ForEach(store.files, id: \.id) { file in
+                    let fileStatus = status(for: file)
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(file.fileName)
                                 .font(.headline)
-                            Text(file.timestamp, style: .date)
+                            Text(file.timestamp.formatted(date: .abbreviated, time: .shortened))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                            if let who = uploaderName(for: file) {
-                                Text("From \(who)")
+                            if let uploaderName = uploaderName(for: file) {
+                                Text("From \(uploaderName)")
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)
                             }
-                            if let note = s.note {
+                            if let note = fileStatus.note {
                                 Text(note)
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)
                             }
                         }
                         Spacer()
-                        Text(s.label)
-                            .font(.caption2)
-                            .padding(6)
-                            .background(s.color.opacity(0.15))
-                            .foregroundStyle(s.color)
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                        Text(fileStatus.label)
+                            .font(.caption2.weight(.medium))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 6)
+                            .background(fileStatus.color.opacity(0.15))
+                            .foregroundStyle(fileStatus.color)
+                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                     }
+                    .padding(.vertical, 4)
                 }
             }
+            .listStyle(.plain)
             .navigationTitle("Inbound Files")
-            .emptyState(files.isEmpty, message: "Upload PDFs, TXTs, or CSVs to share with your Mac agent.")
+            .refreshable {
+                await store.refresh()
+            }
+            .overlay {
+                if store.isLoading && store.files.isEmpty {
+                    ProgressView("Loading files…")
+                }
+            }
+            .emptyState(
+                store.files.isEmpty && !store.isLoading,
+                message: "Upload PDFs, text files, or spreadsheets to hand them to the family server and Mac runner."
+            )
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -320,31 +363,38 @@ struct InboundFilesView: View {
                     } label: {
                         Label("Add File", systemImage: "plus")
                     }
+                    .disabled(store.isUploading)
                     .accessibilityIdentifier(InboundFilesImportUI.addButtonAccessibilityIdentifier)
                 }
             }
             .familyProfileToolbar()
+        }
+        .task {
+            await store.refresh()
         }
     }
 }
 
 struct FamilyProfileToolbarMenu: View {
     @EnvironmentObject private var profileStore: FamilyProfileStore
-    @Query(sort: \FamilyMember.createdAt, order: .forward) private var familyMembers: [FamilyMember]
+    @Environment(FamilyMembersStore.self) private var familyMembersStore
 
     let onAddFamilyMember: () -> Void
 
     private var currentProfileLabel: String {
         guard let id = profileStore.currentProfileId,
-              let member = familyMembers.first(where: { $0.id == id }) else {
+              let member = familyMembersStore.members.first(where: { $0.id == id }) else {
             return "Profile"
         }
-        return member.symbol.isEmpty ? member.displayName : "\(member.symbol) \(member.displayName)"
+        guard let symbol = member.symbol?.trimmingCharacters(in: .whitespacesAndNewlines), !symbol.isEmpty else {
+            return member.displayName
+        }
+        return "\(symbol) \(member.displayName)"
     }
 
     var body: some View {
         Menu {
-            ForEach(familyMembers, id: \.id) { member in
+            ForEach(familyMembersStore.members, id: \.id) { member in
                 Button {
                     profileStore.selectProfile(member.id)
                 } label: {

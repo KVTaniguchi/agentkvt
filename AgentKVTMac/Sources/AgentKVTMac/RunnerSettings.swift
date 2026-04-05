@@ -69,7 +69,14 @@ struct RunnerSettings: Sendable {
         }
 
         let mode = runScheduler ? "scheduler" : "single-test"
-        let cloudKit = disableCloudKit ? "disabled" : "enabled"
+        let cloudKit: String
+        if backendBaseURL != nil {
+            cloudKit = "disabled (backend mode)"
+        } else if disableCloudKit {
+            cloudKit = "disabled"
+        } else {
+            cloudKit = "enabled"
+        }
         let backend = backendBaseURL?.absoluteString ?? "disabled"
         let workspace = backendWorkspaceSlug ?? "-"
         messages.append(

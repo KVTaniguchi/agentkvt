@@ -17,6 +17,62 @@ public enum BackendAPIError: Error, LocalizedError {
     }
 }
 
+public struct BackendChatThread: Codable, Sendable {
+    public let id: UUID
+    public let workspaceId: UUID
+    public let createdByProfileId: UUID?
+    public let title: String
+    public let systemPrompt: String
+    public let allowedToolIds: [String]
+    public let latestMessagePreview: String?
+    public let latestMessageRole: String?
+    public let latestMessageStatus: String?
+    public let latestMessageAt: Date?
+    public let pendingMessageCount: Int
+    public let messageCount: Int
+    public let createdAt: Date
+    public let updatedAt: Date
+}
+
+public struct BackendChatMessage: Codable, Sendable {
+    public let id: UUID
+    public let chatThreadId: UUID
+    public let role: String
+    public let content: String
+    public let status: String
+    public let errorMessage: String?
+    public let timestamp: Date
+    public let authorProfileId: UUID?
+    public let createdAt: Date
+    public let updatedAt: Date
+}
+
+public struct BackendClaimedChatMessage: Sendable {
+    public let chatThread: BackendChatThread
+    public let chatMessage: BackendChatMessage
+    public let chatMessages: [BackendChatMessage]
+}
+
+public struct BackendCompletedChatMessage: Sendable {
+    public let chatMessage: BackendChatMessage
+    public let assistantMessage: BackendChatMessage
+}
+
+public struct BackendInboundFile: Codable, Sendable {
+    public let id: UUID
+    public let workspaceId: UUID
+    public let uploadedByProfileId: UUID?
+    public let fileName: String
+    public let contentType: String?
+    public let byteSize: Int
+    public let isProcessed: Bool
+    public let processedAt: Date?
+    public let timestamp: Date
+    public let createdAt: Date
+    public let updatedAt: Date
+    public let fileBase64: String?
+}
+
 
 
 public struct BackendActionItem: Codable, Sendable {
@@ -46,6 +102,30 @@ public struct BackendAgentLog: Codable, Sendable {
     public let timestamp: Date
     public let createdAt: Date
     public let updatedAt: Date
+}
+
+private struct BackendClaimedChatMessageEnvelope: Codable {
+    let pending: Bool
+    let chatThread: BackendChatThread?
+    let chatMessage: BackendChatMessage?
+    let chatMessages: [BackendChatMessage]?
+}
+
+private struct BackendCompletedChatMessageEnvelope: Codable {
+    let chatMessage: BackendChatMessage
+    let assistantMessage: BackendChatMessage
+}
+
+private struct BackendChatMessageEnvelope: Codable {
+    let chatMessage: BackendChatMessage
+}
+
+private struct BackendInboundFileEnvelope: Codable {
+    let inboundFile: BackendInboundFile
+}
+
+private struct BackendInboundFilesEnvelope: Codable {
+    let inboundFiles: [BackendInboundFile]
 }
 
 
@@ -111,13 +191,23 @@ public actor BackendAPIClient {
     private let decoder: JSONDecoder
     private let isoFormatter: ISO8601DateFormatter
 
+    private static func normalizeAPIBaseURL(_ url: URL) -> URL {
+        var string = url.absoluteString.trimmingCharacters(in: .whitespacesAndNewlines)
+        while string.hasSuffix("/") { string.removeLast() }
+        if string.lowercased().hasSuffix("/v1") {
+            string = String(string.dropLast("/v1".count))
+            while string.hasSuffix("/") { string.removeLast() }
+        }
+        return URL(string: string) ?? url
+    }
+
     public init(
         baseURL: URL,
         workspaceSlug: String,
         agentToken: String? = nil,
         session: URLSession = .shared
     ) {
-        self.baseURL = baseURL
+        self.baseURL = Self.normalizeAPIBaseURL(baseURL)
         self.workspaceSlug = workspaceSlug
         self.agentToken = agentToken?.trimmingCharacters(in: .whitespacesAndNewlines)
         self.session = session
@@ -269,6 +359,78 @@ public actor BackendAPIClient {
         let data = try await performRequest(path: "v1/agent/chat_wake", requiresAgentAuth: true)
         struct Envelope: Decodable { let pending: Bool }
         return try decoder.decode(Envelope.self, from: data).pending
+    }
+
+    public func claimNextPendingChatMessage() async throws -> BackendClaimedChatMessage? {
+        let data = try await performRequest(
+            path: "v1/agent/chat_messages/claim_next",
+            method: "POST",
+            requiresAgentAuth: true
+        )
+        let envelope = try decoder.decode(BackendClaimedChatMessageEnvelope.self, from: data)
+        guard envelope.pending else { return nil }
+        guard let chatThread = envelope.chatThread,
+              let chatMessage = envelope.chatMessage else {
+            throw BackendAPIError.invalidPayload("claim_next response missing chat thread or message")
+        }
+        return BackendClaimedChatMessage(
+            chatThread: chatThread,
+            chatMessage: chatMessage,
+            chatMessages: envelope.chatMessages ?? []
+        )
+    }
+
+    public func completeChatMessage(
+        id: UUID,
+        assistantContent: String
+    ) async throws -> BackendCompletedChatMessage {
+        let data = try await performRequest(
+            path: "v1/agent/chat_messages/\(id.uuidString)/complete",
+            method: "POST",
+            jsonBody: [
+                "assistant_message": [
+                    "content": assistantContent
+                ]
+            ],
+            requiresAgentAuth: true
+        )
+        let envelope = try decoder.decode(BackendCompletedChatMessageEnvelope.self, from: data)
+        return BackendCompletedChatMessage(
+            chatMessage: envelope.chatMessage,
+            assistantMessage: envelope.assistantMessage
+        )
+    }
+
+    public func failChatMessage(id: UUID, errorMessage: String) async throws -> BackendChatMessage {
+        let data = try await performRequest(
+            path: "v1/agent/chat_messages/\(id.uuidString)/fail",
+            method: "POST",
+            jsonBody: [
+                "chat_message": [
+                    "error_message": errorMessage
+                ]
+            ],
+            requiresAgentAuth: true
+        )
+        return try decoder.decode(BackendChatMessageEnvelope.self, from: data).chatMessage
+    }
+
+    public func fetchPendingInboundFiles(limit: Int = 100) async throws -> [BackendInboundFile] {
+        let data = try await performRequest(
+            path: "v1/agent/inbound_files",
+            queryItems: [URLQueryItem(name: "limit", value: "\(min(limit, 250))")],
+            requiresAgentAuth: true
+        )
+        return try decoder.decode(BackendInboundFilesEnvelope.self, from: data).inboundFiles
+    }
+
+    public func markInboundFileProcessed(id: UUID) async throws -> BackendInboundFile {
+        let data = try await performRequest(
+            path: "v1/agent/inbound_files/\(id.uuidString)/mark_processed",
+            method: "POST",
+            requiresAgentAuth: true
+        )
+        return try decoder.decode(BackendInboundFileEnvelope.self, from: data).inboundFile
     }
 
     private func performRequest(

@@ -1,6 +1,5 @@
 import Foundation
-import ManagerCore
-import SwiftData
+import Observation
 
 enum IOSBackendAPIError: Error, LocalizedError {
     case invalidBaseURL(String)
@@ -145,6 +144,56 @@ struct IOSBackendLifeContextEntry: Codable, Sendable {
     let updatedAt: Date
 }
 
+struct IOSBackendChatThread: Codable, Sendable, Identifiable {
+    let id: UUID
+    let workspaceId: UUID
+    let createdByProfileId: UUID?
+    let title: String
+    let systemPrompt: String
+    let allowedToolIds: [String]
+    let latestMessagePreview: String?
+    let latestMessageRole: String?
+    let latestMessageStatus: String?
+    let latestMessageAt: Date?
+    let pendingMessageCount: Int
+    let messageCount: Int
+    let createdAt: Date
+    let updatedAt: Date
+}
+
+struct IOSBackendChatMessage: Codable, Sendable, Identifiable {
+    let id: UUID
+    let chatThreadId: UUID
+    let role: String
+    let content: String
+    let status: String
+    let errorMessage: String?
+    let timestamp: Date
+    let authorProfileId: UUID?
+    let createdAt: Date
+    let updatedAt: Date
+}
+
+struct IOSBackendChatThreadDetail: Codable, Sendable {
+    let chatThread: IOSBackendChatThread
+    let chatMessages: [IOSBackendChatMessage]
+}
+
+struct IOSBackendInboundFile: Codable, Sendable, Identifiable {
+    let id: UUID
+    let workspaceId: UUID
+    let uploadedByProfileId: UUID?
+    let fileName: String
+    let contentType: String?
+    let byteSize: Int
+    let isProcessed: Bool
+    let processedAt: Date?
+    let timestamp: Date
+    let createdAt: Date
+    let updatedAt: Date
+    let fileBase64: String?
+}
+
 struct IOSBackendObjective: Codable, Sendable, Identifiable {
     let id: UUID
     let workspaceId: UUID
@@ -230,6 +279,26 @@ private struct IOSBackendLifeContextEntriesEnvelope: Codable {
 
 private struct IOSBackendLifeContextEntryEnvelope: Codable {
     let lifeContextEntry: IOSBackendLifeContextEntry
+}
+
+private struct IOSBackendChatThreadsEnvelope: Codable {
+    let chatThreads: [IOSBackendChatThread]
+}
+
+private struct IOSBackendChatThreadEnvelope: Codable {
+    let chatThread: IOSBackendChatThread
+}
+
+private struct IOSBackendChatMessageEnvelope: Codable {
+    let chatMessage: IOSBackendChatMessage
+}
+
+private struct IOSBackendInboundFilesEnvelope: Codable {
+    let inboundFiles: [IOSBackendInboundFile]
+}
+
+private struct IOSBackendInboundFileEnvelope: Codable {
+    let inboundFile: IOSBackendInboundFile
 }
 
 private struct IOSBackendObjectivesEnvelope: Codable {
@@ -355,9 +424,94 @@ actor IOSBackendAPIClient {
         return try decoder.decode(IOSBackendLifeContextEntryEnvelope.self, from: data).lifeContextEntry
     }
 
+    func fetchChatThreads() async throws -> [IOSBackendChatThread] {
+        let data = try await performRequest(path: "v1/chat_threads")
+        return try decoder.decode(IOSBackendChatThreadsEnvelope.self, from: data).chatThreads
+    }
+
+    func createChatThread(
+        id: UUID,
+        title: String = "Assistant",
+        createdByProfileId: UUID?
+    ) async throws -> IOSBackendChatThread {
+        var chatThread: [String: Any] = [
+            "id": id.uuidString,
+            "title": title
+        ]
+        if let createdByProfileId {
+            chatThread["created_by_profile_id"] = createdByProfileId.uuidString
+        }
+
+        let data = try await performRequest(
+            path: "v1/chat_threads",
+            method: "POST",
+            jsonBody: ["chat_thread": chatThread]
+        )
+        return try decoder.decode(IOSBackendChatThreadEnvelope.self, from: data).chatThread
+    }
+
+    func fetchChatThread(id: UUID) async throws -> IOSBackendChatThreadDetail {
+        let data = try await performRequest(path: "v1/chat_threads/\(id.uuidString)")
+        return try decoder.decode(IOSBackendChatThreadDetail.self, from: data)
+    }
+
+    func createChatMessage(
+        id: UUID,
+        threadId: UUID,
+        content: String,
+        authorProfileId: UUID?
+    ) async throws -> IOSBackendChatMessage {
+        var chatMessage: [String: Any] = [
+            "id": id.uuidString,
+            "content": content
+        ]
+        if let authorProfileId {
+            chatMessage["author_profile_id"] = authorProfileId.uuidString
+        }
+
+        let data = try await performRequest(
+            path: "v1/chat_threads/\(threadId.uuidString)/chat_messages",
+            method: "POST",
+            jsonBody: ["chat_message": chatMessage]
+        )
+        return try decoder.decode(IOSBackendChatMessageEnvelope.self, from: data).chatMessage
+    }
+
     /// Nudges the Mac agent (via server poll) to process pending chat when not on LAN.
     func postChatWake() async throws {
         _ = try await performRequest(path: "v1/chat_wake", method: "POST", jsonBody: [:])
+    }
+
+    func fetchInboundFiles(limit: Int = 100) async throws -> [IOSBackendInboundFile] {
+        let data = try await performRequest(path: "v1/inbound_files?limit=\(limit)")
+        return try decoder.decode(IOSBackendInboundFilesEnvelope.self, from: data).inboundFiles
+    }
+
+    func createInboundFile(
+        id: UUID,
+        fileName: String,
+        contentType: String?,
+        fileData: Data,
+        uploadedByProfileId: UUID?
+    ) async throws -> IOSBackendInboundFile {
+        var inboundFile: [String: Any] = [
+            "id": id.uuidString,
+            "file_name": fileName,
+            "file_base64": fileData.base64EncodedString()
+        ]
+        if let contentType, !contentType.isEmpty {
+            inboundFile["content_type"] = contentType
+        }
+        if let uploadedByProfileId {
+            inboundFile["uploaded_by_profile_id"] = uploadedByProfileId.uuidString
+        }
+
+        let data = try await performRequest(
+            path: "v1/inbound_files",
+            method: "POST",
+            jsonBody: ["inbound_file": inboundFile]
+        )
+        return try decoder.decode(IOSBackendInboundFileEnvelope.self, from: data).inboundFile
     }
 
     func fetchObjectives() async throws -> [IOSBackendObjective] {
@@ -497,329 +651,58 @@ final class IOSBackendSyncService {
         }
     }
 
-    @MainActor
-    func bootstrap(modelContext: ModelContext) async throws {
-        guard let client else { return }
-
-        let snapshot = try await client.fetchBootstrap()
-        try reconcileFamilyMembers(snapshot.familyMembers, into: modelContext)
-        try reconcileActionItems(snapshot.actionItems, into: modelContext)
-        try reconcileAgentLogs(snapshot.agentLogs, into: modelContext)
-        try reconcileLifeContextEntries(snapshot.lifeContextEntries, into: modelContext)
-        try modelContext.save()
-        IOSRuntimeLog.log("[IOSBackendSync] Bootstrapped \(snapshot.familyMembers.count) family member(s), \(snapshot.actionItems.count) action item(s), \(snapshot.agentLogs.count) log(s), and \(snapshot.lifeContextEntries.count) life-context entry/entries from backend.")
+    func fetchBootstrapRemote() async throws -> IOSBackendBootstrap {
+        guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
+        return try await client.fetchBootstrap()
     }
 
-    @MainActor
-    func createFamilyMember(
+    func fetchFamilyMembersRemote() async throws -> [IOSBackendFamilyMember] {
+        guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
+        return try await client.fetchFamilyMembers()
+    }
+
+    func createFamilyMemberRemote(
         displayName: String,
-        symbol: String,
-        modelContext: ModelContext
-    ) async throws -> FamilyMember {
+        symbol: String
+    ) async throws -> IOSBackendFamilyMember {
         let trimmedName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedSymbol = symbol.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        if let client {
-            let localId = UUID()
-            let remote = try await client.createFamilyMember(
-                id: localId,
-                displayName: trimmedName,
-                symbol: trimmedSymbol
-            )
-            let familyMember = upsertFamilyMember(remote, into: modelContext)
-            try modelContext.save()
-            IOSRuntimeLog.log("[IOSBackendSync] Created backend family member id=\(familyMember.id.uuidString)")
-            return familyMember
-        }
-
-        let familyMember = FamilyMember(displayName: trimmedName, symbol: trimmedSymbol)
-        modelContext.insert(familyMember)
-        try modelContext.save()
-        return familyMember
+        guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
+        let remote = try await client.createFamilyMember(
+            id: UUID(),
+            displayName: trimmedName,
+            symbol: trimmedSymbol
+        )
+        IOSRuntimeLog.log("[IOSBackendSync] Created backend family member id=\(remote.id.uuidString)")
+        return remote
     }
 
-    @MainActor
-    func syncActionItems(modelContext: ModelContext) async {
-        guard let client else { return }
-
-        do {
-            let actionItems = try await client.fetchActionItems()
-            try reconcileActionItems(actionItems, into: modelContext)
-            try modelContext.save()
-            IOSRuntimeLog.log("[IOSBackendSync] Synced \(actionItems.count) action item(s) from backend.")
-        } catch {
-            IOSRuntimeLog.log("[IOSBackendSync] Action-item sync failed: \(error)")
-        }
+    func fetchAgentLogsRemote(limit: Int = 200) async throws -> [IOSBackendAgentLog] {
+        guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
+        return try await client.fetchAgentLogs(limit: limit)
     }
 
-    @MainActor
-    func syncAgentLogs(modelContext: ModelContext) async {
-        guard let client else { return }
-
-        do {
-            let agentLogs = try await client.fetchAgentLogs()
-            try reconcileAgentLogs(agentLogs, into: modelContext)
-            try modelContext.save()
-            IOSRuntimeLog.log("[IOSBackendSync] Synced \(agentLogs.count) agent log(s) from backend.")
-        } catch {
-            IOSRuntimeLog.log("[IOSBackendSync] Agent-log sync failed: \(error)")
-        }
+    func fetchLifeContextEntriesRemote() async throws -> [IOSBackendLifeContextEntry] {
+        guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
+        return try await client.fetchLifeContextEntries()
     }
 
-    @MainActor
-    func syncLifeContextEntries(modelContext: ModelContext) async {
-        guard let client else { return }
-
-        do {
-            let entries = try await client.fetchLifeContextEntries()
-            try reconcileLifeContextEntries(entries, into: modelContext)
-            try modelContext.save()
-            IOSRuntimeLog.log("[IOSBackendSync] Synced \(entries.count) life-context entry/entries from backend.")
-        } catch {
-            IOSRuntimeLog.log("[IOSBackendSync] Life-context sync failed: \(error)")
-        }
-    }
-
-    @MainActor
-    func handleActionItem(
-        _ actionItem: ActionItem,
-        handledAt: Date = Date(),
-        modelContext: ModelContext
-    ) async throws {
-        if let client {
-            let remote = try await client.handleActionItem(id: actionItem.id, handledAt: handledAt)
-            _ = upsertActionItem(remote, into: modelContext)
-        } else {
-            actionItem.isHandled = true
-        }
-        try modelContext.save()
-    }
-
-    @MainActor
-    func saveLifeContext(
-        existingContext: LifeContext?,
+    func saveLifeContextRemote(
+        existingEntry: IOSBackendLifeContextEntry?,
         key: String,
-        value: String,
-        modelContext: ModelContext
-    ) async throws {
+        value: String
+    ) async throws -> IOSBackendLifeContextEntry {
         let normalizedKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        if let client {
-            let remote = try await client.upsertLifeContextEntry(
-                id: existingContext?.id ?? UUID(),
-                existingKey: existingContext?.key,
-                key: normalizedKey,
-                value: normalizedValue
-            )
-            _ = upsertLifeContextEntry(remote, into: modelContext)
-            try modelContext.save()
-            IOSRuntimeLog.log("[IOSBackendSync] Saved life-context key=\(remote.key) via backend.")
-            return
-        }
-
-        if let existingContext {
-            existingContext.key = normalizedKey
-            existingContext.value = normalizedValue
-            existingContext.updatedAt = Date()
-        } else {
-            modelContext.insert(LifeContext(key: normalizedKey, value: normalizedValue))
-        }
-        try modelContext.save()
-    }
-
-    @MainActor
-    private func reconcileFamilyMembers(_ remoteMembers: [IOSBackendFamilyMember], into modelContext: ModelContext) throws {
-        for remoteMember in remoteMembers {
-            _ = upsertFamilyMember(remoteMember, into: modelContext)
-        }
-    }
-
-    @MainActor
-    private func reconcileActionItems(_ remoteActionItems: [IOSBackendActionItem], into modelContext: ModelContext) throws {
-        for remoteActionItem in remoteActionItems {
-            _ = upsertActionItem(remoteActionItem, into: modelContext)
-        }
-        try pruneActionItems(excluding: Set(remoteActionItems.map(\.id)), in: modelContext)
-    }
-
-    @MainActor
-    private func reconcileAgentLogs(_ remoteAgentLogs: [IOSBackendAgentLog], into modelContext: ModelContext) throws {
-        for remoteAgentLog in remoteAgentLogs {
-            _ = upsertAgentLog(remoteAgentLog, into: modelContext)
-        }
-        try pruneAgentLogs(excluding: Set(remoteAgentLogs.map(\.id)), in: modelContext)
-    }
-
-    @MainActor
-    private func reconcileLifeContextEntries(_ remoteEntries: [IOSBackendLifeContextEntry], into modelContext: ModelContext) throws {
-        for remoteEntry in remoteEntries {
-            _ = upsertLifeContextEntry(remoteEntry, into: modelContext)
-        }
-        try pruneLifeContextEntries(excluding: Set(remoteEntries.map(\.id)), in: modelContext)
-    }
-
-    @discardableResult
-    @MainActor
-    private func upsertFamilyMember(_ remoteMember: IOSBackendFamilyMember, into modelContext: ModelContext) -> FamilyMember {
-        if let existing = familyMember(id: remoteMember.id, in: modelContext) {
-            existing.displayName = remoteMember.displayName
-            existing.symbol = remoteMember.symbol ?? ""
-            return existing
-        }
-
-        let member = FamilyMember(
-            id: remoteMember.id,
-            displayName: remoteMember.displayName,
-            symbol: remoteMember.symbol ?? "",
-            createdAt: remoteMember.createdAt
+        guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
+        let remote = try await client.upsertLifeContextEntry(
+            id: existingEntry?.id ?? UUID(),
+            existingKey: existingEntry?.key,
+            key: normalizedKey,
+            value: normalizedValue
         )
-        modelContext.insert(member)
-        return member
-    }
-
-    @discardableResult
-    @MainActor
-    private func upsertActionItem(_ remoteActionItem: IOSBackendActionItem, into modelContext: ModelContext) -> ActionItem {
-        let payloadData = jsonData(from: remoteActionItem.payloadJson)
-
-        if let existing = actionItem(id: remoteActionItem.id, in: modelContext) {
-            existing.title = remoteActionItem.title
-            existing.systemIntent = remoteActionItem.systemIntent
-            existing.payloadData = payloadData
-            existing.relevanceScore = remoteActionItem.relevanceScore
-            existing.timestamp = remoteActionItem.timestamp
-            existing.isHandled = remoteActionItem.isHandled
-            existing.createdByProfileId = remoteActionItem.ownerProfileId
-            return existing
-        }
-
-        let actionItem = ActionItem(
-            id: remoteActionItem.id,
-            title: remoteActionItem.title,
-            systemIntent: remoteActionItem.systemIntent,
-            payloadData: payloadData,
-            relevanceScore: remoteActionItem.relevanceScore,
-            timestamp: remoteActionItem.timestamp,
-            isHandled: remoteActionItem.isHandled,
-            createdByProfileId: remoteActionItem.ownerProfileId
-        )
-        modelContext.insert(actionItem)
-        return actionItem
-    }
-
-    @discardableResult
-    @MainActor
-    private func upsertAgentLog(_ remoteAgentLog: IOSBackendAgentLog, into modelContext: ModelContext) -> AgentLog {
-        let toolName = remoteAgentLog.toolName ?? remoteAgentLog.metadataJson["tool_name"]?.stringValue
-
-        if let existing = agentLog(id: remoteAgentLog.id, in: modelContext) {
-            existing.phase = remoteAgentLog.phase
-            existing.content = remoteAgentLog.content
-            existing.toolName = toolName
-            existing.timestamp = remoteAgentLog.timestamp
-            return existing
-        }
-
-        let agentLog = AgentLog(
-            id: remoteAgentLog.id,
-            phase: remoteAgentLog.phase,
-            content: remoteAgentLog.content,
-            toolName: toolName,
-            timestamp: remoteAgentLog.timestamp
-        )
-        modelContext.insert(agentLog)
-        return agentLog
-    }
-
-    @discardableResult
-    @MainActor
-    private func upsertLifeContextEntry(_ remoteEntry: IOSBackendLifeContextEntry, into modelContext: ModelContext) -> LifeContext {
-        if let existing = lifeContext(id: remoteEntry.id, in: modelContext) ?? lifeContext(key: remoteEntry.key, in: modelContext) {
-            existing.id = remoteEntry.id
-            existing.key = remoteEntry.key
-            existing.value = remoteEntry.value
-            existing.updatedAt = remoteEntry.updatedAt
-            return existing
-        }
-
-        let context = LifeContext(
-            id: remoteEntry.id,
-            key: remoteEntry.key,
-            value: remoteEntry.value,
-            updatedAt: remoteEntry.updatedAt
-        )
-        modelContext.insert(context)
-        return context
-    }
-
-    @MainActor
-    private func familyMember(id: UUID, in modelContext: ModelContext) -> FamilyMember? {
-        let descriptor = FetchDescriptor<FamilyMember>(
-            predicate: #Predicate<FamilyMember> { $0.id == id }
-        )
-        return try? modelContext.fetch(descriptor).first
-    }
-
-    @MainActor
-    private func actionItem(id: UUID, in modelContext: ModelContext) -> ActionItem? {
-        let descriptor = FetchDescriptor<ActionItem>(
-            predicate: #Predicate<ActionItem> { $0.id == id }
-        )
-        return try? modelContext.fetch(descriptor).first
-    }
-
-    @MainActor
-    private func agentLog(id: UUID, in modelContext: ModelContext) -> AgentLog? {
-        let descriptor = FetchDescriptor<AgentLog>(
-            predicate: #Predicate<AgentLog> { $0.id == id }
-        )
-        return try? modelContext.fetch(descriptor).first
-    }
-
-    @MainActor
-    private func lifeContext(id: UUID, in modelContext: ModelContext) -> LifeContext? {
-        let descriptor = FetchDescriptor<LifeContext>(
-            predicate: #Predicate<LifeContext> { $0.id == id }
-        )
-        return try? modelContext.fetch(descriptor).first
-    }
-
-    @MainActor
-    private func lifeContext(key: String, in modelContext: ModelContext) -> LifeContext? {
-        let descriptor = FetchDescriptor<LifeContext>(
-            predicate: #Predicate<LifeContext> { $0.key == key }
-        )
-        return try? modelContext.fetch(descriptor).first
-    }
-
-    @MainActor
-    private func pruneActionItems(excluding remoteIDs: Set<UUID>, in modelContext: ModelContext) throws {
-        let localItems = try modelContext.fetch(FetchDescriptor<ActionItem>())
-        for localItem in localItems where !remoteIDs.contains(localItem.id) {
-            modelContext.delete(localItem)
-        }
-    }
-
-    @MainActor
-    private func pruneAgentLogs(excluding remoteIDs: Set<UUID>, in modelContext: ModelContext) throws {
-        let localLogs = try modelContext.fetch(FetchDescriptor<AgentLog>())
-        for localLog in localLogs where !remoteIDs.contains(localLog.id) {
-            modelContext.delete(localLog)
-        }
-    }
-
-    @MainActor
-    private func pruneLifeContextEntries(excluding remoteIDs: Set<UUID>, in modelContext: ModelContext) throws {
-        let localContexts = try modelContext.fetch(FetchDescriptor<LifeContext>())
-        for localContext in localContexts where !remoteIDs.contains(localContext.id) {
-            modelContext.delete(localContext)
-        }
-    }
-
-    private func jsonData(from object: [String: IOSBackendJSONValue]) -> Data? {
-        guard !object.isEmpty else { return nil }
-        return try? JSONSerialization.data(withJSONObject: object.mapValues(\.foundationObject), options: [])
+        IOSRuntimeLog.log("[IOSBackendSync] Saved life-context key=\(remote.key) via backend.")
+        return remote
     }
 
     // MARK: - Remote passthrough (no SwiftData reconciliation)
@@ -878,6 +761,437 @@ final class IOSBackendSyncService {
         guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
         return try await client.fetchObjectivePresentation(id: id)
     }
+
+    func fetchChatThreadsRemote() async throws -> [IOSBackendChatThread] {
+        guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
+        return try await client.fetchChatThreads()
+    }
+
+    func createChatThreadRemote(
+        title: String = "Assistant",
+        createdByProfileId: UUID?
+    ) async throws -> IOSBackendChatThread {
+        guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
+        return try await client.createChatThread(
+            id: UUID(),
+            title: title,
+            createdByProfileId: createdByProfileId
+        )
+    }
+
+    func fetchChatThreadRemote(id: UUID) async throws -> IOSBackendChatThreadDetail {
+        guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
+        return try await client.fetchChatThread(id: id)
+    }
+
+    func createChatMessageRemote(
+        threadId: UUID,
+        content: String,
+        authorProfileId: UUID?
+    ) async throws -> IOSBackendChatMessage {
+        guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
+        return try await client.createChatMessage(
+            id: UUID(),
+            threadId: threadId,
+            content: content,
+            authorProfileId: authorProfileId
+        )
+    }
+
+    func fetchInboundFilesRemote(limit: Int = 100) async throws -> [IOSBackendInboundFile] {
+        guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
+        return try await client.fetchInboundFiles(limit: limit)
+    }
+
+    func createInboundFileRemote(
+        fileName: String,
+        contentType: String?,
+        fileData: Data,
+        uploadedByProfileId: UUID?
+    ) async throws -> IOSBackendInboundFile {
+        guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
+        return try await client.createInboundFile(
+            id: UUID(),
+            fileName: fileName,
+            contentType: contentType,
+            fileData: fileData,
+            uploadedByProfileId: uploadedByProfileId
+        )
+    }
 }
 
 extension IOSBackendSyncService: ObjectivesRemoteSyncing {}
+
+@Observable
+final class FamilyMembersStore {
+    private(set) var members: [IOSBackendFamilyMember] = []
+    private(set) var isLoading = false
+    private(set) var errorMessage: String?
+
+    @ObservationIgnored private let sync: IOSBackendSyncService
+
+    init(sync: IOSBackendSyncService = IOSBackendSyncService()) {
+        self.sync = sync
+    }
+
+    @MainActor
+    func refresh() async {
+        guard sync.isEnabled else { return }
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
+
+        do {
+            replaceMembers(try await sync.fetchFamilyMembersRemote())
+        } catch {
+            errorMessage = error.localizedDescription
+            IOSRuntimeLog.log("[FamilyMembersStore] Refresh failed: \(error)")
+        }
+    }
+
+    @MainActor
+    func createFamilyMember(displayName: String, symbol: String) async throws -> IOSBackendFamilyMember {
+        let member = try await sync.createFamilyMemberRemote(displayName: displayName, symbol: symbol)
+        upsert(member)
+        return member
+    }
+
+    @MainActor
+    func replaceMembers(_ members: [IOSBackendFamilyMember]) {
+        self.members = members.sorted { $0.createdAt < $1.createdAt }
+        errorMessage = nil
+    }
+
+    @MainActor
+    private func upsert(_ member: IOSBackendFamilyMember) {
+        if let index = members.firstIndex(where: { $0.id == member.id }) {
+            members[index] = member
+        } else {
+            members.append(member)
+        }
+        members.sort { $0.createdAt < $1.createdAt }
+    }
+}
+
+@Observable
+final class LifeContextStore {
+    private(set) var entries: [IOSBackendLifeContextEntry] = []
+    private(set) var isLoading = false
+    private(set) var errorMessage: String?
+
+    @ObservationIgnored private let sync: IOSBackendSyncService
+
+    init(sync: IOSBackendSyncService = IOSBackendSyncService()) {
+        self.sync = sync
+    }
+
+    @MainActor
+    func refresh() async {
+        guard sync.isEnabled else { return }
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
+
+        do {
+            replaceEntries(try await sync.fetchLifeContextEntriesRemote())
+        } catch {
+            errorMessage = error.localizedDescription
+            IOSRuntimeLog.log("[LifeContextStore] Refresh failed: \(error)")
+        }
+    }
+
+    @MainActor
+    func saveEntry(
+        existingEntry: IOSBackendLifeContextEntry?,
+        key: String,
+        value: String
+    ) async throws -> IOSBackendLifeContextEntry {
+        let saved = try await sync.saveLifeContextRemote(existingEntry: existingEntry, key: key, value: value)
+        upsert(saved)
+        return saved
+    }
+
+    @MainActor
+    func replaceEntries(_ entries: [IOSBackendLifeContextEntry]) {
+        self.entries = entries.sorted {
+            $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending
+        }
+        errorMessage = nil
+    }
+
+    @MainActor
+    private func upsert(_ entry: IOSBackendLifeContextEntry) {
+        if let index = entries.firstIndex(where: { $0.id == entry.id || $0.key == entry.key }) {
+            entries[index] = entry
+        } else {
+            entries.append(entry)
+        }
+        entries.sort {
+            $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending
+        }
+    }
+}
+
+@Observable
+final class AgentLogsStore {
+    private(set) var logs: [IOSBackendAgentLog] = []
+    private(set) var isLoading = false
+    private(set) var errorMessage: String?
+
+    @ObservationIgnored private let sync: IOSBackendSyncService
+
+    init(sync: IOSBackendSyncService = IOSBackendSyncService()) {
+        self.sync = sync
+    }
+
+    @MainActor
+    func refresh(limit: Int = 200) async {
+        guard sync.isEnabled else { return }
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
+
+        do {
+            replaceLogs(try await sync.fetchAgentLogsRemote(limit: limit))
+        } catch {
+            errorMessage = error.localizedDescription
+            IOSRuntimeLog.log("[AgentLogsStore] Refresh failed: \(error)")
+        }
+    }
+
+    @MainActor
+    func replaceLogs(_ logs: [IOSBackendAgentLog]) {
+        self.logs = logs
+        errorMessage = nil
+    }
+}
+
+@Observable
+final class ChatStore {
+    private(set) var threads: [IOSBackendChatThread] = []
+    private(set) var messagesByThreadID: [UUID: [IOSBackendChatMessage]] = [:]
+    private(set) var isLoadingThreads = false
+    private(set) var loadingThreadIDs: Set<UUID> = []
+    private(set) var sendingThreadIDs: Set<UUID> = []
+    private(set) var errorMessage: String?
+
+    @ObservationIgnored private let sync: IOSBackendSyncService
+
+    init(sync: IOSBackendSyncService = IOSBackendSyncService()) {
+        self.sync = sync
+    }
+
+    @MainActor
+    func refreshThreads() async {
+        guard sync.isEnabled else { return }
+        isLoadingThreads = true
+        errorMessage = nil
+        defer { isLoadingThreads = false }
+
+        do {
+            replaceThreads(try await sync.fetchChatThreadsRemote())
+        } catch {
+            errorMessage = error.localizedDescription
+            IOSRuntimeLog.log("[ChatStore] Thread refresh failed: \(error)")
+        }
+    }
+
+    @MainActor
+    func createThread(
+        title: String = "Assistant",
+        createdByProfileId: UUID?
+    ) async throws -> IOSBackendChatThread {
+        let thread = try await sync.createChatThreadRemote(
+            title: title,
+            createdByProfileId: createdByProfileId
+        )
+        upsertThread(thread)
+        return thread
+    }
+
+    @MainActor
+    func refreshThread(id: UUID) async {
+        loadingThreadIDs.insert(id)
+        defer { loadingThreadIDs.remove(id) }
+
+        do {
+            mergeThreadDetail(try await sync.fetchChatThreadRemote(id: id))
+        } catch {
+            errorMessage = error.localizedDescription
+            IOSRuntimeLog.log("[ChatStore] Thread refresh failed for \(id): \(error)")
+        }
+    }
+
+    @MainActor
+    func sendMessage(
+        threadId: UUID,
+        content: String,
+        authorProfileId: UUID?
+    ) async throws {
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        sendingThreadIDs.insert(threadId)
+        defer { sendingThreadIDs.remove(threadId) }
+
+        let message = try await sync.createChatMessageRemote(
+            threadId: threadId,
+            content: trimmed,
+            authorProfileId: authorProfileId
+        )
+        upsertMessage(message)
+
+        Task {
+            await sync.notifyChatWakeIfNeeded()
+            await pollThreadUntilSettled(id: threadId)
+        }
+    }
+
+    func thread(for id: UUID) -> IOSBackendChatThread? {
+        threads.first(where: { $0.id == id })
+    }
+
+    func messages(for threadId: UUID) -> [IOSBackendChatMessage] {
+        messagesByThreadID[threadId] ?? []
+    }
+
+    func hasPendingMessages(threadId: UUID) -> Bool {
+        messages(for: threadId).contains { message in
+            message.role == "user" && (message.status == "pending" || message.status == "processing")
+        }
+    }
+
+    private func replaceThreads(_ threads: [IOSBackendChatThread]) {
+        self.threads = threads.sorted(by: chatThreadSort)
+        errorMessage = nil
+    }
+
+    private func mergeThreadDetail(_ detail: IOSBackendChatThreadDetail) {
+        upsertThread(detail.chatThread)
+        messagesByThreadID[detail.chatThread.id] = detail.chatMessages.sorted {
+            if $0.timestamp == $1.timestamp {
+                return $0.createdAt < $1.createdAt
+            }
+            return $0.timestamp < $1.timestamp
+        }
+        errorMessage = nil
+    }
+
+    private func upsertThread(_ thread: IOSBackendChatThread) {
+        if let index = threads.firstIndex(where: { $0.id == thread.id }) {
+            threads[index] = thread
+        } else {
+            threads.append(thread)
+        }
+        threads.sort(by: chatThreadSort)
+    }
+
+    private func upsertMessage(_ message: IOSBackendChatMessage) {
+        var threadMessages = messagesByThreadID[message.chatThreadId] ?? []
+        if let index = threadMessages.firstIndex(where: { $0.id == message.id }) {
+            threadMessages[index] = message
+        } else {
+            threadMessages.append(message)
+        }
+        messagesByThreadID[message.chatThreadId] = threadMessages.sorted {
+            if $0.timestamp == $1.timestamp {
+                return $0.createdAt < $1.createdAt
+            }
+            return $0.timestamp < $1.timestamp
+        }
+    }
+
+    @MainActor
+    private func pollThreadUntilSettled(id: UUID) async {
+        for _ in 0..<15 {
+            await refreshThread(id: id)
+            if !hasPendingMessages(threadId: id) {
+                await refreshThreads()
+                return
+            }
+            do {
+                try await Task.sleep(for: .seconds(2))
+            } catch {
+                return
+            }
+        }
+        await refreshThreads()
+    }
+
+    private func chatThreadSort(lhs: IOSBackendChatThread, rhs: IOSBackendChatThread) -> Bool {
+        if lhs.updatedAt == rhs.updatedAt {
+            return lhs.createdAt > rhs.createdAt
+        }
+        return lhs.updatedAt > rhs.updatedAt
+    }
+}
+
+@Observable
+final class InboundFilesStore {
+    private(set) var files: [IOSBackendInboundFile] = []
+    private(set) var isLoading = false
+    private(set) var isUploading = false
+    private(set) var errorMessage: String?
+
+    @ObservationIgnored private let sync: IOSBackendSyncService
+
+    init(sync: IOSBackendSyncService = IOSBackendSyncService()) {
+        self.sync = sync
+    }
+
+    @MainActor
+    func refresh(limit: Int = 100) async {
+        guard sync.isEnabled else { return }
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
+
+        do {
+            replaceFiles(try await sync.fetchInboundFilesRemote(limit: limit))
+        } catch {
+            errorMessage = error.localizedDescription
+            IOSRuntimeLog.log("[InboundFilesStore] Refresh failed: \(error)")
+        }
+    }
+
+    @MainActor
+    func uploadFile(
+        fileName: String,
+        contentType: String?,
+        fileData: Data,
+        uploadedByProfileId: UUID?
+    ) async throws -> IOSBackendInboundFile {
+        isUploading = true
+        defer { isUploading = false }
+
+        let inboundFile = try await sync.createInboundFileRemote(
+            fileName: fileName,
+            contentType: contentType,
+            fileData: fileData,
+            uploadedByProfileId: uploadedByProfileId
+        )
+        upsertFile(inboundFile)
+        return inboundFile
+    }
+
+    func replaceFiles(_ files: [IOSBackendInboundFile]) {
+        self.files = files.sorted(by: inboundFileSort)
+        errorMessage = nil
+    }
+
+    private func upsertFile(_ file: IOSBackendInboundFile) {
+        if let index = files.firstIndex(where: { $0.id == file.id }) {
+            files[index] = file
+        } else {
+            files.append(file)
+        }
+        files.sort(by: inboundFileSort)
+    }
+
+    private func inboundFileSort(lhs: IOSBackendInboundFile, rhs: IOSBackendInboundFile) -> Bool {
+        if lhs.timestamp == rhs.timestamp {
+            return lhs.createdAt > rhs.createdAt
+        }
+        return lhs.timestamp > rhs.timestamp
+    }
+}

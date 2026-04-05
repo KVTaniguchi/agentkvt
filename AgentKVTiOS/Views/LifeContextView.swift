@@ -1,19 +1,14 @@
 import SwiftUI
-import SwiftData
-import ManagerCore
 
 /// LifeContext: edit static facts/preferences the agent consults (goals, location, dates).
 struct LifeContextView: View {
-    @Environment(\.modelContext) private var modelContext
-    @Query(sort: \LifeContext.key, order: .forward) private var contexts: [LifeContext]
+    @Environment(LifeContextStore.self) private var store
     @State private var showAdd = false
-
-    private let backendSync = IOSBackendSyncService()
 
     var body: some View {
         NavigationStack {
             List {
-                ForEach(contexts, id: \.id) { ctx in
+                ForEach(store.entries, id: \.id) { ctx in
                     NavigationLink {
                         LifeContextEditView(context: ctx) {}
                     } label: {
@@ -29,9 +24,7 @@ struct LifeContextView: View {
                 }
             }
             .navigationTitle("Life Context")
-            .refreshable {
-                await backendSync.syncLifeContextEntries(modelContext: modelContext)
-            }
+            .refreshable { await store.refresh() }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button("Add", systemImage: "plus") { showAdd = true }
@@ -45,24 +38,23 @@ struct LifeContextView: View {
             }
         }
         .task {
-            await backendSync.syncLifeContextEntries(modelContext: modelContext)
+            if store.entries.isEmpty {
+                await store.refresh()
+            }
         }
     }
 }
 
 struct LifeContextEditView: View {
-    let context: LifeContext?
+    let context: IOSBackendLifeContextEntry?
     let onDismiss: () -> Void
-    @Environment(\.modelContext) private var modelContext
+    @Environment(LifeContextStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
     @State private var key: String = ""
     @State private var value: String = ""
     @State private var errorMessage: String?
     @State private var isSaving = false
-
-    private let backendSync = IOSBackendSyncService()
-
     var body: some View {
         NavigationStack {
             Form {
@@ -111,12 +103,7 @@ struct LifeContextEditView: View {
         defer { isSaving = false }
 
         do {
-            try await backendSync.saveLifeContext(
-                existingContext: context,
-                key: key,
-                value: value,
-                modelContext: modelContext
-            )
+            _ = try await store.saveEntry(existingEntry: context, key: key, value: value)
             dismiss()
             onDismiss()
         } catch {

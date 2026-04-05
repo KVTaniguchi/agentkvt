@@ -1,66 +1,44 @@
 import SwiftUI
-import SwiftData
-import ManagerCore
 
 @main
 struct AgentKVTiOSApp: App {
     @StateObject private var familyProfileStore = FamilyProfileStore()
 
+    @State private var familyMembersStore: FamilyMembersStore
+    @State private var lifeContextStore: LifeContextStore
+    @State private var agentLogsStore: AgentLogsStore
     @State private var actionsStore: ActionsStore
     @State private var objectivesStore: ObjectivesStore
+    @State private var chatStore: ChatStore
+    @State private var inboundFilesStore: InboundFilesStore
 
     init() {
-        let sync = IOSBackendSyncService()
-        _actionsStore = State(wrappedValue: ActionsStore(sync: sync))
-        _objectivesStore = State(wrappedValue: ObjectivesStore(sync: sync))
-    }
-
-    var sharedModelContainer: ModelContainer = {
         let logFile = IOSRuntimeLog.bootstrap(processLabel: "AgentKVTiOSApp")
         IOSRuntimeLog.log("[Logging] Writing logs to \(logFile.path)")
         IOSRuntimeLog.log(IOSBackendSettings.load().startupMessage)
-        let schema = Schema([
-            LifeContext.self,
-            ActionItem.self,
-            AgentLog.self,
-            InboundFile.self,
-            ChatThread.self,
-            ChatMessage.self,
-            IncomingEmailSummary.self,
-            WorkUnit.self,
-            EphemeralPin.self,
-            ResourceHealth.self,
-            FamilyMember.self,
-            ResearchSnapshot.self,
-        ])
-        let config = ModelConfiguration(
-            "default",
-            schema: schema,
-            isStoredInMemoryOnly: false,
-            allowsSave: true,
-            cloudKitDatabase: .none
-        )
-        do {
-            let container = try ModelContainer(for: schema, configurations: [config])
-            IOSRuntimeLog.log("SwiftData storage: local app sandbox only (CloudKit disabled)")
-            return container
-        } catch {
-            IOSRuntimeLog.log("Local ModelContainer failed: \(error), falling back to in-memory.")
-            let fallback = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
-            IOSRuntimeLog.log("SwiftData storage: in-memory fallback")
-            return (try? ModelContainer(for: schema, configurations: [fallback]))
-                ?? { fatalError("Fallback in-memory ModelContainer failed: \(error)") }()
-        }
-    }()
+
+        let sync = IOSBackendSyncService()
+        _familyMembersStore = State(wrappedValue: FamilyMembersStore(sync: sync))
+        _lifeContextStore = State(wrappedValue: LifeContextStore(sync: sync))
+        _agentLogsStore = State(wrappedValue: AgentLogsStore(sync: sync))
+        _actionsStore = State(wrappedValue: ActionsStore(sync: sync))
+        _objectivesStore = State(wrappedValue: ObjectivesStore(sync: sync))
+        _chatStore = State(wrappedValue: ChatStore(sync: sync))
+        _inboundFilesStore = State(wrappedValue: InboundFilesStore(sync: sync))
+    }
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environmentObject(familyProfileStore)
+                .environment(familyMembersStore)
+                .environment(lifeContextStore)
+                .environment(agentLogsStore)
                 .environment(actionsStore)
                 .environment(objectivesStore)
+                .environment(chatStore)
+                .environment(inboundFilesStore)
         }
-        .modelContainer(sharedModelContainer)
     }
 }
 

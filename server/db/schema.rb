@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_04_05_020000) do
+ActiveRecord::Schema[8.0].define(version: 2026_04_05_213000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -106,6 +106,31 @@ ActiveRecord::Schema[8.0].define(version: 2026_04_05_020000) do
     t.index ["workspace_id"], name: "index_agent_logs_on_workspace_id"
   end
 
+  create_table "chat_messages", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "chat_thread_id", null: false
+    t.uuid "author_profile_id"
+    t.string "role", null: false
+    t.text "content", null: false
+    t.string "status", default: "completed", null: false
+    t.text "error_message"
+    t.datetime "timestamp", default: -> { "CURRENT_TIMESTAMP" }, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["chat_thread_id", "timestamp"], name: "index_chat_messages_on_chat_thread_id_and_timestamp"
+    t.index ["status", "role", "timestamp"], name: "index_chat_messages_on_status_role_and_timestamp"
+  end
+
+  create_table "chat_threads", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "workspace_id", null: false
+    t.uuid "created_by_profile_id"
+    t.string "title", default: "Assistant", null: false
+    t.text "system_prompt", default: "You are AgentKVT's optional chat assistant. Be concise, helpful, and privacy-conscious. When the user asks about objective progress, run status, queued work, or what the Mac agent is doing, use the available status tools instead of guessing. When a user asks you to create a concrete follow-up they can act on later, prefer using the write_action_item tool if it is available in this chat.", null: false
+    t.jsonb "allowed_tool_ids", default: ["get_life_context", "fetch_work_units"], null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["workspace_id", "updated_at"], name: "index_chat_threads_on_workspace_id_and_updated_at"
+  end
+
   create_table "devices", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.uuid "user_id", null: false
     t.string "platform", null: false
@@ -140,6 +165,22 @@ ActiveRecord::Schema[8.0].define(version: 2026_04_05_020000) do
     t.index ["updated_by_user_id"], name: "index_life_context_entries_on_updated_by_user_id"
     t.index ["workspace_id", "key"], name: "index_life_context_entries_on_workspace_id_and_key", unique: true
     t.index ["workspace_id"], name: "index_life_context_entries_on_workspace_id"
+  end
+
+  create_table "inbound_files", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "workspace_id", null: false
+    t.uuid "uploaded_by_profile_id"
+    t.string "file_name", null: false
+    t.string "content_type"
+    t.integer "byte_size", default: 0, null: false
+    t.binary "file_data", null: false
+    t.datetime "timestamp", default: -> { "CURRENT_TIMESTAMP" }, null: false
+    t.boolean "is_processed", default: false, null: false
+    t.datetime "processed_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["workspace_id", "is_processed", "timestamp"], name: "index_inbound_files_on_workspace_processed_timestamp"
+    t.index ["workspace_id", "timestamp"], name: "index_inbound_files_on_workspace_id_and_timestamp"
   end
 
   create_table "missions", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -199,9 +240,15 @@ ActiveRecord::Schema[8.0].define(version: 2026_04_05_020000) do
   add_foreign_key "action_items", "workspaces"
   add_foreign_key "agent_logs", "missions"
   add_foreign_key "agent_logs", "workspaces"
+  add_foreign_key "chat_messages", "chat_threads"
+  add_foreign_key "chat_messages", "family_members", column: "author_profile_id"
+  add_foreign_key "chat_threads", "family_members", column: "created_by_profile_id"
+  add_foreign_key "chat_threads", "workspaces"
   add_foreign_key "devices", "users"
   add_foreign_key "family_members", "devices"
   add_foreign_key "family_members", "workspaces"
+  add_foreign_key "inbound_files", "family_members", column: "uploaded_by_profile_id"
+  add_foreign_key "inbound_files", "workspaces"
   add_foreign_key "life_context_entries", "users", column: "updated_by_user_id"
   add_foreign_key "life_context_entries", "workspaces"
   add_foreign_key "missions", "devices", column: "source_device_id"

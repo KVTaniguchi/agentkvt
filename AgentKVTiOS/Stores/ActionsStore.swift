@@ -34,14 +34,19 @@ final class ActionsStore {
         defer { isLoading = false }
 
         do {
-            let remoteItems = try await sync.fetchUnhandledActionItemsRemote()
-            items = remoteItems.filter { item in
-                !item.isHandled && !locallyHandledItemIDs.contains(item.id)
-            }
+            replaceItems(try await sync.fetchUnhandledActionItemsRemote())
         } catch {
             errorMessage = error.localizedDescription
             IOSRuntimeLog.log("[ActionsStore] Refresh failed: \(error)")
         }
+    }
+
+    @MainActor
+    func replaceItems(_ remoteItems: [IOSBackendActionItem]) {
+        items = remoteItems.filter { item in
+            !item.isHandled && !locallyHandledItemIDs.contains(item.id)
+        }
+        errorMessage = nil
     }
 
     /// Marks an item handled on the server and removes it from the local list.

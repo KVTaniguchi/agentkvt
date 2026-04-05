@@ -6,6 +6,10 @@ Rails.application.routes.draw do
 
     resource :bootstrap, only: :show
     resources :family_members, only: [:index, :create]
+    resources :chat_threads, only: [:index, :create, :show] do
+      resources :chat_messages, only: [:create]
+    end
+    resources :inbound_files, only: [:index, :create]
 
     resources :life_context, only: [:index, :update], controller: "life_context_entries", param: :key
     resources :action_items, only: [:index] do
@@ -24,6 +28,12 @@ Rails.application.routes.draw do
       get :chat_wake, to: "chat_wakes#show"
       post :logs, to: "agent_logs#create"
       post :register, to: "registrations#upsert"
+      post "chat_messages/claim_next", to: "chat_messages#claim_next"
+      post "chat_messages/:id/complete", to: "chat_messages#complete"
+      post "chat_messages/:id/fail", to: "chat_messages#fail"
+      resources :inbound_files, only: [:index] do
+        post :mark_processed, on: :member
+      end
 
 
 

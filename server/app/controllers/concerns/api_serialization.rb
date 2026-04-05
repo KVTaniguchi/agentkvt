@@ -1,3 +1,5 @@
+require "base64"
+
 module ApiSerialization
   extend ActiveSupport::Concern
 
@@ -24,6 +26,63 @@ module ApiSerialization
       source: member.source,
       created_at: iso8601(member.created_at),
       updated_at: iso8601(member.updated_at)
+    }
+  end
+
+  def serialize_chat_thread(thread)
+    latest_message =
+      if thread.association(:chat_messages).loaded?
+        thread.chat_messages.max_by(&:timestamp)
+      else
+        thread.chat_messages.order(timestamp: :desc).first
+      end
+
+    pending_message_count =
+      if thread.association(:chat_messages).loaded?
+        thread.chat_messages.count do |message|
+          message.role == "user" && %w[pending processing].include?(message.status)
+        end
+      else
+        thread.chat_messages.where(role: "user", status: %w[pending processing]).count
+      end
+
+    message_count =
+      if thread.association(:chat_messages).loaded?
+        thread.chat_messages.length
+      else
+        thread.chat_messages.count
+      end
+
+    {
+      id: thread.id,
+      workspace_id: thread.workspace_id,
+      created_by_profile_id: thread.created_by_profile_id,
+      title: thread.title,
+      system_prompt: thread.system_prompt,
+      allowed_tool_ids: thread.allowed_tool_ids,
+      latest_message_preview: latest_message&.content&.truncate(140),
+      latest_message_role: latest_message&.role,
+      latest_message_status: latest_message&.status,
+      latest_message_at: iso8601(latest_message&.timestamp),
+      pending_message_count: pending_message_count,
+      message_count: message_count,
+      created_at: iso8601(thread.created_at),
+      updated_at: iso8601(thread.updated_at)
+    }
+  end
+
+  def serialize_chat_message(message)
+    {
+      id: message.id,
+      chat_thread_id: message.chat_thread_id,
+      role: message.role,
+      content: message.content,
+      status: message.status,
+      error_message: message.error_message,
+      timestamp: iso8601(message.timestamp),
+      author_profile_id: message.author_profile_id,
+      created_at: iso8601(message.created_at),
+      updated_at: iso8601(message.updated_at)
     }
   end
 
@@ -107,6 +166,24 @@ module ApiSerialization
       created_at: iso8601(snapshot.created_at),
       updated_at: iso8601(snapshot.updated_at)
     }
+  end
+
+  def serialize_inbound_file(inbound_file, include_data: false)
+    payload = {
+      id: inbound_file.id,
+      workspace_id: inbound_file.workspace_id,
+      uploaded_by_profile_id: inbound_file.uploaded_by_profile_id,
+      file_name: inbound_file.file_name,
+      content_type: inbound_file.content_type,
+      byte_size: inbound_file.byte_size,
+      is_processed: inbound_file.is_processed,
+      processed_at: iso8601(inbound_file.processed_at),
+      timestamp: iso8601(inbound_file.timestamp),
+      created_at: iso8601(inbound_file.created_at),
+      updated_at: iso8601(inbound_file.updated_at)
+    }
+    payload[:file_base64] = Base64.strict_encode64(inbound_file.file_data) if include_data
+    payload
   end
 
   def iso8601(value)

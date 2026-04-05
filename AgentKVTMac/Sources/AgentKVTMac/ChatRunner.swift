@@ -2,14 +2,25 @@ import Foundation
 import ManagerCore
 import SwiftData
 
-/// Processes optional chat threads written by iPhone into the shared store.
+/// Processes pending chat work from either the legacy local store or the backend queue.
 public final class ChatRunner: @unchecked Sendable {
-    private let modelContext: ModelContext
+    private enum Storage {
+        case local(ModelContext)
+        case backend(BackendAPIClient)
+    }
+
+    private let storage: Storage
     private let client: any OllamaClientProtocol
     private let registry: ToolRegistry
 
     public init(modelContext: ModelContext, client: any OllamaClientProtocol, registry: ToolRegistry) {
-        self.modelContext = modelContext
+        self.storage = .local(modelContext)
+        self.client = client
+        self.registry = registry
+    }
+
+    public init(backendClient: BackendAPIClient, client: any OllamaClientProtocol, registry: ToolRegistry) {
+        self.storage = .backend(backendClient)
         self.client = client
         self.registry = registry
     }
@@ -17,6 +28,15 @@ public final class ChatRunner: @unchecked Sendable {
     /// Process the next pending user message, if any. Returns true when work was done.
     @discardableResult
     public func processNextPendingMessage() async throws -> Bool {
+        switch storage {
+        case .local(let modelContext):
+            return try await processNextPendingLocalMessage(modelContext: modelContext)
+        case .backend(let backendClient):
+            return try await processNextPendingBackendMessage(backendClient: backendClient)
+        }
+    }
+
+    private func processNextPendingLocalMessage(modelContext: ModelContext) async throws -> Bool {
         let pendingStatus = ChatMessageStatus.pending.rawValue
         let pendingDescriptor = FetchDescriptor<ChatMessage>(
             predicate: #Predicate<ChatMessage> {
@@ -54,7 +74,7 @@ public final class ChatRunner: @unchecked Sendable {
             let loop = AgentLoop(client: client, registry: registry, allowedToolIds: allowedToolIds)
             let messages = buildConversation(systemPrompt: thread.systemPrompt, history: history)
             let result = try await loop.run(messages: messages) { [modelContext] event in
-                guard let log = ChatRunner.makeLog(for: event, thread: thread) else { return }
+                guard let log = ChatRunner.makeLog(for: event) else { return }
                 modelContext.insert(log)
                 try? modelContext.save()
             }
@@ -92,6 +112,61 @@ public final class ChatRunner: @unchecked Sendable {
         }
     }
 
+    private func processNextPendingBackendMessage(backendClient: BackendAPIClient) async throws -> Bool {
+        guard let claimed = try await backendClient.claimNextPendingChatMessage() else {
+            return false
+        }
+
+        do {
+            let allowedToolIds = claimed.chatThread.allowedToolIds.isEmpty
+                ? ChatThread.defaultAllowedToolIds
+                : claimed.chatThread.allowedToolIds
+            let loop = AgentLoop(client: client, registry: registry, allowedToolIds: allowedToolIds)
+            let messages = buildConversation(systemPrompt: claimed.chatThread.systemPrompt, history: claimed.chatMessages)
+            let metadata = [
+                "chat_thread_id": claimed.chatThread.id.uuidString,
+                "chat_message_id": claimed.chatMessage.id.uuidString
+            ]
+            let result = try await loop.run(messages: messages) { [backendClient] event in
+                guard let payload = ChatRunner.logPayload(for: event) else { return }
+                var eventMetadata = metadata
+                if let toolName = payload.toolName {
+                    eventMetadata["tool_name"] = toolName
+                }
+                try? await backendClient.createAgentLog(
+                    phase: payload.phase,
+                    content: payload.content,
+                    metadata: eventMetadata
+                )
+            }
+
+            _ = try await backendClient.completeChatMessage(
+                id: claimed.chatMessage.id,
+                assistantContent: result
+            )
+            _ = try? await backendClient.createAgentLog(
+                phase: "chat_outcome",
+                content: result,
+                metadata: metadata
+            )
+            return true
+        } catch {
+            _ = try? await backendClient.failChatMessage(
+                id: claimed.chatMessage.id,
+                errorMessage: String(describing: error)
+            )
+            _ = try? await backendClient.createAgentLog(
+                phase: "error",
+                content: "Chat failed: \(error)",
+                metadata: [
+                    "chat_thread_id": claimed.chatThread.id.uuidString,
+                    "chat_message_id": claimed.chatMessage.id.uuidString
+                ]
+            )
+            return true
+        }
+    }
+
     private func buildConversation(systemPrompt: String, history: [ChatMessage]) -> [OllamaClient.Message] {
         let transcript = history
             .filter { $0.status != ChatMessageStatus.failed.rawValue }
@@ -105,34 +180,47 @@ public final class ChatRunner: @unchecked Sendable {
         return [.init(role: "system", content: systemPrompt, toolCalls: nil)] + transcript
     }
 
-    private static func makeLog(for event: AgentLoop.Event, thread: ChatThread) -> AgentLog? {
+    private func buildConversation(systemPrompt: String, history: [BackendChatMessage]) -> [OllamaClient.Message] {
+        let transcript = history
+            .filter { $0.status != ChatMessageStatus.failed.rawValue }
+            .map { message in
+                OllamaClient.Message(
+                    role: message.role,
+                    content: message.content,
+                    toolCalls: nil
+                )
+            }
+        return [.init(role: "system", content: systemPrompt, toolCalls: nil)] + transcript
+    }
+
+    private static func makeLog(for event: AgentLoop.Event) -> AgentLog? {
+        guard let payload = logPayload(for: event) else { return nil }
+        return AgentLog(
+            phase: payload.phase,
+            content: payload.content,
+            toolName: payload.toolName
+        )
+    }
+
+    private static func logPayload(for event: AgentLoop.Event) -> (phase: String, content: String, toolName: String?)? {
         switch event {
         case .assistantResponse(let content, let toolCalls):
-            return AgentLog(
+            return (
                 phase: "chat_assistant",
-                content: content ?? "Assistant requested \(toolCalls.count) tool call(s)."
+                content: content ?? "Assistant requested \(toolCalls.count) tool call(s).",
+                toolName: nil
             )
         case .toolCallRequested(let name, let arguments):
-            return AgentLog(
-                phase: "tool_call",
-                content: arguments,
-                toolName: name
-            )
+            return (phase: "tool_call", content: arguments, toolName: name)
         case .toolCallCompleted(let name, let result, _):
-            return AgentLog(
-                phase: "tool_result",
-                content: result,
-                toolName: name
-            )
+            return (phase: "tool_result", content: result, toolName: name)
         case .finalResponse(let content):
-            return AgentLog(
-                phase: "assistant_final",
-                content: content
-            )
+            return (phase: "assistant_final", content: content, toolName: nil)
         case .maxRoundsReached:
-            return AgentLog(
+            return (
                 phase: "warning",
-                content: "Chat loop reached max rounds before producing a final response."
+                content: "Chat loop reached max rounds before producing a final response.",
+                toolName: nil
             )
         }
     }

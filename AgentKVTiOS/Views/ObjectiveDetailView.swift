@@ -1,12 +1,9 @@
-import ManagerCore
-import SwiftData
 import SwiftUI
 
 struct ObjectiveDetailView: View {
     let objective: IOSBackendObjective
 
     @Environment(ObjectivesStore.self) private var store
-    @Query private var objectiveWorkUnits: [WorkUnit]
     @State private var displayedObjective: IOSBackendObjective
     @State private var detail: IOSBackendObjectiveDetail?
     @State private var pollTask: Task<Void, Never>?
@@ -26,11 +23,6 @@ struct ObjectiveDetailView: View {
     init(objective: IOSBackendObjective) {
         self.objective = objective
         _displayedObjective = State(initialValue: objective)
-        let objectiveID = objective.id
-        _objectiveWorkUnits = Query(
-            filter: #Predicate<WorkUnit> { $0.objectiveId == objectiveID },
-            sort: [SortDescriptor(\WorkUnit.updatedAt, order: .reverse)]
-        )
     }
 
     private var tasks: [IOSBackendTask] {
@@ -78,26 +70,12 @@ struct ObjectiveDetailView: View {
         }
     }
 
-    private var liveBoardWorkUnits: [WorkUnit] {
-        objectiveWorkUnits.filter { $0.workType != "objective_root" }
-    }
-
-    private var workUnitCounts: ObjectiveWorkUnitCounts {
-        ObjectiveWorkUnitCounts(workUnits: liveBoardWorkUnits)
-    }
-
-    private var lastHeartbeatAt: Date? {
-        liveBoardWorkUnits.compactMap(\.lastHeartbeatAt).max()
-    }
-
     private var shouldAutoRefresh: Bool {
         guard displayedObjective.status == "active" else { return false }
         return detail == nil ||
             tasks.isEmpty ||
             taskCounts.pending > 0 ||
-            taskCounts.inProgress > 0 ||
-            workUnitCounts.pending > 0 ||
-            workUnitCounts.inProgress > 0
+            taskCounts.inProgress > 0
     }
 
     private var activitySummary: ObjectiveActivitySummary {
@@ -120,23 +98,6 @@ struct ObjectiveDetailView: View {
                 tint: .orange
             )
         case "active":
-            if workUnitCounts.inProgress > 0 {
-                return ObjectiveActivitySummary(
-                    title: "Agent team is working",
-                    message: "\(workUnitCounts.inProgress) board work unit(s) are active across \(workUnitCounts.activeWorkers) worker(s). Recent server logs are shown below.",
-                    systemImage: "person.3.sequence.fill",
-                    tint: .blue,
-                    showsProgress: true
-                )
-            }
-            if workUnitCounts.pending > 0 {
-                return ObjectiveActivitySummary(
-                    title: "Work units are queued",
-                    message: "\(workUnitCounts.pending) board work unit(s) are waiting for the objective worker pool to claim them.",
-                    systemImage: "square.stack.3d.up.fill",
-                    tint: .orange
-                )
-            }
             if taskCounts.inProgress > 0 {
                 return ObjectiveActivitySummary(
                     title: "Agent is working",
@@ -223,12 +184,9 @@ struct ObjectiveDetailView: View {
                         ObjectiveActivityCard(
                             summary: activitySummary,
                             taskCounts: taskCounts,
-                            workUnitCounts: workUnitCounts,
                             snapshotCount: snapshots.count,
                             logCount: agentLogs.count,
-                            lastHeartbeatAt: lastHeartbeatAt,
                             lastLoadedAt: lastLoadedAt,
-                            showBoardSyncHint: !workUnitCounts.hasAnyUnits && !agentLogs.isEmpty,
                             showsDisclosure: true
                         )
                     }
@@ -236,18 +194,10 @@ struct ObjectiveDetailView: View {
                     ObjectiveActivityCard(
                         summary: activitySummary,
                         taskCounts: taskCounts,
-                        workUnitCounts: workUnitCounts,
                         snapshotCount: snapshots.count,
                         logCount: agentLogs.count,
-                        lastHeartbeatAt: lastHeartbeatAt,
-                        lastLoadedAt: lastLoadedAt,
-                        showBoardSyncHint: !workUnitCounts.hasAnyUnits && !agentLogs.isEmpty
+                        lastLoadedAt: lastLoadedAt
                     )
-                }
-                if !liveBoardWorkUnits.isEmpty {
-                    ForEach(liveBoardWorkUnits, id: \.id) { unit in
-                        ObjectiveWorkUnitRow(unit: unit)
-                    }
                 }
             }
 
@@ -539,30 +489,6 @@ private struct ObjectiveTaskCounts {
     }
 }
 
-private struct ObjectiveWorkUnitCounts {
-    let pending: Int
-    let inProgress: Int
-    let blocked: Int
-    let completed: Int
-    let activeWorkers: Int
-
-    init(workUnits: [WorkUnit]) {
-        pending = workUnits.filter { $0.state == WorkUnitState.pending.rawValue }.count
-        inProgress = workUnits.filter { $0.state == WorkUnitState.inProgress.rawValue }.count
-        blocked = workUnits.filter { $0.state == WorkUnitState.blocked.rawValue }.count
-        completed = workUnits.filter { $0.state == WorkUnitState.done.rawValue }.count
-        activeWorkers = Set(
-            workUnits
-                .filter { $0.state == WorkUnitState.inProgress.rawValue }
-                .compactMap(\.workerLabel)
-        ).count
-    }
-
-    var hasAnyUnits: Bool {
-        pending + inProgress + blocked + completed > 0
-    }
-}
-
 private struct ObjectiveActivitySummary {
     let title: String
     let message: String
@@ -574,12 +500,9 @@ private struct ObjectiveActivitySummary {
 private struct ObjectiveActivityCard: View {
     let summary: ObjectiveActivitySummary
     let taskCounts: ObjectiveTaskCounts
-    let workUnitCounts: ObjectiveWorkUnitCounts
     let snapshotCount: Int
     let logCount: Int
-    let lastHeartbeatAt: Date?
     let lastLoadedAt: Date?
-    let showBoardSyncHint: Bool
     var showsDisclosure = false
 
     var body: some View {
@@ -624,30 +547,6 @@ private struct ObjectiveActivityCard: View {
                 }
                 ObjectiveMetricChip(label: "\(snapshotCount) snapshots", tint: .secondary)
                 ObjectiveMetricChip(label: "\(logCount) logs", tint: .secondary)
-            }
-
-            if workUnitCounts.hasAnyUnits {
-                HStack(spacing: 8) {
-                    ObjectiveMetricChip(label: "\(workUnitCounts.activeWorkers) workers", tint: .blue)
-                    ObjectiveMetricChip(label: "\(workUnitCounts.pending) queued", tint: .orange)
-                    ObjectiveMetricChip(label: "\(workUnitCounts.inProgress) board active", tint: .green)
-                    if workUnitCounts.blocked > 0 {
-                        ObjectiveMetricChip(label: "\(workUnitCounts.blocked) blocked", tint: .red)
-                    }
-                }
-                if let lastHeartbeatAt {
-                    Text("Board heartbeat \(lastHeartbeatAt, style: .relative)")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                } else {
-                    Text("Waiting for the first worker heartbeat.")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                }
-            } else if showBoardSyncHint {
-                Text("Server logs update from the API; Mac board rows arrive separately from the backend worker pipeline.")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
             }
 
             if let lastLoadedAt {
@@ -695,55 +594,6 @@ private struct ObjectiveMetricChip: View {
             .padding(.vertical, 4)
             .background(tint.opacity(0.12))
             .clipShape(Capsule())
-    }
-}
-
-private struct ObjectiveWorkUnitRow: View {
-    let unit: WorkUnit
-
-    private var stateTint: Color {
-        switch unit.state {
-        case WorkUnitState.pending.rawValue:
-            return .orange
-        case WorkUnitState.inProgress.rawValue:
-            return .blue
-        case WorkUnitState.done.rawValue:
-            return .green
-        case WorkUnitState.blocked.rawValue:
-            return .red
-        default:
-            return .secondary
-        }
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(unit.title)
-                .font(.headline)
-                .foregroundStyle(.primary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            HStack(spacing: 8) {
-                ObjectiveMetricChip(label: unit.workType.replacingOccurrences(of: "objective_", with: ""), tint: .secondary)
-                ObjectiveMetricChip(label: unit.state.replacingOccurrences(of: "_", with: " "), tint: stateTint)
-                if let workerLabel = unit.workerLabel, !workerLabel.isEmpty {
-                    ObjectiveMetricChip(label: workerLabel, tint: .blue)
-                }
-            }
-
-            if let phase = unit.activePhaseHint, !phase.isEmpty {
-                Text(phase.replacingOccurrences(of: "_", with: " ").capitalized)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-
-            if let heartbeat = unit.lastHeartbeatAt {
-                Text("Heartbeat \(heartbeat, style: .relative)")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-            }
-        }
-        .padding(.vertical, 4)
     }
 }
 
