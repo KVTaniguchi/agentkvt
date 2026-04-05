@@ -13,7 +13,9 @@ class OllamaClient
     body = { model: model, messages: messages, stream: false }
     body[:format] = format if format
 
-    response = Net::HTTP.post(uri, body.to_json, "Content-Type" => "application/json")
+    response = Net::HTTP.start(uri.host, uri.port, read_timeout: 300, open_timeout: 10) do |http|
+      http.post(uri.path, body.to_json, "Content-Type" => "application/json")
+    end
     raise "Ollama error #{response.code}: #{response.body}" unless response.is_a?(Net::HTTPSuccess)
 
     JSON.parse(response.body).dig("message", "content") ||
