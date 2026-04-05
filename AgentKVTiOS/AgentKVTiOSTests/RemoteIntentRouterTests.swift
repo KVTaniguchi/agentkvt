@@ -14,7 +14,6 @@ private func makeItem(
     IOSBackendActionItem(
         id: id,
         workspaceId: UUID(),
-        sourceMissionId: nil,
         ownerProfileId: nil,
         title: title,
         systemIntent: systemIntent,

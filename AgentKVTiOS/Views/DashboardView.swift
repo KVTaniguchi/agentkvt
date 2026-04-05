@@ -20,9 +20,7 @@ struct DashboardView: View {
             ActionItemsList()
                 .tabItem { Label("Actions", systemImage: "square.grid.2x2") }
                 .tag(1)
-            MissionListView()
-                .tabItem { Label("Missions", systemImage: "list.bullet") }
-                .tag(2)
+
             LifeContextView()
                 .tabItem { Label("Context", systemImage: "person.crop.circle") }
                 .tag(3)
@@ -164,12 +162,6 @@ struct RemoteActionItemRow: View {
                     .padding(.vertical, 3)
                     .background(route.badgeColor.opacity(0.85))
                     .clipShape(Capsule())
-                if let missionId = item.sourceMissionId {
-                    Text("Mission …\(missionId.uuidString.suffix(8))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
             }
             Text(item.timestamp, style: .relative)
                 .font(.caption2)
@@ -201,17 +193,6 @@ struct RemoteActionItemDetailView: View {
                         .font(.title2.weight(.semibold))
                         .foregroundStyle(.primary)
                         .fixedSize(horizontal: false, vertical: true)
-
-                    if let missionId = item.sourceMissionId {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Source Mission")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            Text("…\(missionId.uuidString.suffix(8))")
-                                .font(.headline)
-                                .foregroundStyle(.primary)
-                        }
-                    }
 
                     Label(item.timestamp.formatted(date: .abbreviated, time: .shortened),
                           systemImage: "clock")

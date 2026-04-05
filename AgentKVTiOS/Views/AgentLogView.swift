@@ -142,11 +142,6 @@ private struct AgentLogRow: View {
                     .background(phaseColor.opacity(0.12))
                     .foregroundStyle(phaseColor)
                     .clipShape(Capsule())
-                if let name = log.missionName {
-                    Label(name, systemImage: "sparkles.rectangle.stack")
-                        .font(.caption)
-                        .foregroundStyle(.blue)
-                }
                 Spacer()
                 Text(log.timestamp, style: .relative)
                     .font(.caption2)

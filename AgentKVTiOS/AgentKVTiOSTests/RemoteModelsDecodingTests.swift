@@ -231,8 +231,6 @@ struct IOSBackendObjectiveDetailDecodingTests {
             {
               "id": "cccccccc-cccc-cccc-cccc-cccccccccccc",
               "workspace_id": "22222222-2222-2222-2222-222222222222",
-              "mission_id": null,
-              "mission_name": "Objective Worker alpha",
               "phase": "worker_claim",
               "content": "Claimed a board work unit",
               "metadata_json": {
@@ -254,7 +252,7 @@ struct IOSBackendObjectiveDetailDecodingTests {
         #expect(detail.researchSnapshots.count == 1)
         #expect(detail.researchSnapshots[0].key == "30yr_rate")
         #expect(detail.agentLogs.count == 1)
-        #expect(detail.agentLogs[0].missionName == "Objective Worker alpha")
+        #expect(detail.agentLogs[0].phase == "worker_claim")
     }
 
     @Test("Decodes empty tasks and snapshots arrays")

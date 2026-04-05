@@ -26,7 +26,6 @@ struct AgentKVTiOSApp: App {
         logIOSCloudKitDiagnostics()
         let schema = Schema([
             LifeContext.self,
-            MissionDefinition.self,
             ActionItem.self,
             AgentLog.self,
             InboundFile.self,

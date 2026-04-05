@@ -35,22 +35,6 @@ struct IOSBackendFamilyMember: Codable, Sendable {
     let updatedAt: Date
 }
 
-struct IOSBackendMission: Codable, Sendable {
-    let id: UUID
-    let workspaceId: UUID
-    let ownerProfileId: UUID?
-    let sourceDeviceId: UUID?
-    let missionName: String
-    let systemPrompt: String
-    let triggerSchedule: String
-    let allowedMcpTools: [String]
-    let isEnabled: Bool
-    let lastRunAt: Date?
-    let runRequestedAt: Date?
-    let sourceUpdatedAt: Date?
-    let createdAt: Date
-    let updatedAt: Date
-}
 
 enum IOSBackendJSONValue: Codable, Sendable {
     case string(String)
@@ -127,7 +111,6 @@ enum IOSBackendJSONValue: Codable, Sendable {
 struct IOSBackendActionItem: Codable, Sendable {
     let id: UUID
     let workspaceId: UUID
-    let sourceMissionId: UUID?
     let ownerProfileId: UUID?
     let title: String
     let systemIntent: String
@@ -144,8 +127,6 @@ struct IOSBackendActionItem: Codable, Sendable {
 struct IOSBackendAgentLog: Codable, Sendable {
     let id: UUID
     let workspaceId: UUID
-    let missionId: UUID?
-    let missionName: String?
     let phase: String
     let content: String
     let metadataJson: [String: IOSBackendJSONValue]
@@ -214,7 +195,6 @@ struct IOSBackendObjectiveDetail: Codable, Sendable {
 
 struct IOSBackendBootstrap: Codable, Sendable {
     let familyMembers: [IOSBackendFamilyMember]
-    let missions: [IOSBackendMission]
     let actionItems: [IOSBackendActionItem]
     let agentLogs: [IOSBackendAgentLog]
     let lifeContextEntries: [IOSBackendLifeContextEntry]
@@ -231,13 +211,6 @@ private struct IOSBackendFamilyMemberEnvelope: Codable {
     let familyMember: IOSBackendFamilyMember
 }
 
-private struct IOSBackendMissionsEnvelope: Codable {
-    let missions: [IOSBackendMission]
-}
-
-private struct IOSBackendMissionEnvelope: Codable {
-    let mission: IOSBackendMission
-}
 
 private struct IOSBackendActionItemsEnvelope: Codable {
     let actionItems: [IOSBackendActionItem]
@@ -329,11 +302,6 @@ actor IOSBackendAPIClient {
         return try decoder.decode(IOSBackendFamilyMemberEnvelope.self, from: data).familyMember
     }
 
-    func fetchMissions() async throws -> [IOSBackendMission] {
-        let data = try await performRequest(path: "v1/missions")
-        return try decoder.decode(IOSBackendMissionsEnvelope.self, from: data).missions
-    }
-
     func fetchActionItems(limit: Int = 200, isHandled: Bool? = nil) async throws -> [IOSBackendActionItem] {
         var path = "v1/action_items?limit=\(limit)"
         if let isHandled {
@@ -385,77 +353,6 @@ actor IOSBackendAPIClient {
             ]
         )
         return try decoder.decode(IOSBackendLifeContextEntryEnvelope.self, from: data).lifeContextEntry
-    }
-
-    func createMission(
-        id: UUID,
-        missionName: String,
-        systemPrompt: String,
-        triggerSchedule: String,
-        allowedMcpTools: [String],
-        ownerProfileId: UUID?,
-        isEnabled: Bool,
-        lastRunAt: Date?,
-        sourceUpdatedAt: Date?
-    ) async throws -> IOSBackendMission {
-        let data = try await performRequest(
-            path: "v1/missions",
-            method: "POST",
-            jsonBody: [
-                "mission": missionPayload(
-                    id: id,
-                    missionName: missionName,
-                    systemPrompt: systemPrompt,
-                    triggerSchedule: triggerSchedule,
-                    allowedMcpTools: allowedMcpTools,
-                    ownerProfileId: ownerProfileId,
-                    isEnabled: isEnabled,
-                    lastRunAt: lastRunAt,
-                    sourceUpdatedAt: sourceUpdatedAt
-                )
-            ]
-        )
-        return try decoder.decode(IOSBackendMissionEnvelope.self, from: data).mission
-    }
-
-    func updateMission(
-        id: UUID,
-        missionName: String,
-        systemPrompt: String,
-        triggerSchedule: String,
-        allowedMcpTools: [String],
-        ownerProfileId: UUID?,
-        isEnabled: Bool,
-        lastRunAt: Date?,
-        sourceUpdatedAt: Date?
-    ) async throws -> IOSBackendMission {
-        let data = try await performRequest(
-            path: "v1/missions/\(id.uuidString)",
-            method: "PATCH",
-            jsonBody: [
-                "mission": missionPayload(
-                    id: id,
-                    missionName: missionName,
-                    systemPrompt: systemPrompt,
-                    triggerSchedule: triggerSchedule,
-                    allowedMcpTools: allowedMcpTools,
-                    ownerProfileId: ownerProfileId,
-                    isEnabled: isEnabled,
-                    lastRunAt: lastRunAt,
-                    sourceUpdatedAt: sourceUpdatedAt
-                )
-            ]
-        )
-        return try decoder.decode(IOSBackendMissionEnvelope.self, from: data).mission
-    }
-
-    func deleteMission(id: UUID) async throws {
-        _ = try await performRequest(path: "v1/missions/\(id.uuidString)", method: "DELETE")
-    }
-
-    func runMissionNow(id: UUID) async throws -> IOSBackendMission {
-        let data = try await performRequest(path: "v1/missions/\(id.uuidString)/run_now", method: "POST")
-        return try decoder.decode(IOSBackendMissionEnvelope.self, from: data).mission
     }
 
     /// Nudges the Mac agent (via server poll) to process pending chat when not on LAN.
@@ -524,31 +421,6 @@ actor IOSBackendAPIClient {
     func fetchObjectivePresentation(id: UUID) async throws -> UIPresentation {
         let data = try await performRequest(path: "v1/objectives/\(id.uuidString)/presentation")
         return try decoder.decode(UIPresentation.self, from: data)
-    }
-
-    private func missionPayload(
-        id: UUID,
-        missionName: String,
-        systemPrompt: String,
-        triggerSchedule: String,
-        allowedMcpTools: [String],
-        ownerProfileId: UUID?,
-        isEnabled: Bool,
-        lastRunAt: Date?,
-        sourceUpdatedAt: Date?
-    ) -> [String: Any] {
-        var payload: [String: Any] = [
-            "id": id.uuidString,
-            "mission_name": missionName,
-            "system_prompt": systemPrompt,
-            "trigger_schedule": triggerSchedule,
-            "allowed_mcp_tools": allowedMcpTools,
-            "is_enabled": isEnabled
-        ]
-        payload["owner_profile_id"] = ownerProfileId?.uuidString
-        payload["last_run_at"] = lastRunAt.map(iso8601)
-        payload["source_updated_at"] = sourceUpdatedAt.map(iso8601)
-        return payload
     }
 
     private func iso8601(_ date: Date) -> String {
@@ -632,12 +504,11 @@ final class IOSBackendSyncService {
         do {
             let snapshot = try await client.fetchBootstrap()
             try reconcileFamilyMembers(snapshot.familyMembers, into: modelContext)
-            try reconcileMissions(snapshot.missions, into: modelContext)
             try reconcileActionItems(snapshot.actionItems, into: modelContext)
             try reconcileAgentLogs(snapshot.agentLogs, into: modelContext)
             try reconcileLifeContextEntries(snapshot.lifeContextEntries, into: modelContext)
             try modelContext.save()
-            IOSRuntimeLog.log("[IOSBackendSync] Bootstrapped \(snapshot.familyMembers.count) family member(s), \(snapshot.missions.count) mission(s), \(snapshot.actionItems.count) action item(s), \(snapshot.agentLogs.count) log(s), and \(snapshot.lifeContextEntries.count) life-context entry/entries from backend.")
+            IOSRuntimeLog.log("[IOSBackendSync] Bootstrapped \(snapshot.familyMembers.count) family member(s), \(snapshot.actionItems.count) action item(s), \(snapshot.agentLogs.count) log(s), and \(snapshot.lifeContextEntries.count) life-context entry/entries from backend.")
         } catch {
             IOSRuntimeLog.log("[IOSBackendSync] Bootstrap failed: \(error)")
         }
@@ -669,20 +540,6 @@ final class IOSBackendSyncService {
         modelContext.insert(familyMember)
         try modelContext.save()
         return familyMember
-    }
-
-    @MainActor
-    func syncMissions(modelContext: ModelContext) async {
-        guard let client else { return }
-
-        do {
-            let missions = try await client.fetchMissions()
-            try reconcileMissions(missions, into: modelContext)
-            try modelContext.save()
-            IOSRuntimeLog.log("[IOSBackendSync] Synced \(missions.count) mission(s) from backend.")
-        } catch {
-            IOSRuntimeLog.log("[IOSBackendSync] Mission sync failed: \(error)")
-        }
     }
 
     @MainActor
@@ -725,156 +582,6 @@ final class IOSBackendSyncService {
         } catch {
             IOSRuntimeLog.log("[IOSBackendSync] Life-context sync failed: \(error)")
         }
-    }
-
-    @MainActor
-    func saveMission(
-        existingMission: MissionDefinition?,
-        name: String,
-        prompt: String,
-        schedule: String,
-        tools: [String],
-        ownerProfileId: UUID?,
-        modelContext: ModelContext
-    ) async throws {
-        let normalizedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let normalizedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        let normalizedSchedule = schedule.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let sourceUpdatedAt = Date()
-
-        if let client {
-            let resolvedOwnerProfileId = try await ensureMissionOwnerExists(
-                ownerProfileId: ownerProfileId,
-                modelContext: modelContext,
-                client: client
-            )
-            let mission: IOSBackendMission
-            if let existingMission {
-                do {
-                    mission = try await client.updateMission(
-                        id: existingMission.id,
-                        missionName: normalizedName,
-                        systemPrompt: normalizedPrompt,
-                        triggerSchedule: normalizedSchedule,
-                        allowedMcpTools: tools,
-                        ownerProfileId: resolvedOwnerProfileId,
-                        isEnabled: existingMission.isEnabled,
-                        lastRunAt: existingMission.lastRunAt,
-                        sourceUpdatedAt: sourceUpdatedAt
-                    )
-                } catch let error as IOSBackendAPIError where error.isNotFound {
-                    IOSRuntimeLog.log("[IOSBackendSync] Mission id=\(existingMission.id.uuidString) missing on backend during save; creating it instead.")
-                    mission = try await client.createMission(
-                        id: existingMission.id,
-                        missionName: normalizedName,
-                        systemPrompt: normalizedPrompt,
-                        triggerSchedule: normalizedSchedule,
-                        allowedMcpTools: tools,
-                        ownerProfileId: resolvedOwnerProfileId,
-                        isEnabled: existingMission.isEnabled,
-                        lastRunAt: existingMission.lastRunAt,
-                        sourceUpdatedAt: sourceUpdatedAt
-                    )
-                }
-            } else {
-                mission = try await client.createMission(
-                    id: UUID(),
-                    missionName: normalizedName,
-                    systemPrompt: normalizedPrompt,
-                    triggerSchedule: normalizedSchedule,
-                    allowedMcpTools: tools,
-                    ownerProfileId: resolvedOwnerProfileId,
-                    isEnabled: true,
-                    lastRunAt: nil,
-                    sourceUpdatedAt: sourceUpdatedAt
-                )
-            }
-            _ = upsertMission(mission, into: modelContext)
-            try modelContext.save()
-            IOSRuntimeLog.log("[IOSBackendSync] Saved mission id=\(mission.id.uuidString) via backend.")
-            return
-        }
-
-        if let existingMission {
-            existingMission.missionName = normalizedName
-            existingMission.systemPrompt = normalizedPrompt
-            existingMission.triggerSchedule = normalizedSchedule
-            existingMission.allowedMCPTools = tools
-            existingMission.ownerProfileId = ownerProfileId
-            existingMission.updatedAt = sourceUpdatedAt
-        } else {
-            let mission = MissionDefinition(
-                missionName: normalizedName,
-                systemPrompt: normalizedPrompt,
-                triggerSchedule: normalizedSchedule,
-                allowedMCPTools: tools,
-                ownerProfileId: ownerProfileId
-            )
-            mission.updatedAt = sourceUpdatedAt
-            modelContext.insert(mission)
-        }
-        try modelContext.save()
-    }
-
-    @MainActor
-    func runMissionNow(_ mission: MissionDefinition, modelContext: ModelContext? = nil) async throws {
-        guard let client else {
-            IOSRuntimeLog.log("[IOSBackendSync] runMissionNow skipped: no backend client configured.")
-            return
-        }
-        let remoteMission: IOSBackendMission
-        do {
-            remoteMission = try await client.runMissionNow(id: mission.id)
-        } catch let error as IOSBackendAPIError where error.isNotFound {
-            IOSRuntimeLog.log("[IOSBackendSync] Mission id=\(mission.id.uuidString) missing on backend during run_now; creating it and retrying.")
-            let resolvedOwnerProfileId = try await ensureMissionOwnerExists(
-                ownerProfileId: mission.ownerProfileId,
-                modelContext: modelContext,
-                client: client
-            )
-            _ = try await client.createMission(
-                id: mission.id,
-                missionName: mission.missionName,
-                systemPrompt: mission.systemPrompt,
-                triggerSchedule: mission.triggerSchedule,
-                allowedMcpTools: mission.allowedMCPTools,
-                ownerProfileId: resolvedOwnerProfileId,
-                isEnabled: mission.isEnabled,
-                lastRunAt: mission.lastRunAt,
-                sourceUpdatedAt: mission.updatedAt
-            )
-            remoteMission = try await client.runMissionNow(id: mission.id)
-        }
-        if let modelContext {
-            _ = upsertMission(remoteMission, into: modelContext)
-            try modelContext.save()
-        } else {
-            mission.missionName = remoteMission.missionName
-            mission.systemPrompt = remoteMission.systemPrompt
-            mission.triggerSchedule = remoteMission.triggerSchedule
-            mission.allowedMCPTools = remoteMission.allowedMcpTools
-            mission.ownerProfileId = remoteMission.ownerProfileId
-            mission.isEnabled = remoteMission.isEnabled
-            mission.lastRunAt = remoteMission.lastRunAt
-            mission.runRequestedAt = remoteMission.runRequestedAt
-            mission.createdAt = remoteMission.createdAt
-            mission.updatedAt = remoteMission.updatedAt
-        }
-        IOSRuntimeLog.log("[IOSBackendSync] Run requested for mission id=\(mission.id.uuidString) '\(mission.missionName)'.")
-    }
-
-    @MainActor
-    func deleteMissions(_ missions: [MissionDefinition], modelContext: ModelContext) async throws {
-        if let client {
-            for mission in missions {
-                try await client.deleteMission(id: mission.id)
-            }
-        }
-
-        for mission in missions {
-            modelContext.delete(mission)
-        }
-        try modelContext.save()
     }
 
     @MainActor
@@ -933,13 +640,6 @@ final class IOSBackendSyncService {
     }
 
     @MainActor
-    private func reconcileMissions(_ remoteMissions: [IOSBackendMission], into modelContext: ModelContext) throws {
-        for remoteMission in remoteMissions {
-            _ = upsertMission(remoteMission, into: modelContext)
-        }
-    }
-
-    @MainActor
     private func reconcileActionItems(_ remoteActionItems: [IOSBackendActionItem], into modelContext: ModelContext) throws {
         for remoteActionItem in remoteActionItems {
             _ = upsertActionItem(remoteActionItem, into: modelContext)
@@ -963,36 +663,6 @@ final class IOSBackendSyncService {
         try pruneLifeContextEntries(excluding: Set(remoteEntries.map(\.id)), in: modelContext)
     }
 
-    @MainActor
-    private func ensureMissionOwnerExists(
-        ownerProfileId: UUID?,
-        modelContext: ModelContext?,
-        client: IOSBackendAPIClient
-    ) async throws -> UUID? {
-        guard let ownerProfileId else { return nil }
-
-        let remoteMembers = try await client.fetchFamilyMembers()
-        if remoteMembers.contains(where: { $0.id == ownerProfileId }) {
-            return ownerProfileId
-        }
-
-        guard let modelContext,
-              let localOwner = familyMember(id: ownerProfileId, in: modelContext) else {
-            IOSRuntimeLog.log("[IOSBackendSync] Owner profile id=\(ownerProfileId.uuidString) missing locally; saving mission without owner.")
-            return nil
-        }
-
-        let remoteOwner = try await client.createFamilyMember(
-            id: localOwner.id,
-            displayName: localOwner.displayName,
-            symbol: localOwner.symbol
-        )
-        _ = upsertFamilyMember(remoteOwner, into: modelContext)
-        try modelContext.save()
-        IOSRuntimeLog.log("[IOSBackendSync] Seeded backend family member id=\(remoteOwner.id.uuidString) for mission sync.")
-        return remoteOwner.id
-    }
-
     @discardableResult
     @MainActor
     private func upsertFamilyMember(_ remoteMember: IOSBackendFamilyMember, into modelContext: ModelContext) -> FamilyMember {
@@ -1014,40 +684,6 @@ final class IOSBackendSyncService {
 
     @discardableResult
     @MainActor
-    private func upsertMission(_ remoteMission: IOSBackendMission, into modelContext: ModelContext) -> MissionDefinition {
-        if let existing = mission(id: remoteMission.id, in: modelContext) {
-            existing.missionName = remoteMission.missionName
-            existing.systemPrompt = remoteMission.systemPrompt
-            existing.triggerSchedule = remoteMission.triggerSchedule
-            existing.allowedMCPTools = remoteMission.allowedMcpTools
-            existing.ownerProfileId = remoteMission.ownerProfileId
-            existing.isEnabled = remoteMission.isEnabled
-            existing.lastRunAt = remoteMission.lastRunAt
-            existing.runRequestedAt = remoteMission.runRequestedAt
-            existing.createdAt = remoteMission.createdAt
-            existing.updatedAt = remoteMission.updatedAt
-            return existing
-        }
-
-        let mission = MissionDefinition(
-            id: remoteMission.id,
-            missionName: remoteMission.missionName,
-            systemPrompt: remoteMission.systemPrompt,
-            triggerSchedule: remoteMission.triggerSchedule,
-            allowedMCPTools: remoteMission.allowedMcpTools,
-            ownerProfileId: remoteMission.ownerProfileId,
-            isEnabled: remoteMission.isEnabled,
-            lastRunAt: remoteMission.lastRunAt,
-            runRequestedAt: remoteMission.runRequestedAt,
-            createdAt: remoteMission.createdAt,
-            updatedAt: remoteMission.updatedAt
-        )
-        modelContext.insert(mission)
-        return mission
-    }
-
-    @discardableResult
-    @MainActor
     private func upsertActionItem(_ remoteActionItem: IOSBackendActionItem, into modelContext: ModelContext) -> ActionItem {
         let payloadData = jsonData(from: remoteActionItem.payloadJson)
 
@@ -1057,7 +693,6 @@ final class IOSBackendSyncService {
             existing.payloadData = payloadData
             existing.relevanceScore = remoteActionItem.relevanceScore
             existing.timestamp = remoteActionItem.timestamp
-            existing.missionId = remoteActionItem.sourceMissionId
             existing.isHandled = remoteActionItem.isHandled
             existing.createdByProfileId = remoteActionItem.ownerProfileId
             return existing
@@ -1070,7 +705,6 @@ final class IOSBackendSyncService {
             payloadData: payloadData,
             relevanceScore: remoteActionItem.relevanceScore,
             timestamp: remoteActionItem.timestamp,
-            missionId: remoteActionItem.sourceMissionId,
             isHandled: remoteActionItem.isHandled,
             createdByProfileId: remoteActionItem.ownerProfileId
         )
@@ -1084,8 +718,6 @@ final class IOSBackendSyncService {
         let toolName = remoteAgentLog.toolName ?? remoteAgentLog.metadataJson["tool_name"]?.stringValue
 
         if let existing = agentLog(id: remoteAgentLog.id, in: modelContext) {
-            existing.missionId = remoteAgentLog.missionId
-            existing.missionName = remoteAgentLog.missionName
             existing.phase = remoteAgentLog.phase
             existing.content = remoteAgentLog.content
             existing.toolName = toolName
@@ -1095,8 +727,6 @@ final class IOSBackendSyncService {
 
         let agentLog = AgentLog(
             id: remoteAgentLog.id,
-            missionId: remoteAgentLog.missionId,
-            missionName: remoteAgentLog.missionName,
             phase: remoteAgentLog.phase,
             content: remoteAgentLog.content,
             toolName: toolName,
@@ -1131,14 +761,6 @@ final class IOSBackendSyncService {
     private func familyMember(id: UUID, in modelContext: ModelContext) -> FamilyMember? {
         let descriptor = FetchDescriptor<FamilyMember>(
             predicate: #Predicate<FamilyMember> { $0.id == id }
-        )
-        return try? modelContext.fetch(descriptor).first
-    }
-
-    @MainActor
-    private func mission(id: UUID, in modelContext: ModelContext) -> MissionDefinition? {
-        let descriptor = FetchDescriptor<MissionDefinition>(
-            predicate: #Predicate<MissionDefinition> { $0.id == id }
         )
         return try? modelContext.fetch(descriptor).first
     }

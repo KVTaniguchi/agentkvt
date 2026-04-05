@@ -753,7 +753,7 @@ private struct ObjectiveAgentLogRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
-                Text(log.metadataJson["worker_label"]?.stringValue ?? log.missionName ?? log.phase)
+                Text(log.metadataJson["worker_label"]?.stringValue ?? log.phase)
                     .font(.subheadline.weight(.semibold))
                 Spacer()
                 Text(log.timestamp, style: .relative)
