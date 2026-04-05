@@ -1,5 +1,6 @@
 .DS_Store
 .build/
+build/
 *.xcodeproj/xcuserdata/
 *.xcworkspace/xcuserdata/
 **/.swiftpm/xcode/xcuserdata/
@@ -20,6 +21,9 @@ server/vendor/bundle/
 
 # Release API URL overrides (optional Tailscale / HTTPS base URL for TestFlight)
 AgentKVTiOS/Config/AgentKVTiOS.release.local.xcconfig
+
+# Debug API URL overrides (same idea as release.local for day-to-day dev)
+AgentKVTiOS/Config/AgentKVTiOS.debug.local.xcconfig
 
 # Local deployment backups (may contain secrets)
 backups/

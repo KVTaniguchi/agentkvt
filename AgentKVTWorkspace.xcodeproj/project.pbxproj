@@ -82,6 +82,7 @@
 		C2000002 /* AgentKVTMac.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AgentKVTMac.entitlements; sourceTree = "<group>"; };
 		E1000001 /* AgentKVTiOS.release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = AgentKVTiOS.release.xcconfig; sourceTree = "<group>"; };
 		E1000002 /* Info.Release.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.Release.plist; sourceTree = "<group>"; };
+		E1000004 /* AgentKVTiOS.debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = AgentKVTiOS.debug.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -226,6 +227,7 @@
 		E1000003 /* Config */ = {
 			isa = PBXGroup;
 			children = (
+				E1000004 /* AgentKVTiOS.debug.xcconfig */,
 				E1000001 /* AgentKVTiOS.release.xcconfig */,
 			);
 			path = Config;
@@ -516,12 +518,13 @@
 		};
 		AB000003 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = E1000004 /* AgentKVTiOS.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = AgentKVTiOS/AgentKVTiOS.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = AgentKVTiOS/Info.Debug.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = AgentKVT;
@@ -554,7 +557,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = AgentKVTiOS/AgentKVTiOS.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = AgentKVTiOS/Info.Release.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
@@ -576,7 +579,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -599,7 +602,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
