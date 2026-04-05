@@ -53,7 +53,7 @@ module V1
     def reset_stuck_tasks_and_run
       objective = current_workspace.objectives.find(params[:id])
       objective.tasks.where(status: "in_progress").find_each do |task|
-        task.update!(status: "pending", result_summary: nil)
+        task.update!(status: "pending", result_summary: nil, claimed_at: nil, claimed_by_agent_id: nil)
       end
       kickoff_objective(objective)
 
@@ -65,7 +65,7 @@ module V1
     def rerun
       objective = current_workspace.objectives.find(params[:id])
       objective.tasks.find_each do |task|
-        task.update!(status: "pending", result_summary: nil)
+        task.update!(status: "pending", result_summary: nil, claimed_at: nil, claimed_by_agent_id: nil)
       end
       objective.research_snapshots.destroy_all
       kickoff_objective(objective)
@@ -85,20 +85,11 @@ module V1
 
       if objective.presentation_json.present? && !presentation_stale?(objective)
         cached = JSON.parse(objective.presentation_json)
-        return render json: { layout: cached["layout"] }
+        return render json: { layout: cached["layout"], status: "ready" }
       end
 
-      result = ObjectivePresentationBuilder.new.call(objective)
-
-      if result
-        objective.update_columns(
-          presentation_json: result,
-          presentation_generated_at: Time.current
-        )
-        render json: { layout: JSON.parse(result)["layout"] }
-      else
-        render json: { layout: nil }
-      end
+      ObjectivePresentationJob.perform_later(objective.id.to_s)
+      render json: { layout: nil, status: "generating" }, status: :accepted
     end
 
     private
@@ -120,7 +111,7 @@ module V1
       objective.update!(status: "active") unless objective.status == "active"
 
       if objective.tasks.empty?
-        ObjectivePlanner.new.call(objective)
+        ObjectivePlannerJob.perform_later(objective.id.to_s)
         return
       end
 

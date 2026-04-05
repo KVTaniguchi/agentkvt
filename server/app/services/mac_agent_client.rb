@@ -7,13 +7,17 @@ require "json"
 # agent API.
 class MacAgentClient
   # Prefer 127.0.0.1 over "localhost" to avoid IPv6 ::1 vs IPv4 mismatches with the Mac listener.
-  WEBHOOK_URL = ENV.fetch("MAC_AGENT_WEBHOOK_URL", "http://127.0.0.1:8765")
+  DEFAULT_WEBHOOK_URL = ENV.fetch("MAC_AGENT_WEBHOOK_URL", "http://127.0.0.1:8765")
+
+  def initialize(webhook_url: nil)
+    @webhook_url = webhook_url.presence || DEFAULT_WEBHOOK_URL
+  end
 
   # Enqueues a task-search trigger on the Mac agent. Returns true if the webhook
   # acknowledged (HTTP 200), false on delivery failure.
   def trigger_task_search(task)
     payload = build_payload(task)
-    uri = URI(WEBHOOK_URL)
+    uri = URI(@webhook_url)
     uri.path = "/" if uri.path.nil? || uri.path.empty?
 
     http = Net::HTTP.new(uri.host, uri.port)

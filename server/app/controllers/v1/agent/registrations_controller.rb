@@ -1,0 +1,42 @@
+# frozen_string_literal: true
+
+module V1
+  module Agent
+    # Agents POST here on startup and every ~15s to register their capabilities
+    # and signal that they are online. TaskExecutorJob uses this table to route
+    # tasks to capable agents instead of the hardcoded webhook URL.
+    class RegistrationsController < BaseController
+      def upsert
+        reg = current_workspace.agent_registrations.find_or_initialize_by(
+          agent_id: registration_params[:agent_id]
+        )
+        reg.assign_attributes(
+          capabilities: registration_params[:capabilities] || [],
+          webhook_url: registration_params[:webhook_url],
+          status: "online",
+          last_seen_at: Time.current
+        )
+        reg.save!
+
+        render json: { agent_registration: serialize_registration(reg) }, status: reg.previously_new_record? ? :created : :ok
+      end
+
+      private
+
+      def registration_params
+        params.require(:agent_registration).permit(:agent_id, :webhook_url, capabilities: [])
+      end
+
+      def serialize_registration(reg)
+        {
+          id: reg.id,
+          agent_id: reg.agent_id,
+          capabilities: reg.capabilities,
+          webhook_url: reg.webhook_url,
+          status: reg.status,
+          last_seen_at: reg.last_seen_at&.iso8601
+        }
+      end
+    end
+  end
+end

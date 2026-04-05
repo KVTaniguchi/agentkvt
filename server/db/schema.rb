@@ -10,10 +10,24 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_03_28_145000) do
+ActiveRecord::Schema[8.0].define(version: 2026_04_05_020000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
+
+  create_table "agent_registrations", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid     "workspace_id", null: false
+    t.string   "agent_id", null: false
+    t.string   "webhook_url"
+    t.jsonb    "capabilities", null: false, default: []
+    t.string   "status", null: false, default: "online"
+    t.datetime "last_seen_at", null: false, default: -> { "CURRENT_TIMESTAMP" }
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index [ "workspace_id", "agent_id" ], name: "index_agent_registrations_on_workspace_id_and_agent_id", unique: true
+    t.index [ "capabilities" ], name: "index_agent_registrations_on_capabilities", using: :gin
+    t.index [ "last_seen_at" ], name: "index_agent_registrations_on_last_seen_at"
+  end
 
   create_table "objectives", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.uuid "workspace_id", null: false
@@ -31,10 +45,14 @@ ActiveRecord::Schema[8.0].define(version: 2026_03_28_145000) do
     t.text "description", null: false
     t.string "status", null: false, default: "pending"
     t.text "result_summary"
+    t.datetime "claimed_at"
+    t.string "claimed_by_agent_id"
+    t.jsonb  "required_capabilities", null: false, default: []
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["objective_id", "status"], name: "index_tasks_on_objective_id_and_status"
     t.index ["objective_id"], name: "index_tasks_on_objective_id"
+    t.index ["required_capabilities"], name: "index_tasks_on_required_capabilities", using: :gin
   end
 
   create_table "research_snapshots", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -175,6 +193,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_03_28_145000) do
     t.index ["slug"], name: "index_workspaces_on_slug", unique: true
   end
 
+  add_foreign_key "agent_registrations", "workspaces"
   add_foreign_key "action_items", "family_members", column: "owner_profile_id"
   add_foreign_key "action_items", "missions", column: "source_mission_id"
   add_foreign_key "action_items", "workspaces"

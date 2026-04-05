@@ -17,40 +17,12 @@ public enum BackendAPIError: Error, LocalizedError {
     }
 }
 
-public struct BackendMission: Codable, Sendable {
-    public let id: UUID
-    public let workspaceId: UUID
-    public let ownerProfileId: UUID?
-    public let sourceDeviceId: UUID?
-    public let missionName: String
-    public let systemPrompt: String
-    public let triggerSchedule: String
-    public let allowedMcpTools: [String]
-    public let isEnabled: Bool
-    public let lastRunAt: Date?
-    public let runRequestedAt: Date?
-    public let sourceUpdatedAt: Date?
-    public let createdAt: Date
-    public let updatedAt: Date
 
-    func asRequest() -> MissionRunner.Request {
-        MissionRunner.Request(
-            id: id,
-            missionName: missionName,
-            systemPrompt: systemPrompt,
-            triggerSchedule: triggerSchedule,
-            allowedToolIds: allowedMcpTools,
-            ownerProfileId: ownerProfileId,
-            isEnabled: isEnabled,
-            lastRunAt: lastRunAt
-        )
-    }
-}
 
 public struct BackendActionItem: Codable, Sendable {
     public let id: UUID
     public let workspaceId: UUID
-    public let sourceMissionId: UUID?
+
     public let ownerProfileId: UUID?
     public let title: String
     public let systemIntent: String
@@ -67,8 +39,7 @@ public struct BackendActionItem: Codable, Sendable {
 public struct BackendAgentLog: Codable, Sendable {
     public let id: UUID
     public let workspaceId: UUID
-    public let missionId: UUID?
-    public let missionName: String?
+
     public let phase: String
     public let content: String
     public let metadataJson: [String: String]
@@ -77,17 +48,7 @@ public struct BackendAgentLog: Codable, Sendable {
     public let updatedAt: Date
 }
 
-private struct BackendMissionsEnvelope: Codable {
-    let missions: [BackendMission]
-}
 
-private struct BackendDueMissionsEnvelope: Codable {
-    let dueMissions: [BackendMission]
-}
-
-private struct BackendMissionEnvelope: Codable {
-    let mission: BackendMission
-}
 
 private struct BackendActionItemEnvelope: Codable {
     let actionItem: BackendActionItem
@@ -167,106 +128,30 @@ public actor BackendAPIClient {
         self.isoFormatter.formatOptions = [.withInternetDateTime]
     }
 
-    public func fetchMissions() async throws -> [BackendMission] {
-        let data = try await performRequest(path: "v1/missions")
-        return try decoder.decode(BackendMissionsEnvelope.self, from: data).missions
-    }
-
     /// Loads the objective (including `goal`) from the API. Uses workspace slug only — same auth as other `v1/` reads.
     public func fetchObjective(id: UUID) async throws -> BackendObjective {
         let data = try await performRequest(path: "v1/objectives/\(id.uuidString)")
         return try decoder.decode(BackendObjectiveEnvelope.self, from: data).objective
     }
 
-    public func fetchDueMissions(at date: Date) async throws -> [BackendMission] {
+    /// Fetch recent agent logs from the workspace-wide log endpoint.
+    public func fetchAgentLogs(limit: Int = 100) async throws -> [BackendAgentLog] {
         let data = try await performRequest(
-            path: "v1/agent/due_missions",
-            queryItems: [URLQueryItem(name: "at", value: isoFormatter.string(from: date))],
-            requiresAgentAuth: true
-        )
-        return try decoder.decode(BackendDueMissionsEnvelope.self, from: data).dueMissions
-    }
-
-    public func fetchUnhandledActionItems(missionId: UUID) async throws -> [BackendActionItem] {
-        let data = try await performRequest(
-            path: "v1/agent/missions/\(missionId.uuidString)/action_items",
-            requiresAgentAuth: true
-        )
-        return try decoder.decode(BackendActionItemsEnvelope.self, from: data).actionItems
-    }
-
-    public func createActionItem(
-        missionId: UUID,
-        title: String,
-        systemIntent: String,
-        payloadJson: String?
-    ) async throws -> BackendActionItem {
-        let actionPayload: [String: Any] = [
-            "title": title,
-            "system_intent": systemIntent,
-            "payload_json": try payloadObject(from: payloadJson),
-            "created_by": "mac_agent"
-        ]
-        let data = try await performRequest(
-            path: "v1/agent/missions/\(missionId.uuidString)/action_items",
-            method: "POST",
-            jsonBody: ["action_item": actionPayload],
-            requiresAgentAuth: true
-        )
-        return try decoder.decode(BackendActionItemEnvelope.self, from: data).actionItem
-    }
-
-    public func fetchMissionLogs(
-        missionId: UUID,
-        phases: [String] = [],
-        sinceMinutes: Int? = nil,
-        limit: Int = 100
-    ) async throws -> [BackendAgentLog] {
-        var queryItems = [URLQueryItem(name: "limit", value: "\(min(limit, 200))")]
-        if !phases.isEmpty {
-            queryItems.append(URLQueryItem(name: "phases", value: phases.joined(separator: ",")))
-        }
-        if let sinceMinutes {
-            queryItems.append(URLQueryItem(name: "since_minutes", value: "\(sinceMinutes)"))
-        }
-        let data = try await performRequest(
-            path: "v1/agent/missions/\(missionId.uuidString)/logs",
-            queryItems: queryItems,
-            requiresAgentAuth: true
+            path: "v1/agent_logs",
+            queryItems: [URLQueryItem(name: "limit", value: "\(min(limit, 500))")]
         )
         return try decoder.decode(BackendAgentLogsEnvelope.self, from: data).agentLogs
     }
 
-    public func createLog(
-        missionId: UUID,
-        phase: String,
-        content: String,
-        metadata: [String: String] = [:]
-    ) async throws -> BackendAgentLog {
-        let data = try await performRequest(
-            path: "v1/agent/missions/\(missionId.uuidString)/logs",
-            method: "POST",
-            jsonBody: [
-                "agent_log": [
-                    "phase": phase,
-                    "content": content,
-                    "metadata_json": metadata
-                ]
-            ],
-            requiresAgentAuth: true
-        )
-        return try decoder.decode(BackendAgentLogEnvelope.self, from: data).agentLog
-    }
-
     public func createAgentLog(
-        missionName: String? = nil,
+        taskName: String? = nil,
         phase: String,
         content: String,
         metadata: [String: String] = [:]
     ) async throws -> BackendAgentLog {
         var mergedMetadata = metadata
-        if let missionName, !missionName.isEmpty {
-            mergedMetadata["mission_name"] = missionName
+        if let taskName, !taskName.isEmpty {
+            mergedMetadata["task_name"] = taskName
         }
 
         let data = try await performRequest(
@@ -282,16 +167,6 @@ public actor BackendAPIClient {
             requiresAgentAuth: true
         )
         return try decoder.decode(BackendAgentLogEnvelope.self, from: data).agentLog
-    }
-
-    public func markMissionRun(missionId: UUID, at date: Date) async throws -> BackendMission {
-        let data = try await performRequest(
-            path: "v1/agent/missions/\(missionId.uuidString)/mark_run",
-            method: "POST",
-            jsonBody: ["ran_at": isoFormatter.string(from: date)],
-            requiresAgentAuth: true
-        )
-        return try decoder.decode(BackendMissionEnvelope.self, from: data).mission
     }
 
     /// List research snapshots for an objective (optional `taskId` matches server filter).
@@ -339,7 +214,57 @@ public actor BackendAPIClient {
         return try decoder.decode(BackendResearchSnapshotEnvelope.self, from: data).researchSnapshot
     }
 
-    /// Poll after iOS `POST /v1/chat_wake`. Returns `true` when a wake was pending (and clears it server-side).
+    /// Registers this agent's capabilities and webhook URL with the backend.
+    /// Call on startup and every ~15s as a heartbeat so TaskExecutorJob can route tasks here.
+    public func registerAgent(
+        agentId: String,
+        capabilities: [String],
+        webhookURL: String?
+    ) async throws {
+        var body: [String: Any] = [
+            "agent_registration": [
+                "agent_id": agentId,
+                "capabilities": capabilities
+            ] as [String: Any]
+        ]
+        if let webhookURL {
+            var reg = (body["agent_registration"] as! [String: Any])
+            reg["webhook_url"] = webhookURL
+            body["agent_registration"] = reg
+        }
+        _ = try await performRequest(
+            path: "v1/agent/register",
+            method: "POST",
+            jsonBody: body,
+            requiresAgentAuth: true
+        )
+    }
+
+    /// Long-poll variant: blocks on the server for up to 30s waiting for a Postgres NOTIFY
+    /// on the `agentkvt_chat_wake` channel, then atomically reads and clears the flag.
+    /// Returns `true` when a wake was pending. Replaces the 15s sleep + short poll loop.
+    public func consumeChatWakeBlocking() async throws -> Bool {
+        // Server blocks up to 30s; add a 5s client-side buffer to avoid racing the timeout.
+        var request = URLRequest(
+            url: try url(for: "v1/agent/chat_wake", queryItems: []),
+            timeoutInterval: 40
+        )
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(workspaceSlug, forHTTPHeaderField: "X-Workspace-Slug")
+        if let agentToken, !agentToken.isEmpty {
+            request.setValue("Bearer \(agentToken)", forHTTPHeaderField: "Authorization")
+        }
+        let (data, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200..<300).contains(httpResponse.statusCode) else {
+            throw BackendAPIError.invalidPayload("chat_wake long-poll returned unexpected status")
+        }
+        struct Envelope: Decodable { let pending: Bool }
+        return try decoder.decode(Envelope.self, from: data).pending
+    }
+
+    /// Short-poll variant — kept for backwards compatibility. Returns `true` when a wake was pending.
     public func consumeChatWakeIfPending() async throws -> Bool {
         let data = try await performRequest(path: "v1/agent/chat_wake", requiresAgentAuth: true)
         struct Envelope: Decodable { let pending: Bool }

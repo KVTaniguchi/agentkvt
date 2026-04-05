@@ -23,7 +23,6 @@ public func runAgentKVTMacRunner() async {
 
     let schema = Schema([
         LifeContext.self,
-        MissionDefinition.self,
         ActionItem.self,
         AgentLog.self,
         InboundFile.self,
@@ -93,7 +92,6 @@ public func runAgentKVTMacRunner() async {
         registry.register(makeSendNotificationEmailTool(destinationEmail: email))
     }
     registry.register(makeGetLifeContextTool(modelContext: context))
-    registry.register(makeFetchMissionStatusTool(modelContext: context))
     if let pat = settings.githubPAT, !pat.isEmpty {
         let repos = settings.githubAllowedRepos
         if !repos.isEmpty {
@@ -259,7 +257,7 @@ private func runScheduler(
     // All triggers funnel here. The actor's `run()` loop processes them one at a
     // time: while the LLM is awaiting a response, new triggers buffer in AgentQueue
     // (priority-sorted, bounded at 64 items) and are drained after inference completes.
-    let executionQueue = MissionExecutionQueue(
+    let executionQueue = AgentExecutionQueue(
         modelContext: context,
         modelContainer: modelContainer,
         client: client,
@@ -327,20 +325,48 @@ private func runScheduler(
     }
     clockTimer.resume()
 
-    // Off-LAN: iOS POSTs `/v1/chat_wake` to the deployed API; we poll the agent endpoint
-    // and enqueue the same work as the LAN JSON webhook (`processPendingChat`).
+    // Off-LAN: iOS POSTs `/v1/chat_wake` to the deployed API. The agent calls the long-poll
+    // endpoint which blocks on a Postgres NOTIFY for up to 30s — events arrive sub-100ms
+    // on a real wake, 30s on silence. No sleep loop needed.
     if let backendClient {
         Task(priority: .utility) {
             while !Task.isCancelled {
                 do {
-                    try await Task.sleep(nanoseconds: 15_000_000_000)
-                    let pending = try await backendClient.consumeChatWakeIfPending()
+                    let pending = try await backendClient.consumeChatWakeBlocking()
                     if pending {
                         executionQueue.enqueue(.processPendingChat, priority: .high)
                     }
                 } catch {
-                    print("[Scheduler] chat_wake poll failed: \(error)")
+                    print("[Scheduler] chat_wake long-poll failed: \(error)")
+                    // Brief back-off on error to avoid hammering the server on repeated failures.
+                    try? await Task.sleep(nanoseconds: 5_000_000_000)
                 }
+            }
+        }
+
+        // Agent registration + heartbeat: registers capabilities on startup, then heartbeats
+        // every 15s so TaskExecutorJob can route tasks to this agent by capability.
+        let agentId = "mac-agent-\(webhookPort)"
+        let webhookURLString = "http://127.0.0.1:\(webhookPort)"
+        var agentCapabilities = [
+            "web_search", "file_read", "objective_research",
+            "write_action_item", "life_context", "work_units"
+        ]
+        if settings.notificationEmail != nil { agentCapabilities.append("email") }
+        if settings.githubPAT != nil { agentCapabilities.append("github") }
+
+        Task(priority: .utility) {
+            while !Task.isCancelled {
+                do {
+                    try await backendClient.registerAgent(
+                        agentId: agentId,
+                        capabilities: agentCapabilities,
+                        webhookURL: webhookURLString
+                    )
+                } catch {
+                    print("[Scheduler] agent registration failed: \(error)")
+                }
+                try? await Task.sleep(nanoseconds: 15_000_000_000)
             }
         }
     }

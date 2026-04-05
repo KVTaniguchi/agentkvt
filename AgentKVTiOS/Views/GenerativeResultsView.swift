@@ -22,6 +22,7 @@ struct UINode: Codable, Sendable {
 
 struct UIPresentation: Codable, Sendable {
     let layout: UINode?
+    let status: String?  // "ready" | "generating" — nil for legacy responses
 }
 
 // MARK: - Node renderer
@@ -231,6 +232,18 @@ struct GenerativeResultsView: View {
             let result = try await store.fetchPresentation(for: objectiveId)
             if let node = result.layout {
                 layout = node
+            } else if result.status == "generating" {
+                // Server enqueued a generation job — poll every 5s until ready or 60s elapsed
+                for _ in 0..<12 {
+                    try await Task.sleep(nanoseconds: 5_000_000_000)
+                    let retry = try await store.fetchPresentation(for: objectiveId)
+                    if let node = retry.layout {
+                        layout = node
+                        return
+                    }
+                    if retry.status != "generating" { break }
+                }
+                useFallback = true
             } else {
                 useFallback = true
             }
