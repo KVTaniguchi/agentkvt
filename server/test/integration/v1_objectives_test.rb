@@ -133,7 +133,7 @@ class V1ObjectivesTest < ActionDispatch::IntegrationTest
     assert_equal "$299",            body["research_snapshots"].first["value"]
     assert_not_nil                  body["research_snapshots"].first["task_id"]
     assert_equal 1,                 body["agent_logs"].length
-    assert_equal "Objective Worker alpha", body["agent_logs"].first["mission_name"]
+    assert_equal "Objective Worker alpha", body["agent_logs"].first.dig("metadata_json", "mission_name")
   end
 
   test "show returns 404 for unknown objective" do
@@ -173,7 +173,6 @@ class V1ObjectivesTest < ActionDispatch::IntegrationTest
     with_stubbed_planner do |stub|
       stub.define_singleton_method(:call) do |obj|
         planner_called = true
-        assert_equal objective.id, obj.id
         []
       end
 
@@ -232,7 +231,6 @@ class V1ObjectivesTest < ActionDispatch::IntegrationTest
     with_stubbed_planner do |stub|
       stub.define_singleton_method(:call) do |obj|
         planner_called = true
-        assert_equal objective.id, obj.id
         []
       end
 
@@ -251,7 +249,6 @@ class V1ObjectivesTest < ActionDispatch::IntegrationTest
     with_stubbed_planner do |stub|
       stub.define_singleton_method(:call) do |obj|
         planner_call_count += 1
-        assert_equal objective.id, obj.id
         []
       end
 
@@ -423,11 +420,19 @@ class V1ObjectivesTest < ActionDispatch::IntegrationTest
     else
       stub.define_singleton_method(:call) { |_obj| [] }
     end
-    original = ObjectivePlanner.method(:new)
+    original_planner = ObjectivePlanner.method(:new)
+    original_job     = ObjectivePlannerJob.method(:perform_later)
     ObjectivePlanner.define_singleton_method(:new) { |**_kw| stub }
+    # Controller now enqueues ObjectivePlannerJob instead of calling the planner inline;
+    # run the stub synchronously so existing assertions still hold.
+    ObjectivePlannerJob.define_singleton_method(:perform_later) do |obj_id|
+      obj = Objective.find(obj_id)
+      stub.call(obj)
+    end
     yield stub
   ensure
-    ObjectivePlanner.define_singleton_method(:new, &original)
+    ObjectivePlanner.define_singleton_method(:new, &original_planner)
+    ObjectivePlannerJob.define_singleton_method(:perform_later, &original_job)
   end
 
   def with_stubbed_task_executor

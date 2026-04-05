@@ -147,7 +147,7 @@ class V1AgentResearchSnapshotsTest < ActionDispatch::IntegrationTest
 
     get "/v1/agent/objectives/#{@objective.id}/research_snapshots",
         params: { task_id: @task.id },
-        as: :json, headers: agent_headers
+        headers: agent_headers
 
     assert_response :success
     body = JSON.parse(response.body)

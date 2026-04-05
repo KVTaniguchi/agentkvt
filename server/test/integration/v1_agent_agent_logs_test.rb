@@ -30,7 +30,7 @@ class V1AgentAgentLogsTest < ActionDispatch::IntegrationTest
     assert_response :created
     body = JSON.parse(response.body)
     assert_equal "worker_claim", body.dig("agent_log", "phase")
-    assert_equal "Objective Worker alpha", body.dig("agent_log", "mission_name")
+    assert_equal "Objective Worker alpha", body.dig("agent_log", "metadata_json", "mission_name")
     assert_equal "objective-worker-1", body.dig("agent_log", "metadata_json", "worker_label")
     assert_equal 1, @workspace.agent_logs.count
   end
