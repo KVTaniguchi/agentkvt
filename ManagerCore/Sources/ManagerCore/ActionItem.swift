@@ -11,7 +11,6 @@ public final class ActionItem {
     public var payloadData: Data?
     public var relevanceScore: Double = 1.0
     public var timestamp: Date = Date()
-    public var missionId: UUID?
     public var isHandled: Bool = false
     /// When created from a user-facing flow with attribution; Mac agent rows typically leave nil.
     public var createdByProfileId: UUID?
@@ -23,7 +22,6 @@ public final class ActionItem {
         payloadData: Data? = nil,
         relevanceScore: Double = 1.0,
         timestamp: Date = Date(),
-        missionId: UUID? = nil,
         isHandled: Bool = false,
         createdByProfileId: UUID? = nil
     ) {
@@ -33,7 +31,6 @@ public final class ActionItem {
         self.payloadData = payloadData
         self.relevanceScore = relevanceScore
         self.timestamp = timestamp
-        self.missionId = missionId
         self.isHandled = isHandled
         self.createdByProfileId = createdByProfileId
     }

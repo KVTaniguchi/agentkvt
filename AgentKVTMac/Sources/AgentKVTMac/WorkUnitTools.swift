@@ -71,14 +71,11 @@ public func makeFetchWorkUnitsTool(modelContext: ModelContext) -> ToolRegistry.T
                 if let data = u.moundPayload, let json = String(data: data, encoding: .utf8) {
                     lines.append("Mound JSON: \(json)")
                 }
-                if let pid = u.createdByProfileId {
-                    lines.append("Created by profile: \(pid.uuidString)")
-                }
-                if let claim = u.claimedByMissionId {
-                    lines.append("Claimed by mission: \(claim.uuidString)")
-                }
                 if let until = u.claimedUntil {
                     lines.append("Claim until: \(until.formatted())")
+                }
+                if let label = u.workerLabel {
+                    lines.append("Claimed by worker: \(label)")
                 }
                 return lines.joined(separator: "\n")
             }.joined(separator: "\n\n---\n\n")

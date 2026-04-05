@@ -56,7 +56,7 @@ enum BeeAIContextTool {
 
     private static func processBeeAIResponse(data: Data, modelContext: ModelContext, lifeContextKey: String?) -> String {
         let summary = parseAndSummarize(data: data)
-        let log = AgentLog(missionId: nil, missionName: nil, phase: "bee_ai_fetch", content: summary, toolName: "fetch_bee_ai_context")
+        let log = AgentLog(phase: "bee_ai_fetch", content: summary, toolName: "fetch_bee_ai_context")
         modelContext.insert(log)
         if let key = lifeContextKey, !key.isEmpty {
             let descriptor = FetchDescriptor<LifeContext>(predicate: #Predicate { $0.key == key })

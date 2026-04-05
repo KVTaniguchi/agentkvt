@@ -70,7 +70,6 @@ public final class ChatRunner: @unchecked Sendable {
             modelContext.insert(assistantMessage)
             modelContext.insert(
                 AgentLog(
-                    missionName: "Chat: \(thread.title)",
                     phase: "chat_outcome",
                     content: result
                 )
@@ -84,7 +83,6 @@ public final class ChatRunner: @unchecked Sendable {
             thread.updatedAt = Date()
             modelContext.insert(
                 AgentLog(
-                    missionName: "Chat: \(thread.title)",
                     phase: "error",
                     content: "Chat failed: \(error)"
                 )
@@ -111,33 +109,28 @@ public final class ChatRunner: @unchecked Sendable {
         switch event {
         case .assistantResponse(let content, let toolCalls):
             return AgentLog(
-                missionName: "Chat: \(thread.title)",
                 phase: "chat_assistant",
                 content: content ?? "Assistant requested \(toolCalls.count) tool call(s)."
             )
         case .toolCallRequested(let name, let arguments):
             return AgentLog(
-                missionName: "Chat: \(thread.title)",
                 phase: "tool_call",
                 content: arguments,
                 toolName: name
             )
         case .toolCallCompleted(let name, let result, _):
             return AgentLog(
-                missionName: "Chat: \(thread.title)",
                 phase: "tool_result",
                 content: result,
                 toolName: name
             )
         case .finalResponse(let content):
             return AgentLog(
-                missionName: "Chat: \(thread.title)",
                 phase: "assistant_final",
                 content: content
             )
         case .maxRoundsReached:
             return AgentLog(
-                missionName: "Chat: \(thread.title)",
                 phase: "warning",
                 content: "Chat loop reached max rounds before producing a final response."
             )

@@ -31,7 +31,6 @@ public final class WorkUnit {
     public var activePhaseHint: String?
     /// Pheromone-style priority for ordering when multiple units are ready.
     public var priority: Double = 1.0
-    public var claimedByMissionId: UUID?
     public var claimedUntil: Date?
     /// Human-readable worker label currently responsible for this work unit, when claimed.
     public var workerLabel: String?
@@ -53,7 +52,6 @@ public final class WorkUnit {
         moundPayload: Data? = nil,
         activePhaseHint: String? = nil,
         priority: Double = 1.0,
-        claimedByMissionId: UUID? = nil,
         claimedUntil: Date? = nil,
         workerLabel: String? = nil,
         lastHeartbeatAt: Date? = nil,
@@ -71,7 +69,6 @@ public final class WorkUnit {
         self.moundPayload = moundPayload
         self.activePhaseHint = activePhaseHint
         self.priority = priority
-        self.claimedByMissionId = claimedByMissionId
         self.claimedUntil = claimedUntil
         self.workerLabel = workerLabel
         self.lastHeartbeatAt = lastHeartbeatAt
@@ -81,8 +78,3 @@ public final class WorkUnit {
     }
 }
 
-public extension WorkUnit {
-    /// Set `MissionDefinition.triggerSchedule` to this value for missions that run on the clock tick when
-    /// at least one `WorkUnit` is `pending` or `in_progress` (stigmergic board polling).
-    static let boardMissionTriggerSchedule = "workunit_board"
-}

@@ -7,7 +7,6 @@ import SwiftData
 @Model
 public final class ResearchSnapshot {
     public var id: UUID = UUID()
-    public var missionId: String = ""
     public var key: String = ""
     public var lastKnownValue: String = ""
     public var checkedAt: Date = Date()
@@ -15,14 +14,12 @@ public final class ResearchSnapshot {
 
     public init(
         id: UUID = UUID(),
-        missionId: String,
         key: String,
         lastKnownValue: String,
         checkedAt: Date = Date(),
         deltaNote: String? = nil
     ) {
         self.id = id
-        self.missionId = missionId
         self.key = key
         self.lastKnownValue = lastKnownValue
         self.checkedAt = checkedAt

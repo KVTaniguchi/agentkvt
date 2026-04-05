@@ -18,7 +18,6 @@ struct SwiftDataActionItemWriter: ActionItemWriting, @unchecked Sendable {
         systemIntent: String,
         payloadJson: String?
     ) async throws -> String {
-        let missionId = MissionExecutionContext.current?.missionId
         let contentKey = Self.contentKey(systemIntent: systemIntent, payloadJson: payloadJson)
 
         // Dedup: skip if an identical unhandled action already exists for this mission.
@@ -27,7 +26,6 @@ struct SwiftDataActionItemWriter: ActionItemWriting, @unchecked Sendable {
         )
         if let existing = try? modelContext.fetch(descriptor) {
             let duplicate = existing.contains { item in
-                guard item.missionId == missionId else { return false }
                 let itemKey = Self.contentKey(
                     systemIntent: item.systemIntent,
                     payloadJson: item.payloadData.flatMap { String(data: $0, encoding: .utf8) }
@@ -48,7 +46,6 @@ struct SwiftDataActionItemWriter: ActionItemWriting, @unchecked Sendable {
             systemIntent: systemIntent,
             payloadData: payloadData
         )
-        item.missionId = missionId
         modelContext.insert(item)
         try modelContext.save()
         return "Created ActionItem: \(item.title) (\(item.systemIntent))"
@@ -78,16 +75,7 @@ struct BackendActionItemWriter: ActionItemWriting {
         systemIntent: String,
         payloadJson: String?
     ) async throws -> String {
-        guard let missionId = MissionExecutionContext.current?.missionId else {
-            return "Error: write_action_item requires an active mission context in backend mode."
-        }
-        let item = try await backendClient.createActionItem(
-            missionId: missionId,
-            title: title.trimmingCharacters(in: .whitespacesAndNewlines),
-            systemIntent: systemIntent,
-            payloadJson: payloadJson
-        )
-        return "Created ActionItem: \(item.title) (\(item.systemIntent))"
+        return "Error: write_action_item is currently not supported for remote backends without missions."
     }
 }
 

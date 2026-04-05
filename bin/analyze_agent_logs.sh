@@ -13,7 +13,7 @@ usage() {
 Analyze current AgentKVT production logs over SSH.
 
 Usage:
-  ./bin/analyze_production_logs.sh [options]
+  ./bin/analyze_agent_logs.sh [options]
 
 Options:
   --host HOST              SSH target. Default: familyagent@192.168.4.144

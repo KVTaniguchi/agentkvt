@@ -1,9 +1,8 @@
 import Foundation
 
-enum MissionExecutionContext {
+enum AgentTaskExecutionContext {
     struct Context: Sendable {
-        let missionId: UUID
-        let missionName: String
+        let taskName: String
         let objectiveId: UUID?
         let taskId: UUID?
         let workUnitId: UUID?

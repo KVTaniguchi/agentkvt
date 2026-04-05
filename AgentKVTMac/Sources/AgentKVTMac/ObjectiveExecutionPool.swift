@@ -27,7 +27,7 @@ actor ObjectiveExecutionPool {
     init(
         modelContainer: ModelContainer,
         client: any OllamaClientProtocol,
-        missionRunner: MissionRunner,
+        taskRunner: AgentTaskRunner,
         backendClient: BackendAPIClient?,
         maxConcurrentWorkers: Int,
         researchSettleTimeoutSeconds: TimeInterval = 600
@@ -35,7 +35,7 @@ actor ObjectiveExecutionPool {
         self.processor = ObjectiveExecutionProcessor(
             modelContainer: modelContainer,
             client: client,
-            missionRunner: missionRunner,
+            taskRunner: taskRunner,
             backendClient: backendClient,
             researchSettleTimeoutSeconds: researchSettleTimeoutSeconds
         )
@@ -133,7 +133,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
 
     private let modelContainer: ModelContainer
     private let client: any OllamaClientProtocol
-    private let missionRunner: MissionRunner
+    private let taskRunner: AgentTaskRunner
     private let backendClient: BackendAPIClient?
     private let researchSettleTimeoutSeconds: TimeInterval
     /// Serializes SwiftData claim read/modify/save so parallel workers cannot claim the same pending unit.
@@ -142,13 +142,13 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
     init(
         modelContainer: ModelContainer,
         client: any OllamaClientProtocol,
-        missionRunner: MissionRunner,
+        taskRunner: AgentTaskRunner,
         backendClient: BackendAPIClient?,
         researchSettleTimeoutSeconds: TimeInterval
     ) {
         self.modelContainer = modelContainer
         self.client = client
-        self.missionRunner = missionRunner
+        self.taskRunner = taskRunner
         self.backendClient = backendClient
         self.researchSettleTimeoutSeconds = max(0.1, researchSettleTimeoutSeconds)
     }
@@ -174,7 +174,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                 content: "Supervisor started board work for task: \(payload.description)",
                 objectiveId: objectiveId,
                 taskId: taskId,
-                missionName: "Objective Supervisor"
+                taskName: "Objective Supervisor"
             )
 
             let initialUnits = await createResearchRound(
@@ -229,7 +229,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                 content: "Objective board completed for task: \(payload.description)",
                 objectiveId: objectiveId,
                 taskId: taskId,
-                missionName: "Objective Supervisor"
+                taskName: "Objective Supervisor"
             )
         } catch {
             await logEvent(
@@ -237,7 +237,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                 content: "Objective supervisor failed: \(error)",
                 objectiveId: objectiveId,
                 taskId: taskId,
-                missionName: "Objective Supervisor"
+                taskName: "Objective Supervisor"
             )
         }
     }
@@ -259,7 +259,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                     taskId: nil,
                     workUnitId: nil,
                     workerLabel: slot.label,
-                    missionName: "Objective Worker \(slot.label)"
+                    taskName: "Objective Worker \(slot.label)"
                 )
                 try? await Task.sleep(for: .seconds(2))
             }
@@ -274,7 +274,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             taskId: claimed.taskId,
             workUnitId: claimed.workUnitId,
             workerLabel: slot.label,
-            missionName: "Objective Worker \(slot.label)"
+            taskName: "Objective Worker \(slot.label)"
         )
 
         let heartbeatTask = Task.detached(priority: .utility) { [weak self] in
@@ -316,7 +316,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             } else {
                 preRunSnapshotCount = 0
             }
-            let result = try await missionRunner.run(request)
+            let result = try await taskRunner.run(request)
             heartbeatTask.cancel()
 
             // Block research work units whose final text is raw tool-call JSON (model used text
@@ -334,7 +334,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                     taskId: claimed.taskId,
                     workUnitId: claimed.workUnitId,
                     workerLabel: slot.label,
-                    missionName: "Objective Worker \(slot.label)"
+                    taskName: "Objective Worker \(slot.label)"
                 )
                 return
             }
@@ -367,7 +367,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                         taskId: claimed.taskId,
                         workUnitId: claimed.workUnitId,
                         workerLabel: slot.label,
-                        missionName: "Objective Worker \(slot.label)"
+                        taskName: "Objective Worker \(slot.label)"
                     )
                 }
             }
@@ -385,7 +385,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                         taskId: claimed.taskId,
                         workUnitId: claimed.workUnitId,
                         workerLabel: slot.label,
-                        missionName: "Objective Worker \(slot.label)"
+                        taskName: "Objective Worker \(slot.label)"
                     )
                     return
                 }
@@ -422,7 +422,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                             taskId: claimed.taskId,
                             workUnitId: claimed.workUnitId,
                             workerLabel: slot.label,
-                            missionName: "Objective Worker \(slot.label)"
+                            taskName: "Objective Worker \(slot.label)"
                         )
                         return
                     }
@@ -443,7 +443,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                             taskId: claimed.taskId,
                             workUnitId: claimed.workUnitId,
                             workerLabel: slot.label,
-                            missionName: "Objective Worker \(slot.label)"
+                            taskName: "Objective Worker \(slot.label)"
                         )
                         throw error
                     }
@@ -459,7 +459,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                 taskId: claimed.taskId,
                 workUnitId: claimed.workUnitId,
                 workerLabel: slot.label,
-                missionName: "Objective Worker \(slot.label)"
+                taskName: "Objective Worker \(slot.label)"
             )
         } catch {
             heartbeatTask.cancel()
@@ -471,7 +471,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                 taskId: claimed.taskId,
                 workUnitId: claimed.workUnitId,
                 workerLabel: slot.label,
-                missionName: "Objective Worker \(slot.label)"
+                taskName: "Objective Worker \(slot.label)"
             )
             throw error
         }
@@ -482,7 +482,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         workerLabel: String,
         serverSnapshotsContext: String,
         resolvedParentGoal: String?
-    ) -> MissionRunner.Request {
+    ) -> AgentTaskRunner.Request {
         // `resolveParentObjectiveGoal` already merges webhook payload + API; nil means no goal string anywhere.
         let effectiveGoal = resolvedParentGoal
         let userMessage = objectiveBoardUserMessage(
@@ -580,9 +580,9 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             """
         }
 
-        return MissionRunner.Request(
+        return AgentTaskRunner.Request(
             id: claimed.workUnitId,
-            missionName: "Objective Work Unit: \(claimed.title.prefix(60))",
+            taskName: "Objective Work Unit: \(claimed.title.prefix(60))",
             systemPrompt: systemPrompt,
             triggerSchedule: "objective_board",
             allowedToolIds: ["read_objective_snapshot", "multi_step_search", "write_objective_snapshot"],
@@ -700,7 +700,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                     content: "Failed to create work unit '\(title)': \(error)",
                     objectiveId: objectiveId,
                     taskId: taskId,
-                    missionName: "Objective Supervisor"
+                    taskName: "Objective Supervisor"
                 )
             }
         }
@@ -711,7 +711,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                 content: "Queued \(created) research work unit(s) for round \(planningRound).",
                 objectiveId: objectiveId,
                 taskId: taskId,
-                missionName: "Objective Supervisor"
+                taskName: "Objective Supervisor"
             )
         }
 
@@ -963,8 +963,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         }
 
         unit.state = WorkUnitState.inProgress.rawValue
-        unit.claimedByMissionId = slot.id
-        unit.claimedUntil = Date().addingTimeInterval(90)
+                unit.claimedUntil = Date().addingTimeInterval(90)
         unit.workerLabel = slot.label
         unit.lastHeartbeatAt = Date()
         unit.updatedAt = Date()
@@ -1029,8 +1028,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
     ) throws {
         let context = freshContext()
         guard let unit = try fetchWorkUnit(workUnitId, in: context) else { return }
-        unit.claimedByMissionId = workerId
-        unit.claimedUntil = Date().addingTimeInterval(90)
+                unit.claimedUntil = Date().addingTimeInterval(90)
         unit.workerLabel = workerLabel
         unit.activePhaseHint = phase
         unit.lastHeartbeatAt = Date()
@@ -1095,8 +1093,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         for unit in units where unit.workType == Constants.researchType &&
             (unit.state == WorkUnitState.pending.rawValue || unit.state == WorkUnitState.inProgress.rawValue) {
             unit.state = WorkUnitState.blocked.rawValue
-            unit.claimedByMissionId = nil
-            unit.claimedUntil = nil
+                        unit.claimedUntil = nil
             unit.workerLabel = nil
             unit.activePhaseHint = "timed_out"
             unit.updatedAt = Date()
@@ -1122,7 +1119,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                 content: actionTitle,
                 objectiveId: objectiveId,
                 taskId: taskId,
-                missionName: "Objective Supervisor"
+                taskName: "Objective Supervisor"
             )
         }
         return actionTitle
@@ -1227,8 +1224,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         for unit in try objectiveBoardUnits(in: context) where unit.state == WorkUnitState.inProgress.rawValue {
             if let claimedUntil = unit.claimedUntil, claimedUntil < now {
                 unit.state = WorkUnitState.pending.rawValue
-                unit.claimedByMissionId = nil
-                unit.claimedUntil = nil
+                                unit.claimedUntil = nil
                 unit.workerLabel = nil
                 unit.activePhaseHint = "requeued"
                 unit.updatedAt = now
@@ -1286,7 +1282,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             content: "Recovery supervisor started — resuming synthesis for orphaned task: \(orphan.rootTaskDescription)",
             objectiveId: orphan.objectiveId,
             taskId: orphan.taskId,
-            missionName: "Objective Recovery Supervisor"
+            taskName: "Objective Recovery Supervisor"
         )
         do {
             try await waitForResearchToSettle(objectiveId: orphan.objectiveId, taskId: orphan.taskId)
@@ -1309,7 +1305,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                 content: "Recovery supervisor completed synthesis for task: \(orphan.rootTaskDescription)",
                 objectiveId: orphan.objectiveId,
                 taskId: orphan.taskId,
-                missionName: "Objective Recovery Supervisor"
+                taskName: "Objective Recovery Supervisor"
             )
         } catch {
             await logEvent(
@@ -1317,7 +1313,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                 content: "Recovery supervisor failed: \(error)",
                 objectiveId: orphan.objectiveId,
                 taskId: orphan.taskId,
-                missionName: "Objective Recovery Supervisor"
+                taskName: "Objective Recovery Supervisor"
             )
         }
     }
@@ -1360,7 +1356,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         taskId: UUID?,
         workUnitId: UUID? = nil,
         workerLabel: String? = nil,
-        missionName: String? = nil
+        taskName: String? = nil
     ) async {
         print("[ObjectiveExecutionPool] [\(workerLabel ?? "Supervisor")] [\(phase)] task=\(taskId?.uuidString ?? "nil"): \(content)")
         guard let backendClient else { return }
@@ -1380,7 +1376,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         }
 
         _ = try? await backendClient.createAgentLog(
-            missionName: missionName,
+            taskName: taskName,
             phase: phase,
             content: content,
             metadata: metadata

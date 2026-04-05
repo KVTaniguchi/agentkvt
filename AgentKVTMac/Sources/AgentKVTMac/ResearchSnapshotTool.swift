@@ -10,26 +10,24 @@ public func makeReadResearchSnapshotTool(modelContext: ModelContext) -> ToolRegi
         parameters: .init(
             type: "object",
             properties: [
-                "missionId": .init(type: "string", description: "UUID string of the current mission"),
                 "key": .init(type: "string", description: "Logical name of the tracked metric, e.g. 'loews_royal_pacific_rate'")
             ],
-            required: ["missionId", "key"]
+            required: ["key"]
         ),
         handler: { args in
-            guard let missionId = args["missionId"] as? String, !missionId.isEmpty,
-                  let key = args["key"] as? String, !key.isEmpty else {
-                return "Error: missionId and key are required non-empty strings."
+            guard let key = args["key"] as? String, !key.isEmpty else {
+                return "Error: key is a required non-empty string."
             }
             let descriptor = FetchDescriptor<ResearchSnapshot>(
-                predicate: #Predicate<ResearchSnapshot> { $0.missionId == missionId && $0.key == key }
+                predicate: #Predicate<ResearchSnapshot> { $0.key == key }
             )
             guard let snapshot = try? modelContext.fetch(descriptor).first else {
-                return "ResearchSnapshot not found for missionId=\(missionId) key=\(key). This is the first check."
+                return "ResearchSnapshot not found for key=\\(key). This is the first check."
             }
             let formatter = ISO8601DateFormatter()
             let checkedAtStr = formatter.string(from: snapshot.checkedAt)
             let deltaStr = snapshot.deltaNote ?? "none"
-            return "ResearchSnapshot found: key=\(snapshot.key) lastKnownValue=\(snapshot.lastKnownValue) checkedAt=\(checkedAtStr) deltaNote=\(deltaStr)"
+            return "ResearchSnapshot found: key=\\(snapshot.key) lastKnownValue=\\(snapshot.lastKnownValue) checkedAt=\\(checkedAtStr) deltaNote=\\(deltaStr)"
         }
     )
 }
@@ -42,32 +40,30 @@ public func makeWriteResearchSnapshotTool(modelContext: ModelContext) -> ToolReg
         parameters: .init(
             type: "object",
             properties: [
-                "missionId": .init(type: "string", description: "UUID string of the current mission"),
                 "key": .init(type: "string", description: "Logical name of the tracked metric, e.g. 'loews_royal_pacific_rate'"),
                 "currentValue": .init(type: "string", description: "The newly observed value (price, count, text, etc.)"),
                 "deltaThreshold": .init(type: "string", description: "Optional. Numeric threshold for meaningful change (default '0', meaning any change counts). E.g. '10' suppresses notifications for price moves under $10.")
             ],
-            required: ["missionId", "key", "currentValue"]
+            required: ["key", "currentValue"]
         ),
         handler: { args in
-            guard let missionId = args["missionId"] as? String, !missionId.isEmpty,
-                  let key = args["key"] as? String, !key.isEmpty,
+            guard let key = args["key"] as? String, !key.isEmpty,
                   let currentValue = args["currentValue"] as? String else {
-                return "Error: missionId, key, and currentValue are required."
+                return "Error: key and currentValue are required."
             }
             let thresholdStr = args["deltaThreshold"] as? String ?? "0"
             let threshold = Double(thresholdStr) ?? 0.0
 
             let descriptor = FetchDescriptor<ResearchSnapshot>(
-                predicate: #Predicate<ResearchSnapshot> { $0.missionId == missionId && $0.key == key }
+                predicate: #Predicate<ResearchSnapshot> { $0.key == key }
             )
             let existing = try? modelContext.fetch(descriptor).first
 
             guard let snapshot = existing else {
-                let record = ResearchSnapshot(missionId: missionId, key: key, lastKnownValue: currentValue)
+                let record = ResearchSnapshot(key: key, lastKnownValue: currentValue)
                 modelContext.insert(record)
                 try? modelContext.save()
-                return "ResearchSnapshot created: first observation of key=\(key) value=\(currentValue)"
+                return "ResearchSnapshot created: first observation of key=\\(key) value=\\(currentValue)"
             }
 
             let previous = snapshot.lastKnownValue
@@ -76,7 +72,7 @@ public func makeWriteResearchSnapshotTool(modelContext: ModelContext) -> ToolReg
                 snapshot.checkedAt = Date()
                 snapshot.deltaNote = nil
                 try? modelContext.save()
-                return "unchanged: value=\(currentValue)"
+                return "unchanged: value=\\(currentValue)"
             }
 
             // Attempt numeric delta evaluation
@@ -87,16 +83,16 @@ public func makeWriteResearchSnapshotTool(modelContext: ModelContext) -> ToolReg
                     snapshot.deltaNote = nil
                     snapshot.lastKnownValue = currentValue
                     try? modelContext.save()
-                    return "unchanged: value=\(currentValue) (numeric delta \(delta) below threshold=\(threshold))"
+                    return "unchanged: value=\\(currentValue) (numeric delta \\(delta) below threshold=\\(threshold))"
                 }
             }
 
-            let note = "Changed from \(previous) to \(currentValue)"
+            let note = "Changed from \\(previous) to \\(currentValue)"
             snapshot.lastKnownValue = currentValue
             snapshot.checkedAt = Date()
             snapshot.deltaNote = note
             try? modelContext.save()
-            return "changed: \(note)"
+            return "changed: \\(note)"
         }
     )
 }
