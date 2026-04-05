@@ -34,14 +34,13 @@ public final class ChatThread {
 
 public extension ChatThread {
     static let defaultAllowedToolIds = [
-        "fetch_mission_status",
         "get_life_context",
         "fetch_work_units",
     ]
 
     static let defaultSystemPrompt = """
     You are AgentKVT's optional chat assistant. Be concise, helpful, and privacy-conscious. \
-    When the user asks about mission progress, run status, queued work, or what the Mac agent is doing, \
+    When the user asks about objective progress, run status, queued work, or what the Mac agent is doing, \
     use the available status tools instead of guessing. \
     When a user asks you to create a concrete follow-up they can act on later, prefer using the \
     write_action_item tool if it is available in this chat.

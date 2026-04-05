@@ -7,7 +7,7 @@ import Testing
 private func makeChatTestContainer() throws -> (ModelContext, ModelContainer) {
     let schema = Schema([
         LifeContext.self,
-        MissionDefinition.self,
+        WorkUnit.self,
         ActionItem.self,
         AgentLog.self,
         InboundFile.self,
@@ -62,29 +62,16 @@ struct ChatRunnerTests {
     func emptyToolThreadsCanUseDefaultStatusTool() async throws {
         let (context, _) = try makeChatTestContainer()
         let registry = ToolRegistry()
-        registry.register(makeFetchMissionStatusTool(modelContext: context))
+        registry.register(makeFetchWorkUnitsTool(modelContext: context))
 
-        let mission = MissionDefinition(
-            missionName: "Budget Sentinel",
-            systemPrompt: "Track transactions",
-            triggerSchedule: "daily|20:00",
-            allowedMCPTools: [],
-            lastRunAt: Date().addingTimeInterval(-600)
-        )
-        context.insert(mission)
-        context.insert(AgentLog(
-            missionId: mission.id,
-            missionName: mission.missionName,
-            phase: "outcome",
-            content: "Reviewed the latest statement."
-        ))
+        context.insert(WorkUnit(title: "Plan family trip", category: "travel", state: .pending, payloadJson: [:]))
 
-        let thread = ChatThread(title: "Mission Status", allowedToolIds: [])
+        let thread = ChatThread(title: "Work Status", allowedToolIds: [])
         context.insert(thread)
         context.insert(ChatMessage(
             threadId: thread.id,
             role: "user",
-            content: "What is the status of Budget Sentinel?",
+            content: "What work is pending?",
             status: ChatMessageStatus.pending.rawValue
         ))
         try context.save()
@@ -95,12 +82,12 @@ struct ChatRunnerTests {
                     id: nil,
                     type: "function",
                     function: .init(
-                        name: "fetch_mission_status",
-                        arguments: #"{"mission_name":"Budget Sentinel"}"#
+                        name: "fetch_work_units",
+                        arguments: #"{"state":"pending"}"#
                     )
                 )
             ]),
-            .assistantFinal(content: "Budget Sentinel completed its latest run successfully and reviewed the latest statement.")
+            .assistantFinal(content: "There is one pending work unit: Plan family trip.")
         ])
 
         let runner = ChatRunner(modelContext: context, client: mockClient, registry: registry)
@@ -109,9 +96,9 @@ struct ChatRunnerTests {
 
         let messages = try context.fetch(FetchDescriptor<ChatMessage>(sortBy: [SortDescriptor(\.timestamp, order: .forward)]))
         #expect(messages.count == 2)
-        #expect(messages[1].content.contains("Budget Sentinel"))
+        #expect(messages[1].content.contains("Plan family trip"))
 
         let logs = try context.fetch(FetchDescriptor<AgentLog>())
-        #expect(logs.contains { $0.phase == "tool_result" && $0.content.contains("Reviewed the latest statement.") })
+        #expect(logs.contains { $0.phase == "tool_result" })
     }
 }

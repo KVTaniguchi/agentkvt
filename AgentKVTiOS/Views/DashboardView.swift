@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 import ManagerCore
 
-/// Dashboard: main iOS surface for objectives, actions, missions, logs, files, and chat.
+/// Dashboard: main iOS surface for objectives, actions, logs, files, and chat.
 struct DashboardView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var profileStore: FamilyProfileStore

@@ -1,6 +1,5 @@
 class ActionItem < ApplicationRecord
   belongs_to :workspace
-  belongs_to :source_mission, class_name: "Mission", optional: true
   belongs_to :owner_profile, class_name: "FamilyMember", optional: true
 
   validates :title, presence: true

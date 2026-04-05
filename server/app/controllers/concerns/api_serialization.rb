@@ -27,30 +27,10 @@ module ApiSerialization
     }
   end
 
-  def serialize_mission(mission)
-    {
-      id: mission.id,
-      workspace_id: mission.workspace_id,
-      owner_profile_id: mission.owner_profile_id,
-      source_device_id: mission.source_device_id,
-      mission_name: mission.mission_name,
-      system_prompt: mission.system_prompt,
-      trigger_schedule: mission.trigger_schedule,
-      allowed_mcp_tools: mission.allowed_mcp_tools,
-      is_enabled: mission.is_enabled,
-      last_run_at: iso8601(mission.last_run_at),
-      run_requested_at: iso8601(mission.run_requested_at),
-      source_updated_at: iso8601(mission.source_updated_at),
-      created_at: iso8601(mission.created_at),
-      updated_at: iso8601(mission.updated_at)
-    }
-  end
-
   def serialize_action_item(action_item)
     {
       id: action_item.id,
       workspace_id: action_item.workspace_id,
-      source_mission_id: action_item.source_mission_id,
       owner_profile_id: action_item.owner_profile_id,
       title: action_item.title,
       system_intent: action_item.system_intent,
@@ -69,8 +49,6 @@ module ApiSerialization
     {
       id: agent_log.id,
       workspace_id: agent_log.workspace_id,
-      mission_id: agent_log.mission_id,
-      mission_name: agent_log.mission&.mission_name || agent_log.metadata_json["mission_name"],
       phase: agent_log.phase,
       content: agent_log.content,
       metadata_json: agent_log.metadata_json,
