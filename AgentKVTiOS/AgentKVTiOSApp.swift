@@ -1,10 +1,6 @@
-import CloudKit
 import SwiftUI
 import SwiftData
 import ManagerCore
-
-let iosSharedAppGroupIdentifier = "group.com.agentkvt.shared"
-let iosCloudKitContainerIdentifier = "iCloud.AgentKVT"
 
 @main
 struct AgentKVTiOSApp: App {
@@ -23,7 +19,6 @@ struct AgentKVTiOSApp: App {
         let logFile = IOSRuntimeLog.bootstrap(processLabel: "AgentKVTiOSApp")
         IOSRuntimeLog.log("[Logging] Writing logs to \(logFile.path)")
         IOSRuntimeLog.log(IOSBackendSettings.load().startupMessage)
-        logIOSCloudKitDiagnostics()
         let schema = Schema([
             LifeContext.self,
             ActionItem.self,
@@ -38,50 +33,24 @@ struct AgentKVTiOSApp: App {
             FamilyMember.self,
             ResearchSnapshot.self,
         ])
-        #if targetEnvironment(simulator)
-        // Simulator: use app group container so SwiftData has a valid container (avoids loadIssueModelContainer).
-        let config = ModelConfiguration(
-            "simulator",
-            schema: schema,
-            isStoredInMemoryOnly: false,
-            allowsSave: true,
-            groupContainer: .identifier(iosSharedAppGroupIdentifier),
-            cloudKitDatabase: .none
-        )
-        do {
-            let container = try ModelContainer(for: schema, configurations: [config])
-            IOSRuntimeLog.log("SwiftData storage: simulator app group only (CloudKit disabled)")
-            return container
-        } catch {
-            IOSRuntimeLog.log("Simulator ModelContainer (app group) failed: \(error), trying in-memory.")
-            let inMemoryConfig = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
-            if let fallback = try? ModelContainer(for: schema, configurations: [inMemoryConfig]) {
-                IOSRuntimeLog.log("SwiftData storage: simulator in-memory fallback")
-                return fallback
-            }
-            fatalError("Failed to create ModelContainer in simulator: \(error)")
-        }
-        #else
         let config = ModelConfiguration(
             "default",
             schema: schema,
             isStoredInMemoryOnly: false,
             allowsSave: true,
-            groupContainer: .identifier(iosSharedAppGroupIdentifier),
-            cloudKitDatabase: .private(iosCloudKitContainerIdentifier)
+            cloudKitDatabase: .none
         )
         do {
             let container = try ModelContainer(for: schema, configurations: [config])
-            IOSRuntimeLog.log("SwiftData storage: app group + CloudKit")
+            IOSRuntimeLog.log("SwiftData storage: local app sandbox only (CloudKit disabled)")
             return container
         } catch {
-            IOSRuntimeLog.log("CloudKit ModelContainer failed: \(error), falling back to in-memory.")
+            IOSRuntimeLog.log("Local ModelContainer failed: \(error), falling back to in-memory.")
             let fallback = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
             IOSRuntimeLog.log("SwiftData storage: in-memory fallback")
             return (try? ModelContainer(for: schema, configurations: [fallback]))
                 ?? { fatalError("Fallback in-memory ModelContainer failed: \(error)") }()
         }
-        #endif
     }()
 
     var body: some Scene {
@@ -92,46 +61,6 @@ struct AgentKVTiOSApp: App {
                 .environment(objectivesStore)
         }
         .modelContainer(sharedModelContainer)
-    }
-}
-
-private func logIOSCloudKitDiagnostics() {
-    let container = CKContainer(identifier: iosCloudKitContainerIdentifier)
-    IOSRuntimeLog.log("[CloudKitDiagnostics] Container: \(iosCloudKitContainerIdentifier)")
-    container.accountStatus { status, error in
-        if let error {
-            IOSRuntimeLog.log("[CloudKitDiagnostics] accountStatus error: \(error)")
-            return
-        }
-        IOSRuntimeLog.log("[CloudKitDiagnostics] accountStatus: \(describeIOSCloudKitAccountStatus(status))")
-    }
-    container.fetchUserRecordID { recordID, error in
-        if let error {
-            IOSRuntimeLog.log("[CloudKitDiagnostics] userRecordID error: \(error)")
-            return
-        }
-        guard let recordID else {
-            IOSRuntimeLog.log("[CloudKitDiagnostics] userRecordID: nil")
-            return
-        }
-        IOSRuntimeLog.log("[CloudKitDiagnostics] userRecordID: \(recordID.recordName) zone=\(recordID.zoneID.zoneName)")
-    }
-}
-
-private func describeIOSCloudKitAccountStatus(_ status: CKAccountStatus) -> String {
-    switch status {
-    case .available:
-        return "available"
-    case .couldNotDetermine:
-        return "couldNotDetermine"
-    case .noAccount:
-        return "noAccount"
-    case .restricted:
-        return "restricted"
-    case .temporarilyUnavailable:
-        return "temporarilyUnavailable"
-    @unknown default:
-        return "unknown(\(status.rawValue))"
     }
 }
 
@@ -178,12 +107,6 @@ enum IOSRuntimeLog {
     }
 
     private static func resolvedLogFileURL() -> URL {
-        if let sharedContainerURL = FileManager.default.containerURL(
-            forSecurityApplicationGroupIdentifier: iosSharedAppGroupIdentifier
-        ) {
-            return sharedContainerURL.appending(path: "Library/Logs/agentkvt-ios.log")
-        }
-
         let appSupportURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
             .first ?? FileManager.default.temporaryDirectory
         return appSupportURL.appending(path: "agentkvt-ios.log")

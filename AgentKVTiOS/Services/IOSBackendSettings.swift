@@ -7,9 +7,7 @@ struct IOSBackendSettingsSource: Sendable {
     static func live() -> IOSBackendSettingsSource {
         IOSBackendSettingsSource(
             environment: ProcessInfo.processInfo.environment,
-            groupContainerURL: FileManager.default.containerURL(
-                forSecurityApplicationGroupIdentifier: iosSharedAppGroupIdentifier
-            )
+            groupContainerURL: nil
         )
     }
 }

@@ -92,3 +92,55 @@ struct IOSBackendSettingsTests {
         #expect(s.startupMessage.contains("mac.local"))
     }
 }
+
+@Suite("RootViewStateResolver")
+struct RootViewStateResolverTests {
+
+    @Test("shows backend error when bootstrap fails before any local family members exist")
+    func showsBackendErrorWhenNoMembersExist() {
+        let destination = RootViewStateResolver.destination(
+            isBackendEnabled: true,
+            bootstrapState: .failed("Could not connect"),
+            memberCount: 0,
+            hasValidSelection: false
+        )
+
+        #expect(destination == .backendError("Could not connect"))
+    }
+
+    @Test("keeps existing members reachable even if bootstrap refresh fails")
+    func keepsExistingMembersReachableAfterBootstrapFailure() {
+        let destination = RootViewStateResolver.destination(
+            isBackendEnabled: true,
+            bootstrapState: .failed("Could not connect"),
+            memberCount: 2,
+            hasValidSelection: false
+        )
+
+        #expect(destination == .profilePicker)
+    }
+
+    @Test("shows onboarding only when there are no members and no bootstrap failure")
+    func showsOnboardingForEmptyLocalState() {
+        let destination = RootViewStateResolver.destination(
+            isBackendEnabled: false,
+            bootstrapState: .loaded,
+            memberCount: 0,
+            hasValidSelection: false
+        )
+
+        #expect(destination == .onboarding)
+    }
+
+    @Test("shows dashboard when a valid profile is already selected")
+    func showsDashboardForValidSelection() {
+        let destination = RootViewStateResolver.destination(
+            isBackendEnabled: true,
+            bootstrapState: .loaded,
+            memberCount: 1,
+            hasValidSelection: true
+        )
+
+        #expect(destination == .dashboard)
+    }
+}

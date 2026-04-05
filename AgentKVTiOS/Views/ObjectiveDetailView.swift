@@ -645,7 +645,7 @@ private struct ObjectiveActivityCard: View {
                         .foregroundStyle(.tertiary)
                 }
             } else if showBoardSyncHint {
-                Text("Server logs update from the API; Mac board rows sync via iCloud when available.")
+                Text("Server logs update from the API; Mac board rows arrive separately from the backend worker pipeline.")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
             }

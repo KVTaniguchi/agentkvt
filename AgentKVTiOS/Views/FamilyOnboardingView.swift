@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 import ManagerCore
 
-/// First-run: explain family iCloud and create the first in-app profile.
+/// First-run: create the first family profile for this device/workspace.
 struct FamilyOnboardingView: View {
     @Environment(\.modelContext) private var modelContext
     @ObservedObject var profileStore: FamilyProfileStore
@@ -20,17 +20,15 @@ struct FamilyOnboardingView: View {
                 Section {
                     Text(
                         """
-                        AgentKVT syncs through iCloud using your family’s shared Apple ID.
+                        AgentKVT syncs through the AgentKVT server.
 
-                        On this device: open Settings, tap your name, and sign in to iCloud with that Apple ID. This app does not ask for your Apple ID password — iOS handles sign-in in Settings.
-
-                        Personal Apple IDs and their data are not accessed; only what you add in AgentKVT is shared.
+                        Signing in to iCloud is not required on this device. Create the profile name that should label your messages, uploads, and actions in the shared workspace.
                         """
                     )
                     .font(.body)
                     .foregroundStyle(.primary)
                 } header: {
-                    Text("Family iCloud")
+                    Text("Family profile")
                 }
 
                 Section {
@@ -40,7 +38,7 @@ struct FamilyOnboardingView: View {
                 } header: {
                     Text("Your profile")
                 } footer: {
-                    Text("Each family member creates a profile here. It labels your messages and uploads in the shared database.")
+                    Text("Each family member creates a profile here. It labels your messages and uploads in the shared workspace.")
                 }
 
                 if let errorMessage {

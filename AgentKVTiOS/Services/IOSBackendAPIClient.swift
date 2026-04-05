@@ -498,20 +498,16 @@ final class IOSBackendSyncService {
     }
 
     @MainActor
-    func bootstrap(modelContext: ModelContext) async {
+    func bootstrap(modelContext: ModelContext) async throws {
         guard let client else { return }
 
-        do {
-            let snapshot = try await client.fetchBootstrap()
-            try reconcileFamilyMembers(snapshot.familyMembers, into: modelContext)
-            try reconcileActionItems(snapshot.actionItems, into: modelContext)
-            try reconcileAgentLogs(snapshot.agentLogs, into: modelContext)
-            try reconcileLifeContextEntries(snapshot.lifeContextEntries, into: modelContext)
-            try modelContext.save()
-            IOSRuntimeLog.log("[IOSBackendSync] Bootstrapped \(snapshot.familyMembers.count) family member(s), \(snapshot.actionItems.count) action item(s), \(snapshot.agentLogs.count) log(s), and \(snapshot.lifeContextEntries.count) life-context entry/entries from backend.")
-        } catch {
-            IOSRuntimeLog.log("[IOSBackendSync] Bootstrap failed: \(error)")
-        }
+        let snapshot = try await client.fetchBootstrap()
+        try reconcileFamilyMembers(snapshot.familyMembers, into: modelContext)
+        try reconcileActionItems(snapshot.actionItems, into: modelContext)
+        try reconcileAgentLogs(snapshot.agentLogs, into: modelContext)
+        try reconcileLifeContextEntries(snapshot.lifeContextEntries, into: modelContext)
+        try modelContext.save()
+        IOSRuntimeLog.log("[IOSBackendSync] Bootstrapped \(snapshot.familyMembers.count) family member(s), \(snapshot.actionItems.count) action item(s), \(snapshot.agentLogs.count) log(s), and \(snapshot.lifeContextEntries.count) life-context entry/entries from backend.")
     }
 
     @MainActor

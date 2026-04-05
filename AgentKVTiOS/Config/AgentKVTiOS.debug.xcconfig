@@ -1,0 +1,6 @@
+// API base for Debug builds. Override without editing the repo:
+//   AgentKVTiOS/Config/AgentKVTiOS.debug.local.xcconfig (gitignored)
+AGENTKVT_API_BASE_URL = http:/$()/192.168.4.29:3000
+AGENTKVT_WORKSPACE_SLUG = default
+
+#include? "AgentKVTiOS.debug.local.xcconfig"
