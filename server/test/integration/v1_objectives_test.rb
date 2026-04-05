@@ -134,6 +134,7 @@ class V1ObjectivesTest < ActionDispatch::IntegrationTest
     assert_not_nil                  body["research_snapshots"].first["task_id"]
     assert_equal 1,                 body["agent_logs"].length
     assert_equal "Objective Worker alpha", body["agent_logs"].first.dig("metadata_json", "mission_name")
+    assert_equal 0,                 body["online_agent_registrations_count"]
   end
 
   test "show returns 404 for unknown objective" do

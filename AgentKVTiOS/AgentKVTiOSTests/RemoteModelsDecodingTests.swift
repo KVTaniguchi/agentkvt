@@ -242,7 +242,8 @@ struct IOSBackendObjectiveDetailDecodingTests {
               "created_at": "2026-03-28T11:05:00Z",
               "updated_at": "2026-03-28T11:05:00Z"
             }
-          ]
+          ],
+          "online_agent_registrations_count": 2
         }
         """
         let detail = try decode(IOSBackendObjectiveDetail.self, from: json)
@@ -253,6 +254,7 @@ struct IOSBackendObjectiveDetailDecodingTests {
         #expect(detail.researchSnapshots[0].key == "30yr_rate")
         #expect(detail.agentLogs.count == 1)
         #expect(detail.agentLogs[0].phase == "worker_claim")
+        #expect(detail.onlineAgentRegistrationsCount == 2)
     }
 
     @Test("Decodes empty tasks and snapshots arrays")
@@ -275,5 +277,6 @@ struct IOSBackendObjectiveDetailDecodingTests {
         let detail = try decode(IOSBackendObjectiveDetail.self, from: json)
         #expect(detail.tasks.isEmpty)
         #expect(detail.researchSnapshots.isEmpty)
+        #expect(detail.onlineAgentRegistrationsCount == 0)
     }
 }

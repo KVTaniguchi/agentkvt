@@ -29,10 +29,13 @@ class TaskExecutorJob < ApplicationJob
     end
 
     webhook_url = agent&.webhook_url
+    effective_url = webhook_url.presence || MacAgentClient::DEFAULT_WEBHOOK_URL
     triggered = MacAgentClient.new(webhook_url: webhook_url).trigger_task_search(task)
 
     unless triggered
-      Rails.logger.warn("[TaskExecutorJob] Webhook delivery failed for task=#{task_id}, reverting to pending")
+      Rails.logger.warn(
+        "[TaskExecutorJob] Webhook delivery failed task=#{task_id} agent=#{agent&.agent_id || 'none'} url=#{effective_url} — reverting to pending"
+      )
       task.update_columns(status: "pending", claimed_at: nil, claimed_by_agent_id: nil)
     end
   end

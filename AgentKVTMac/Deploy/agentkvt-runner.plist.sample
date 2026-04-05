@@ -18,6 +18,8 @@
     <!-- <key>AGENTKVT_API_BASE_URL</key><string>http://100.64.0.10:3000</string> -->
     <!-- <key>AGENTKVT_WORKSPACE_SLUG</key><string>default</string> -->
     <!-- <key>AGENTKVT_AGENT_TOKEN</key><string>replace-me</string> -->
+    <!-- Required when the API runs on another machine: URL the server can POST to for task dispatch (Tailscale/LAN/ngrok + WEBHOOK_PORT path). -->
+    <!-- <key>AGENTKVT_AGENT_WEBHOOK_PUBLIC_URL</key><string>http://100.x.x.x:8765</string> -->
     <!-- <key>AGENTKVT_DISABLE_CLOUDKIT</key><true/> -->
     <key>SCHEDULER_INTERVAL_SECONDS</key>
     <integer>30</integer>

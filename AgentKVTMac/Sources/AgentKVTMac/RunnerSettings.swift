@@ -43,6 +43,8 @@ struct RunnerSettings: Sendable {
     let inboxDirectory: URL?
     let inboundDirectory: URL?
     let webhookPort: UInt16
+    /// When set, registered with the API so `TaskExecutorJob` can POST to a URL reachable from the server (Tailscale, ngrok, LAN IP). If nil, defaults to `http://127.0.0.1:<WEBHOOK_PORT>` (only works when Rails runs on the same machine as this runner).
+    let agentWebhookPublicURL: String?
     let disableCloudKit: Bool
     let imapHost: String?
     let imapPort: Int
@@ -82,6 +84,11 @@ struct RunnerSettings: Sendable {
         messages.append(
             "[Config] Mode: \(mode) | Ollama: \(ollamaModel) @ \(ollamaBaseURL.absoluteString) | Backend: \(backend) [workspace=\(workspace)] | Objective workers: \(objectiveWorkerConcurrency) | Webhook: \(webhookPort) | Clock: \(schedulerIntervalSeconds)s | CloudKit: \(cloudKit)"
         )
+        if backendBaseURL != nil, (agentWebhookPublicURL == nil || agentWebhookPublicURL?.isEmpty == true) {
+            messages.append(
+                "[Config] AGENTKVT_AGENT_WEBHOOK_PUBLIC_URL is unset — registering http://127.0.0.1:\(webhookPort). Remote APIs cannot reach that address; set the env var to your Mac's reachable URL (e.g. Tailscale IP or tunnel) so Run now can dispatch tasks."
+            )
+        }
         return messages
     }
 
@@ -108,6 +115,11 @@ struct RunnerSettings: Sendable {
         let inboundDirectory = resolver.expandedURL(for: "AGENTKVT_INBOUND_DIR")
         let configuredWebhookPort = resolver.int(for: "WEBHOOK_PORT") ?? 8765
         let webhookPort = UInt16(clamping: configuredWebhookPort)
+        let agentWebhookPublicURL: String? = resolver.string(for: "AGENTKVT_AGENT_WEBHOOK_PUBLIC_URL").flatMap { raw in
+            var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            while s.hasSuffix("/") { s.removeLast() }
+            return s.isEmpty ? nil : s
+        }
         let disableCloudKit = resolver.bool(for: "AGENTKVT_DISABLE_CLOUDKIT") ?? false
         let imapHost = resolver.string(for: "AGENTKVT_IMAP_HOST")
         let imapPort = resolver.int(for: "AGENTKVT_IMAP_PORT") ?? 993
@@ -136,6 +148,7 @@ struct RunnerSettings: Sendable {
             inboxDirectory: inboxDirectory,
             inboundDirectory: inboundDirectory,
             webhookPort: webhookPort,
+            agentWebhookPublicURL: agentWebhookPublicURL,
             disableCloudKit: disableCloudKit,
             imapHost: imapHost,
             imapPort: imapPort,

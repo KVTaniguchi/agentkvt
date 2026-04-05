@@ -18,6 +18,7 @@ struct RunnerSettingsTests {
         #expect(settings.runScheduler)
         #expect(settings.ollamaModel == "llama4:latest")
         #expect(settings.webhookPort == 8765)
+        #expect(settings.agentWebhookPublicURL == nil)
         #expect(settings.schedulerIntervalSeconds == 60)
         #expect(settings.configFileURL.path == "/tmp/agentkvt-runner-settings-home/.agentkvt/agentkvt-runner.plist")
     }
@@ -103,6 +104,21 @@ struct RunnerSettingsTests {
         #expect(settings.schedulerIntervalSeconds == 10)
         #expect(settings.backendBaseURL?.absoluteString == "http://127.0.0.1:3000")
         #expect(settings.backendWorkspaceSlug == "override-workspace")
+    }
+
+    @Test("AGENTKVT_AGENT_WEBHOOK_PUBLIC_URL trims trailing slashes")
+    func agentWebhookPublicURLFromEnvironment() {
+        let source = RunnerSettingsSource(
+            environment: [
+                "AGENTKVT_AGENT_WEBHOOK_PUBLIC_URL": "http://10.0.0.5:8765///",
+                "AGENTKVT_API_BASE_URL": "http://127.0.0.1:3000"
+            ],
+            bundleIdentifier: "com.agentkvt.app",
+            groupContainerURL: nil,
+            homeDirectory: URL(fileURLWithPath: "/tmp/agentkvt-runner-settings-home")
+        )
+        let settings = RunnerSettings.load(from: source)
+        #expect(settings.agentWebhookPublicURL == "http://10.0.0.5:8765")
     }
 
     private func makeTemporaryDirectory() -> URL {

@@ -349,7 +349,7 @@ private func runScheduler(
         // Agent registration + heartbeat: registers capabilities on startup, then heartbeats
         // every 15s so TaskExecutorJob can route tasks to this agent by capability.
         let agentId = "mac-agent-\(webhookPort)"
-        let webhookURLString = "http://127.0.0.1:\(webhookPort)"
+        let webhookURLString = settings.agentWebhookPublicURL ?? "http://127.0.0.1:\(webhookPort)"
         var agentCapabilities = [
             "web_search", "file_read", "objective_research",
             "write_action_item", "life_context", "work_units"

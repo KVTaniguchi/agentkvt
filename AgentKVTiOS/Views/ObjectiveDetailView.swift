@@ -41,6 +41,10 @@ struct ObjectiveDetailView: View {
         ObjectiveTaskCounts(tasks: tasks)
     }
 
+    private var onlineAgentRegistrationsCount: Int {
+        detail?.onlineAgentRegistrationsCount ?? 0
+    }
+
     private var runNowLabel: String {
         switch displayedObjective.status {
         case "pending":
@@ -108,9 +112,15 @@ struct ObjectiveDetailView: View {
                 )
             }
             if taskCounts.pending > 0 {
+                let agentHint: String
+                if onlineAgentRegistrationsCount == 0 {
+                    agentHint = " The API reports no online Mac agent. Keep the Mac runner up, set AGENTKVT_AGENT_WEBHOOK_PUBLIC_URL to an address your API host can reach (Tailscale/LAN/tunnel—not the server’s 127.0.0.1), and ensure Solid Queue workers are running on the server."
+                } else {
+                    agentHint = ""
+                }
                 return ObjectiveActivitySummary(
                     title: "Tasks are queued",
-                    message: "\(taskCounts.pending) task(s) are waiting for the Mac agent. Tap Start Pending Tasks if you want to nudge dispatch right now.",
+                    message: "\(taskCounts.pending) task(s) are waiting for the Mac agent. Tap Run now below to enqueue dispatch on the server.\(agentHint)",
                     systemImage: "clock.fill",
                     tint: .orange
                 )
@@ -184,6 +194,7 @@ struct ObjectiveDetailView: View {
                         ObjectiveActivityCard(
                             summary: activitySummary,
                             taskCounts: taskCounts,
+                            onlineAgentRegistrationsCount: onlineAgentRegistrationsCount,
                             snapshotCount: snapshots.count,
                             logCount: agentLogs.count,
                             lastLoadedAt: lastLoadedAt,
@@ -194,6 +205,7 @@ struct ObjectiveDetailView: View {
                     ObjectiveActivityCard(
                         summary: activitySummary,
                         taskCounts: taskCounts,
+                        onlineAgentRegistrationsCount: onlineAgentRegistrationsCount,
                         snapshotCount: snapshots.count,
                         logCount: agentLogs.count,
                         lastLoadedAt: lastLoadedAt
@@ -420,6 +432,7 @@ struct ObjectiveDetailView: View {
         do {
             displayedObjective = try await store.runObjectiveNow(id: displayedObjective.id)
             await loadDetail(showSpinner: false)
+            await refreshDetailBurst()
         } catch {
             actionError = error.localizedDescription
         }
@@ -434,6 +447,7 @@ struct ObjectiveDetailView: View {
         do {
             displayedObjective = try await store.resetStuckTasksAndRun(id: displayedObjective.id)
             await loadDetail(showSpinner: false)
+            await refreshDetailBurst()
         } catch {
             actionError = error.localizedDescription
         }
@@ -448,8 +462,19 @@ struct ObjectiveDetailView: View {
         do {
             displayedObjective = try await store.rerunObjective(id: displayedObjective.id)
             await loadDetail(showSpinner: false)
+            await refreshDetailBurst()
         } catch {
             actionError = error.localizedDescription
+        }
+    }
+
+    /// After nudging the server, poll quickly so `in_progress` tasks appear without waiting for the 4s loop.
+    @MainActor
+    private func refreshDetailBurst() async {
+        for _ in 0..<24 {
+            try? await Task.sleep(for: .milliseconds(900))
+            if Task.isCancelled { break }
+            await loadDetail(showSpinner: false)
         }
     }
 
@@ -500,6 +525,7 @@ private struct ObjectiveActivitySummary {
 private struct ObjectiveActivityCard: View {
     let summary: ObjectiveActivitySummary
     let taskCounts: ObjectiveTaskCounts
+    let onlineAgentRegistrationsCount: Int
     let snapshotCount: Int
     let logCount: Int
     let lastLoadedAt: Date?
@@ -545,6 +571,10 @@ private struct ObjectiveActivityCard: View {
                         ObjectiveMetricChip(label: "\(taskCounts.failed) failed", tint: .red)
                     }
                 }
+                ObjectiveMetricChip(
+                    label: onlineAgentRegistrationsCount == 1 ? "1 agent online" : "\(onlineAgentRegistrationsCount) agents online",
+                    tint: onlineAgentRegistrationsCount > 0 ? .teal : .orange
+                )
                 ObjectiveMetricChip(label: "\(snapshotCount) snapshots", tint: .secondary)
                 ObjectiveMetricChip(label: "\(logCount) logs", tint: .secondary)
             }

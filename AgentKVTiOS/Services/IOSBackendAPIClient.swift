@@ -227,11 +227,21 @@ struct IOSBackendResearchSnapshot: Codable, Sendable, Identifiable {
     let updatedAt: Date
 }
 
-struct IOSBackendObjectiveDetail: Codable, Sendable {
+struct IOSBackendObjectiveDetail: Decodable, Sendable {
     let objective: IOSBackendObjective
     let tasks: [IOSBackendTask]
     let researchSnapshots: [IOSBackendResearchSnapshot]
     let agentLogs: [IOSBackendAgentLog]
+    /// Agents that heartbeated recently (server-side); dispatch fails if this stays 0 while using a remote API.
+    let onlineAgentRegistrationsCount: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case objective
+        case tasks
+        case researchSnapshots
+        case agentLogs
+        case onlineAgentRegistrationsCount
+    }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -239,6 +249,7 @@ struct IOSBackendObjectiveDetail: Codable, Sendable {
         tasks = try container.decode([IOSBackendTask].self, forKey: .tasks)
         researchSnapshots = try container.decode([IOSBackendResearchSnapshot].self, forKey: .researchSnapshots)
         agentLogs = try container.decodeIfPresent([IOSBackendAgentLog].self, forKey: .agentLogs) ?? []
+        onlineAgentRegistrationsCount = try container.decodeIfPresent(Int.self, forKey: .onlineAgentRegistrationsCount) ?? 0
     }
 }
 

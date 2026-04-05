@@ -26,7 +26,8 @@ module V1
         objective: serialize_objective(objective),
         tasks: objective.tasks.pending_first.map { |t| serialize_task(t) },
         research_snapshots: objective.research_snapshots.recent_first.map { |s| serialize_research_snapshot(s) },
-        agent_logs: agent_logs.map { |log| serialize_agent_log(log) }
+        agent_logs: agent_logs.map { |log| serialize_agent_log(log) },
+        online_agent_registrations_count: current_workspace.agent_registrations.online.count
       }
     end
 

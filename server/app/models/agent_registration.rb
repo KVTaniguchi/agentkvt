@@ -5,9 +5,10 @@ class AgentRegistration < ApplicationRecord
 
   validates :agent_id, presence: true
   validates :status, inclusion: { in: STATUSES }
-  validates :capabilities, presence: true
+  validate :capabilities_must_be_array
 
-  scope :online, -> { where(status: "online").where("last_seen_at > ?", 30.seconds.ago) }
+  # Heartbeat interval on the Mac is ~15s; allow several missed beats before treating as offline.
+  scope :online, -> { where(status: "online").where("last_seen_at > ?", 90.seconds.ago) }
 
   # Returns online agents that declare all required capabilities.
   # An empty +required+ list matches any online agent.
@@ -15,4 +16,10 @@ class AgentRegistration < ApplicationRecord
     return online if required.blank?
     online.where("capabilities @> ?", required.to_json)
   }
+
+  private
+
+  def capabilities_must_be_array
+    errors.add(:capabilities, "must be an array") unless capabilities.is_a?(Array)
+  end
 end

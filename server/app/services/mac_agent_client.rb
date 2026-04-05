@@ -32,10 +32,10 @@ class MacAgentClient
 
     response = http.request(request)
     ok = response.is_a?(Net::HTTPSuccess)
-    Rails.logger.info("[MacAgentClient] Webhook task=#{task.id} http=#{response.code} ok=#{ok}")
+    Rails.logger.info("[MacAgentClient] Webhook task=#{task.id} url=#{uri} http=#{response.code} ok=#{ok}")
     ok
   rescue => e
-    Rails.logger.error("[MacAgentClient] Webhook failed for task=#{task.id}: #{e.message}")
+    Rails.logger.error("[MacAgentClient] Webhook failed task=#{task.id} url=#{@webhook_url} error=#{e.class}: #{e.message}")
     false
   end
 
