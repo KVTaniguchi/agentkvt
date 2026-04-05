@@ -129,5 +129,6 @@ class ObjectivePlanner
     when 0..1 then 4
     when 2..3 then 6
     else 8
+    end
   end
 end
