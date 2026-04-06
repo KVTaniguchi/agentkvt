@@ -146,8 +146,12 @@ private struct ChatThreadDetailView: View {
         chatStore.messages(for: threadID)
     }
 
-    private var pendingStatusText: String {
-        "Waiting for the family server agent to respond…"
+    private var pendingBannerTitle: String {
+        "Waiting for the Mac agent to respond…"
+    }
+
+    private var pendingBannerDetail: String {
+        "Keep AgentKVT Mac running with the same API URL and agent token as your family server. Without that, chat stays queued."
     }
 
     private var messageIDs: [UUID] {
@@ -187,9 +191,15 @@ private struct ChatThreadDetailView: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 if chatStore.hasPendingMessages(threadId: threadID) {
-                    Label(pendingStatusText, systemImage: "clock")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label(pendingBannerTitle, systemImage: "clock")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text(pendingBannerDetail)
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
 
                 HStack(alignment: .bottom, spacing: 12) {

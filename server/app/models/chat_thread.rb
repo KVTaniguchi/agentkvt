@@ -1,5 +1,11 @@
 class ChatThread < ApplicationRecord
-  DEFAULT_ALLOWED_TOOL_IDS = ["get_life_context", "fetch_work_units"].freeze
+  DEFAULT_ALLOWED_TOOL_IDS = [
+    "get_life_context",
+    "fetch_work_units",
+    "read_objective_snapshot",
+    "fetch_agent_logs",
+    "write_action_item"
+  ].freeze
   DEFAULT_SYSTEM_PROMPT = <<~TEXT.squish.freeze
     You are AgentKVT's optional chat assistant. Be concise, helpful, and privacy-conscious.
     When the user asks about objective progress, run status, queued work, or what the Mac agent is doing,

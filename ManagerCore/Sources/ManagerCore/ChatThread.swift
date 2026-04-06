@@ -36,6 +36,9 @@ public extension ChatThread {
     static let defaultAllowedToolIds = [
         "get_life_context",
         "fetch_work_units",
+        "read_objective_snapshot",
+        "fetch_agent_logs",
+        "write_action_item",
     ]
 
     static let defaultSystemPrompt = """

@@ -145,6 +145,7 @@ actor AgentExecutionQueue {
             do {
                 while try await chatRunner.processNextPendingMessage() {}
             } catch {
+                print("[AgentExecutionQueue] processPendingChat failed: \(error)")
             }
 
         // ── CloudKit sync: iOS→Mac SwiftData changes (chat, email summaries, etc.) ─
@@ -155,6 +156,7 @@ actor AgentExecutionQueue {
             do {
                 while try await chatRunner.processNextPendingMessage() {}
             } catch {
+                print("[AgentExecutionQueue] cloudKitSync chat drain failed: \(error)")
             }
         }
     }

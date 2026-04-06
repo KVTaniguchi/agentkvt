@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_04_05_213000) do
+ActiveRecord::Schema[8.0].define(version: 2026_04_05_221000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -125,7 +125,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_04_05_213000) do
     t.uuid "created_by_profile_id"
     t.string "title", default: "Assistant", null: false
     t.text "system_prompt", default: "You are AgentKVT's optional chat assistant. Be concise, helpful, and privacy-conscious. When the user asks about objective progress, run status, queued work, or what the Mac agent is doing, use the available status tools instead of guessing. When a user asks you to create a concrete follow-up they can act on later, prefer using the write_action_item tool if it is available in this chat.", null: false
-    t.jsonb "allowed_tool_ids", default: ["get_life_context", "fetch_work_units"], null: false
+    t.jsonb "allowed_tool_ids", default: ["get_life_context", "fetch_work_units", "read_objective_snapshot", "fetch_agent_logs", "write_action_item"], null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["workspace_id", "updated_at"], name: "index_chat_threads_on_workspace_id_and_updated_at"

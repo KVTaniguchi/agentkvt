@@ -89,6 +89,11 @@ struct RunnerSettings: Sendable {
                 "[Config] AGENTKVT_AGENT_WEBHOOK_PUBLIC_URL is unset — registering http://127.0.0.1:\(webhookPort). Remote APIs cannot reach that address; set the env var to your Mac's reachable URL (e.g. Tailscale IP or tunnel) so Run now can dispatch tasks."
             )
         }
+        if backendBaseURL == nil {
+            messages.append(
+                "[Config] WARNING: No AGENTKVT_API_BASE_URL. iPhone chat uses the server-backed queue; messages stay “Queued” until this runner is configured with the same API URL and AGENTKVT_AGENT_TOKEN as your backend (see group-container or ~/.agentkvt/agentkvt-runner.plist)."
+            )
+        }
         return messages
     }
 
