@@ -131,6 +131,13 @@ public func runAgentKVTMacRunner() async {
     registry.register(makeWriteResearchSnapshotTool(modelContext: context))
     registry.register(makeMultiStepSearchTool(apiKey: settings.ollamaAPIKey))
 
+    if !settings.localFileAllowedDirectories.isEmpty {
+        registry.register(makeReadLocalFileTool(allowedDirectories: settings.localFileAllowedDirectories))
+    }
+    registry.register(makeReadCalendarTool())
+    registry.register(makeWriteReminderTool())
+    registry.register(makeShellCommandTool())
+
     let client = OllamaClient(
         baseURL: settings.ollamaBaseURL,
         model: settings.ollamaModel
@@ -352,10 +359,12 @@ private func runScheduler(
         let webhookURLString = settings.agentWebhookPublicURL ?? "http://127.0.0.1:\(webhookPort)"
         var agentCapabilities = [
             "web_search", "file_read", "objective_research",
-            "write_action_item", "life_context", "work_units"
+            "write_action_item", "life_context", "work_units",
+            "calendar", "reminders", "shell_diagnostics"
         ]
         if settings.notificationEmail != nil { agentCapabilities.append("email") }
         if settings.githubPAT != nil { agentCapabilities.append("github") }
+        if !settings.localFileAllowedDirectories.isEmpty { agentCapabilities.append("local_file_read") }
 
         Task(priority: .utility) {
             while !Task.isCancelled {

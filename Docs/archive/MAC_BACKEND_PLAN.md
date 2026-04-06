@@ -1,3 +1,5 @@
+> **⚠️ HISTORICAL** — This document has been archived. It describes completed work or superseded architecture. See the active docs in `Docs/` for current information.
+
 # Mac-Hosted Backend Plan
 
 This document defines the first concrete rollout for moving AgentKVT's shared state off private CloudKit and onto a Rails API + Postgres backend hosted on the server Mac.

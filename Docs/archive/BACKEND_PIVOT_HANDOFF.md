@@ -1,3 +1,5 @@
+> **⚠️ HISTORICAL** — This document has been archived. It describes completed work or superseded architecture. See the active docs in `Docs/` for current information.
+
 # Backend Pivot Handoff
 
 This document is the handoff plan for the AgentKVT architecture pivot from CloudKit-as-shared-backbone to a Mac-hosted Rails API + Postgres backend.

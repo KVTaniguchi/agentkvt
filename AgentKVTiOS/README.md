@@ -21,11 +21,13 @@ SwiftUI iPhone client for the AgentKVT family server. The app reads shared famil
 
 ## Features
 
-- **Objectives tab:** View and manage server-backed family objectives and their task progress.
-- **Actions tab:** Lists server-backed `ActionItem` entries with native intent buttons.
-- **Context tab:** Edit server-backed `LifeContext` entries.
-- **Log tab:** Review recent family-server agent logs.
+- **Objectives tab:** Create and manage server-backed objectives. View decomposed tasks, research results, and generative result layouts.
+- **Actions tab:** Lists server-backed `ActionItem` entries with native intent buttons (url.open, calendar.create, etc.).
+- **Context tab:** Edit server-backed `LifeContext` entries (goals, location, preferences).
+- **Log tab:** Review recent family-server agent logs grouped by phase.
+- **Chat tab:** Conversational interface with the agent, with family profile attribution.
+- **Files tab:** Upload PDFs, text files, or spreadsheets to the family server for agent processing.
 
-For the current backend-first sync model, see `Docs/SYNC.md`.
+For the backend-first sync model, see `Docs/SYNC.md`.
 
 **Build succeeds but nothing launches?** See [RUN_TROUBLESHOOTING.md](RUN_TROUBLESHOOTING.md) (scheme, destination, simulator, and Run settings).

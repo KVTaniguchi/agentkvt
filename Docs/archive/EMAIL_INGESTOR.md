@@ -1,3 +1,5 @@
+> **⚠️ HISTORICAL** — This document has been archived. It describes completed work or superseded architecture. See the active docs in `Docs/` for current information.
+
 # Email Ingestor (Agent Inbox)
 
 The agent responds to email triggers via a dedicated **Agent Inbox**. All PII is stripped before the LLM sees the content.

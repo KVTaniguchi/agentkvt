@@ -1,3 +1,5 @@
+> **⚠️ HISTORICAL** — This document has been archived. It describes completed work or superseded architecture. See the active docs in `Docs/` for current information.
+
 # Backend Deployment
 
 This is the repeatable deployment path for the Rails API that runs on the server Mac.

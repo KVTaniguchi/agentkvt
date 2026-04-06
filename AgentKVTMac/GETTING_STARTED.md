@@ -1,6 +1,6 @@
 # Run the Mac Brain in Xcode
 
-Use this guide when you want to run the AgentKVT Mac Brain as a signed macOS app instead of a plain `swift run` executable. This is the preferred path for real shared-store and CloudKit verification.
+Use this guide when you want to run the AgentKVT Mac Brain as a signed macOS app. For backend mode (recommended), the app connects to the Rails API on the same Mac.
 
 ## 1. Open the existing Xcode project
 
@@ -36,10 +36,8 @@ Do not use an iPhone simulator for this scheme.
 The Mac target should use:
 
 - the entitlements file [AgentKVTMac/AgentKVTMac.entitlements](AgentKVTMac.entitlements)
-- the CloudKit container `iCloud.AgentKVT`
-- the application group `group.com.agentkvt.shared`
 
-If Xcode asks you to resolve signing or capability issues, fix those before relying on the app for sync verification.
+If Xcode asks you to resolve signing or capability issues, fix those before running.
 
 ## 5. Run the app
 
@@ -52,15 +50,8 @@ Expected behavior:
 - console output includes the selected SwiftData storage mode
 - the runner begins polling for due missions
 
-## 6. Use this for real E2E verification
+## 6. Configuration
 
-This is the path to use when following:
+For backend mode (recommended), configure the runner plist with API connection details. See [Docs/DEPLOYMENT.md](../Docs/DEPLOYMENT.md) for full configuration.
 
-- [Docs/E2E_VERIFICATION.md](../Docs/E2E_VERIFICATION.md)
-- [Docs/SYNC.md](../Docs/SYNC.md)
-- [Docs/MAC_PRODUCTION_DEPLOYMENT.md](../Docs/MAC_PRODUCTION_DEPLOYMENT.md)
-
-Why:
-
-- `swift run AgentKVTMacRunner` is still useful for local runner checks
-- but the Xcode-built Mac app is the right path for signed entitlements, shared-store behavior, and realistic iOS-to-Mac verification
+For local-only development, `swift run AgentKVTMacRunner` can be used for isolated runner checks without the backend.

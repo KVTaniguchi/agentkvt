@@ -1,3 +1,5 @@
+> **Note:** This is the foundational architecture reference for AgentKVT. The mission engine described in section 5 has evolved into the objectives pipeline — see [Docs/EXECUTION_ROADMAP.md](Docs/EXECUTION_ROADMAP.md) for current status.
+
 1. System Architecture Overview
 
 Build a localized, closed-loop agentic system consisting of three cooperating layers:
@@ -44,24 +46,19 @@ Restricted Version Control Tool: Create a GitHub MCP tool. It must authenticate 
 
 ---
 
-5. Core Autonomous Missions (Dynamic Mission Engine)
+5. Objectives Pipeline (evolved from Dynamic Mission Engine)
 
-Do not hardcode specific user tasks. Instead, build a Dynamic Mission Engine that allows the user to define, schedule, and execute custom background loops. The macOS service acts as a runner that processes these user-defined missions—loading definitions from the **backend API** when configured, otherwise from local SwiftData.
+The original mission engine concept has evolved into a server-side objectives pipeline. Instead of users defining missions with prompts and schedules, users now define **Objectives** (high-level goals) that the Rails backend decomposes into **Tasks** via LLM-assisted planning. The Mac agent researches each task and persists findings as **ResearchSnapshots**.
 
-A. The MissionDefinition Schema
+A. User-Facing Objectives
 
-Users construct their own agents from the iOS interface. The entity must include:
-
-- **missionName:** String identifier (e.g., "Tech Job Scout", "Budget Sentinel").
-- **systemPrompt:** The user-defined instructions for the LLM (e.g., "Search for iOS roles within 15 miles and calculate the commute.").
-- **triggerSchedule:** How often the Mac agent runs this loop (e.g., Daily at 8 AM, Weekly, or Triggered by a webhook/external event).
-- **allowedMCPTools:** An array of tool IDs this specific mission is authorized to use (e.g., [web_scraper, maps_api, pdf_generator]), ensuring the principle of least privilege.
+Users create objectives from the iOS interface with a goal description (e.g. "Plan San Diego trip logistics"). The server decomposes each objective into concrete research tasks.
 
 B. The Mac Execution Loop
 
-The background macOS app runs a scheduler that obtains **due missions** (via `GET` to the agent API when the backend is configured, or from SwiftData otherwise), passes **systemPrompt** and **allowedMCPTools** to the local LLM, executes tools in the sandbox, and persists results—**action items and logs**—via **POST** to Rails when `BackendAPIClient` is active, or into SwiftData when not.
+The Mac runner receives task webhooks from the Rails backend. The `ObjectiveExecutionPool` manages concurrent worker threads that each run an `AgentTaskRunner`. Each task gets one LLM conversation with allowed tools, producing research snapshots and/or action items that are posted back to the Rails API.
 
-Output: Regardless of the custom mission, the output must always be standardized. The agent writes results so the iOS dashboard can show **ActionItem** rows (dynamic buttons) and audit **AgentLog** entries—stored in Postgres when the API path is used.
+Output: Results are persisted as `ResearchSnapshot` rows in Postgres. The iOS app can display structured research results via `ObjectivePresentationBuilder`. Concrete next steps are surfaced as `ActionItem` entries in the iOS Actions tab.
 
 C. Example Implementation (For Testing Purposes Only)
 

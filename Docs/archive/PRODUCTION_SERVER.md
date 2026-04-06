@@ -1,3 +1,5 @@
+> **⚠️ HISTORICAL** — This document has been archived. It describes completed work or superseded architecture. See the active docs in `Docs/` for current information.
+
 # Production server, TestFlight clients, and reachability
 
 This document ties together **Rails production mode + `agentkvt_production`**, **iOS Release/TestFlight API configuration**, and **network reachability** (LAN and Tailscale).

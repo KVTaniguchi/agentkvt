@@ -1,7 +1,7 @@
 # Email Ingestion
 
 The Mac agent polls `kvtingest@gmail.com` via IMAP and processes each incoming email
-as an agent mission. Subscribe to mailing lists and newsletters using that address
+as an agent task. Subscribe to mailing lists and newsletters using that address
 instead of your personal email — the agent extracts action items and surfaces them
 in the iOS Actions tab.
 
@@ -14,20 +14,32 @@ kvtingest@gmail.com   (subscribe mailing lists here)
         ▼
 ~/.agentkvt/inbox/*.eml
         │
-        │  EmailIngestor watches directory (existing)
+        │  EmailIngestor watches directory + sanitizes content
         ▼
-MissionExecutionQueue.dispatch(.emailFile)   (existing)
+AgentExecutionQueue dispatches .emailFile event
         │
-        │  "Mailing List Processor" mission fires
+        │  incoming_email_trigger tool reads next pending email
         ▼
-incoming_email_trigger → write_action_item
+Agent creates ActionItems (calendar.create, url.open, reminder.add, …)
         │
         ▼
-iOS Actions tab (calendar.create, url.open, reminder.add, …)
+iOS Actions tab
 ```
 
 No Rails changes. No iOS changes. The IMAP poller slots into the existing
 email pipeline at the inbox directory boundary.
+
+## Sanitization
+
+Before any email content reaches the agent or LLM:
+
+- **SSN / gov IDs** — digits in SSN or long ID-like patterns → `[REDACTED_SSN]` / `[REDACTED_ID]`
+- **Bank account numbers** — 4×4 digit groups or 12+ consecutive digits → `[REDACTED_ACCOUNT]`
+- **Full names** — heuristic Title Case 2–3 word phrases → `[NAME]` (the word "User" is preserved)
+
+Implemented with regex for speed; a local "Sanitizer" model can be added later for stronger name/entity redaction.
+
+The `incoming_email_trigger` tool returns only **intent** (e.g. subject) and **general content** (sanitized body). The agent uses that to drive actions without ever seeing raw PII.
 
 ---
 

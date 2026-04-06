@@ -12,7 +12,7 @@ The long-term direction is to make AgentKVT feel less like a chatbot and more li
 
 - It should run locally on Apple Silicon hardware and scale its reasoning model to available memory.
 - It should use Apple-native technologies such as SwiftData, CoreML, and NLP to reduce prompt bloat and keep state grounded in local data structures.
-- It should present users with deterministic `ActionItem` choices as the primary control loop, and include a dedicated chat interface on Tab 4 for conversational interaction.
+- It should present users with deterministic `ActionItem` choices and structured objective results as the primary control loop, with chat available for conversational interaction.
 - It should ingest sensitive personal data locally, sanitize it before model use, and keep the overall system privacy-first.
 
 ## Core Pillars
@@ -27,7 +27,7 @@ The system should rely on local Apple-friendly primitives for state, memory, and
 
 ### 3. Deterministic Control
 
-The iOS app should function as a structured remote with deterministic controls first, plus a dedicated chat surface on Tab 4. The macOS brain generates reviewable `ActionItem`s, and the user can also use chat for clarifications, exploration, and guided follow-up.
+The iOS app should function as a structured remote with deterministic controls first, plus chat for follow-up. Users define high-level **Objectives**; the system decomposes them into tasks, researches them, and surfaces results and reviewable `ActionItem`s.
 
 ### 4. Privacy-First Ingestion
 
@@ -47,27 +47,29 @@ A headless background service that performs the heavy lifting.
 
 A SwiftUI dashboard that acts as the primary control surface.
 
+- An Objectives tab lets users define goals; the system decomposes them into tasks and researches them.
 - An Actions tab surfaces dynamic `ActionItem`s for approval, review, or follow-up.
-- Mission authoring allows prompts, schedules, and authorized tools to be defined on-device.
 - A context editor manages the `LifeContext` that grounds planning and personalization.
 
-### The Shared Store (SwiftData)
+### The Backend (Rails + Postgres)
 
-The cross-device source of truth shared by the macOS brain and iOS remote, synchronized through CloudKit or a local-first transport strategy.
+The canonical source of truth hosted on the server Mac. iOS and the Mac agent both read and write through the Rails API.
 
-- `LifeContext`: facts the system must remember about the user and household
-- `MissionDefinition`: the durable definition of each mission
+- `Objective`: a user-defined goal that the system decomposes into tasks
+- `Task`: a concrete research or synthesis step within an objective
+- `ResearchSnapshot`: persisted findings from agent research
 - `ActionItem`: the deterministic output surfaced to the user
 - `AgentLog`: the audit trail for execution, reasoning outcomes, and debugging
+- `LifeContext`: facts the system must remember about the user and household
 
 ## Example Mission Patterns
 
-The product vision currently includes mission types like:
+The product vision currently includes objective patterns like:
 
-- `Job Scout`: monitor job feeds, compare against local resume context, and create review items for high-fit roles
-- `Budget Sentinel`: inspect local transaction data and flag spending that threatens savings goals
-- `Homeschool Curator`: synthesize educational inputs into themed lessons tied to the family's context
-- `Context Sync`: ingest BEE AI transcripts and update `LifeContext` when new interests, goals, or priorities emerge
+- **Trip planning**: "Plan San Diego trip logistics" → decomposed into hotel research, flights, activities
+- **Job search**: "Find senior iOS roles in SF" → decomposed into job board scanning, resume comparison, outreach tasks
+- **Financial tracking**: "Track savings progress for down payment" → decomposed into budget analysis, subscription review
+- **Context enrichment**: Ingest BEE AI transcripts and update `LifeContext` when new interests, goals, or priorities emerge
 
 ## Hardware Strategy
 
@@ -88,7 +90,7 @@ Target 70B+ models for deep document analysis, complex coding assistance, and la
 When making roadmap or implementation decisions, we should bias toward:
 
 - local execution over cloud dependence
-- deterministic UI as the primary workflow, with Tab 4 chat as a complementary interface
+- deterministic UI (objectives + actions) as the primary workflow, with chat as a complementary interface
 - structured memory over prompt-only context
 - auditable action generation over opaque autonomy
 - privacy-preserving ingestion over convenience shortcuts

@@ -42,6 +42,7 @@ struct RunnerSettings: Sendable {
     let githubAllowedRepos: [String]
     let inboxDirectory: URL?
     let inboundDirectory: URL?
+    let localFileAllowedDirectories: [URL]
     let webhookPort: UInt16
     /// When set, registered with the API so `TaskExecutorJob` can POST to a URL reachable from the server (Tailscale, ngrok, LAN IP). If nil, defaults to `http://127.0.0.1:<WEBHOOK_PORT>` (only works when Rails runs on the same machine as this runner).
     let agentWebhookPublicURL: String?
@@ -118,6 +119,7 @@ struct RunnerSettings: Sendable {
         let githubAllowedRepos = resolver.stringArray(for: "GITHUB_AGENT_REPOS")
         let inboxDirectory = resolver.expandedURL(for: "AGENTKVT_INBOX_DIR")
         let inboundDirectory = resolver.expandedURL(for: "AGENTKVT_INBOUND_DIR")
+        let localFileAllowedDirectories = resolver.expandedURLArray(for: "AGENTKVT_LOCAL_FILE_DIRS")
         let configuredWebhookPort = resolver.int(for: "WEBHOOK_PORT") ?? 8765
         let webhookPort = UInt16(clamping: configuredWebhookPort)
         let agentWebhookPublicURL: String? = resolver.string(for: "AGENTKVT_AGENT_WEBHOOK_PUBLIC_URL").flatMap { raw in
@@ -152,6 +154,7 @@ struct RunnerSettings: Sendable {
             githubAllowedRepos: githubAllowedRepos,
             inboxDirectory: inboxDirectory,
             inboundDirectory: inboundDirectory,
+            localFileAllowedDirectories: localFileAllowedDirectories,
             webhookPort: webhookPort,
             agentWebhookPublicURL: agentWebhookPublicURL,
             disableCloudKit: disableCloudKit,
@@ -240,6 +243,13 @@ private struct RunnerValueResolver {
     func expandedURL(for key: String) -> URL? {
         guard let path = string(for: key), !path.isEmpty else { return nil }
         return URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+    }
+
+    func expandedURLArray(for key: String) -> [URL] {
+        stringArray(for: key).compactMap { path in
+            let expanded = (path as NSString).expandingTildeInPath
+            return expanded.isEmpty ? nil : URL(fileURLWithPath: expanded)
+        }
     }
 
     private func string(from value: Any?) -> String? {

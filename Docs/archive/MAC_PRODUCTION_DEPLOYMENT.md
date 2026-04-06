@@ -1,3 +1,5 @@
+> **⚠️ HISTORICAL** — This document has been archived. It describes completed work or superseded architecture. See the active docs in `Docs/` for current information.
+
 # Mac Production Deployment
 
 Use this guide when the iPhone client is coming from TestFlight and the Mac Brain also needs to read the same **production** CloudKit records.

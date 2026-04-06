@@ -1,74 +1,104 @@
 <div align="center">
 
-# 🚧 IN PROGRESS 🚧
+# 🧠 AgentKVT
 
+**Your Family's Localized, Closed-Loop Agentic System**  
+*Mac Brain · iOS Remote · Rails + Postgres Backend*
+
+---
+
+🚧 **IN PROGRESS** 🚧  
 **This project is under active development. APIs, schema, and behavior may change.**
 
 </div>
 
+## Overview
+
+AgentKVT is a sovereign, self-hosted personal agent ecosystem. It operates entirely on your own hardware, ensuring your family's data never leaves your environment. It is designed to act on **Objectives** (e.g. "Plan San Diego trip logistics") by decomposing them into tasks, executing multi-step research through an autonomous Mac-hosted brain, and surfacing actionable results directly to your iOS device.
+
+By utilizing a central **Rails + PostgreSQL** backend on a Mac server instead of iCloud, multiple family members with different Apple IDs can seamlessly share a unified workspace.
+
+## Core Architecture
+
+AgentKVT consists of three cooperating layers:
+
+1. **The Remote (iOS):** A SwiftUI dashboard running on your iPhone. It's backend-first—you create **Objectives** and review **ActionItems**, context, and logs by connecting to the Rails API (often over Tailscale). Real-time status chips show when the Mac agent is actively working.
+2. **The API & Store (Server):** A Mac-hosted **Ruby on Rails** application exposing versioned HTTP endpoints. Postgres serves as the definitive, multi-device source of truth for workspaces, tasks, research snapshots, action items, and agent logs. 
+3. **The Brain (macOS):** An event-driven macOS background application `ObjectiveExecutionPool` that pulls tasks from the Rails server. It runs an autonomous loop using local LLMs (via Ollama) and a registry of sandboxed MCP (Model Context Protocol) tools to conduct research and synthesis.
+
+## How the Objectives Pipeline Works
+
+*Note: This objectives-based pipeline completely replaces the legacy "Missions" engine.*
+
+1. **Create an Objective:** A user adds a high-level goal in the iOS app.
+2. **Task Planning:** The Rails backend breaks down the objective into actionable **Tasks** using LLM-assisted planning.
+3. **Execution Delivery:** The Mac Brain continuously polls or receives webhooks from the server. It picks up pending tasks and dispatches them to worker threads.
+4. **Agentic Loop:** The local LLM research engine runs multi-step tasks using over 20+ allowed system tools (secure browsing, file reading, semantic search, etc.).
+5. **Results & Action Items:** Research findings are synced back to the Postgres database as **ResearchSnapshots** and presented natively in the iOS app. If the agent discovers a concrete next step (e.g., "Review Acme Corp Job Description" or "Approve Trip Budget"), an **ActionItem** is created.
+6. **Transparency:** Every single step, tool call, and token metric is preserved as an **AgentLog** for a complete audit trail.
+
+## Repository Structure
+
+- **`ManagerCore/`** — Shared Swift package defining the SwiftData/Model schema (`Objective`, `Task`, `ActionItem`, `AgentLog`, `ChatThread`, etc.) used by both Mac and iOS clients.
+- **`AgentKVTMac/`** — The macOS background agent app. Includes the event-driven scheduler, task runners, the sandboxed tool registry, and the Ollama client integration.
+- **`AgentKVTiOS/`** — The iOS SwiftUI project. Features tabs for Objectives, Actions, Context, Log, Chat, and Files. 
+- **`server/`** — The Ruby on Rails API. Provides the core PostgreSQL database, schema, and API controllers.
+- **`Docs/`** — Extensive architectural guides, deployment instructions, and vision documents.
+
+## Detailed Documentation
+
+To dive deeper into the project, consult our comprehensive and freshly-consolidated documentation:
+
+### 🏛 Architecture & Vision
+- [FOUNDATIONAL_PLAN.MD](FOUNDATIONAL_PLAN.MD) — Overview of architecture, schema, sandboxing, and data flows.
+- [Docs/SOVEREIGN_PLANNER_VISION.md](Docs/SOVEREIGN_PLANNER_VISION.md) — Product vision and north-star sovereign direction.
+- [Docs/EXECUTION_ROADMAP.md](Docs/EXECUTION_ROADMAP.md) — MVP definitions, milestones, and near-term task execution priorities.
+- [Docs/SUPERAGENT_IMPLEMENTATION_PHASES.md](Docs/SUPERAGENT_IMPLEMENTATION_PHASES.md) — Phased rollout plan, updated for the objectives-based pipeline.
+
+### 📖 Reference & Engineering
+- [Docs/DATA_FLOW.md](Docs/DATA_FLOW.md) — Detailed mapping of data flows (iOS → Rails → Mac Agents → iOS).
+- [Docs/TOOL_IDS.md](Docs/TOOL_IDS.md) — Master list of the 20+ authorized MCP tool IDs used by the Mac Brain.
+- [Docs/SYNC.md](Docs/SYNC.md) — Explanation of the backend-first, Postgres-authoritative sync model.
+- [Docs/LLM_THROTTLING.md](Docs/LLM_THROTTLING.md) — Runtime guidelines for a dedicated machine.
+
+### ⚙️ Operations & Deployment
+- [Docs/DEPLOYMENT.md](Docs/DEPLOYMENT.md) — Consolidated guide for setting up the Server, Mac Brain, and iOS environments.
+- [Docs/E2E_VERIFICATION.md](Docs/E2E_VERIFICATION.md) — End-to-end testing scenarios (including Career/Finance workflows) and checklists.
+
+### 📥 Data Ingestion
+- [Docs/EMAIL_INGESTION.md](Docs/EMAIL_INGESTION.md) — Handling IMAP email polling, sanitization, and the Agent Inbox.
+- [Docs/DROPZONE.md](Docs/DROPZONE.md) — Secure, local file inbound directory tracking.
+- [Docs/BEE_AI_INTEGRATION_PLAN.md](Docs/BEE_AI_INTEGRATION_PLAN.md) — Integration plan for utilizing Bee personal context over local HTTP.
+
+## Quick Start
+
+### 1. Build Shared Core
+```bash
+cd ManagerCore && swift build
+```
+
+### 2. Run Rails Server
+Requires PostgreSQL. See the [Deployment Guide](Docs/DEPLOYMENT.md).
+```bash
+./bin/run_agentkvt_api.sh
+```
+
+### 3. Run Mac Brain
+Requires [Ollama](https://ollama.ai) running on localhost.
+```bash
+# Event-driven background worker
+cd AgentKVTMac && RUN_SCHEDULER=1 swift run AgentKVTMacRunner
+```
+
+### 4. Build iOS App
+Open `AgentKVTiOS/AgentKVTiOS.xcodeproj` in Xcode. Set your Development Team in Xcode settings, build, and deploy to your device.
+
 ---
 
-# AgentKVT
+### Operations & Debugging
 
-Localized, closed-loop agentic system: **Brain** (macOS) + **Remote** (iOS). The original shared SwiftData + CloudKit bridge is being replaced by a Mac-hosted Rails API + Postgres backend so different Apple IDs can share one canonical data store.
-
-**Suggested GitHub topics** (set under repo **About** → **Topics** for discoverability):
-
-`ai-agents` · `agent-platform` · `swift` · `swiftui` · `swiftdata` · `macos` · `ios` · `ollama` · `llm` · `mcp` · `local-ai` · `autonomous-agents` · `personal-agent` · `cloudkit`
-
-## Screenshots
-
-### iOS app (Remote)
-
-| Actions | Missions | Context | Log |
-|--------|----------|---------|-----|
-| [![Actions](https://raw.githubusercontent.com/KVTaniguchi/agentkvt/main/Docs/screenshots/ios-actions.png)](https://github.com/KVTaniguchi/agentkvt/blob/main/Docs/screenshots/ios-actions.png) | [![Missions](https://raw.githubusercontent.com/KVTaniguchi/agentkvt/main/Docs/screenshots/ios-missions.png)](https://github.com/KVTaniguchi/agentkvt/blob/main/Docs/screenshots/ios-missions.png) | [![Context](https://raw.githubusercontent.com/KVTaniguchi/agentkvt/main/Docs/screenshots/ios-context.png)](https://github.com/KVTaniguchi/agentkvt/blob/main/Docs/screenshots/ios-context.png) | [![Log](https://raw.githubusercontent.com/KVTaniguchi/agentkvt/main/Docs/screenshots/ios-log.png)](https://github.com/KVTaniguchi/agentkvt/blob/main/Docs/screenshots/ios-log.png) |
-
-**Actions** — Buttons created by the Mac agent (e.g. “Review: [Company] - Senior iOS Lead”). **Missions** — Define name, prompt, schedule, and allowed tools (e.g. Find a job, weekly). **Context** — Key/value facts the agent uses (goals, location). **Log** — Audit trail of what the agent did.
-
-### Mac runner (Brain)
-
-The Mac app has no GUI. When you SSH into the Mac Studio (or run locally), you see only terminal output:
-
-![Mac terminal](https://raw.githubusercontent.com/KVTaniguchi/agentkvt/main/Docs/screenshots/mac-terminal.png)
-
-### Data flow
-
-![Data flow](https://raw.githubusercontent.com/KVTaniguchi/agentkvt/main/Docs/screenshots/data-flow.png)
-
-iOS → shared SwiftData store → Mac scheduler → MissionRunner → AgentLoop + tools → ActionItem / AgentLog → back to iOS. See [Docs/DATA_FLOW.md](Docs/DATA_FLOW.md).
-
----
-
-## Repo layout
-
-- **ManagerCore/** — Swift package: shared SwiftData schema (LifeContext, MissionDefinition, ActionItem, AgentLog). Used by both Mac and iOS.
-- **AgentKVTMac/** — macOS agent: MCP-style tool registry, Ollama client, mission runner, scheduler. Runner executable for one-off test or `RUN_SCHEDULER=1` for CRON-style runs.
-- **AgentKVTiOS/** — iOS app (Xcode project): SwiftUI dashboard (Actions, Missions, Context, Agent Log). No chat UI.
-- **server/** — Rails API app (generated on the server Mac) that will become the system of record for missions, actions, logs, and family state.
-- **Docs/** — SYNC.md, LLM_THROTTLING.md, TOOL_IDS.md, E2E_VERIFICATION.md.
-
-## Quick start
-
-1. **ManagerCore:** `cd ManagerCore && swift build`
-2. **Mac runner (test):** `cd AgentKVTMac && swift run AgentKVTMacRunner` (requires Ollama on localhost; writes one test ActionItem).
-3. **Mac scheduler:** `RUN_SCHEDULER=1 swift run AgentKVTMacRunner` (polls missions; set env for notification/GitHub tools if needed).
-4. **iOS:** Open `AgentKVTiOS/AgentKVTiOS.xcodeproj` in Xcode, set Development Team, build and run.
-
-## Operations
-
-- **Analyze agent logs over SSH:** `./bin/analyze_agent_logs.sh`
-- Defaults to `familyagent@192.168.4.144`; override with `--host` or `AGENTKVT_PROD_HOST`.
-- Add `--raw` to print the sampled log excerpts after the summary.
-
-## Planning
-
-- [Docs/SOVEREIGN_PLANNER_VISION.md](Docs/SOVEREIGN_PLANNER_VISION.md) - Product vision and north-star direction for AgentKVT as "The Sovereign Planner".
-- [Docs/EXECUTION_ROADMAP.md](Docs/EXECUTION_ROADMAP.md) - MVP definition, current-state assessment, milestones, and near-term execution order.
-- [Docs/CORE_LOOP_AUDIT.md](Docs/CORE_LOOP_AUDIT.md) - Audit of the current mission-authoring to ActionItem-return path, including concrete gaps and next fixes.
-- [FOUNDATIONAL_PLAN.MD](FOUNDATIONAL_PLAN.MD) — Architecture, schema, missions, tools, diagram.
-- [Docs/SUPERAGENT_IMPLEMENTATION_PHASES.md](Docs/SUPERAGENT_IMPLEMENTATION_PHASES.md) — Phased implementation plan (ManagerCore → Mac Brain → tools → mission engine → iOS → E2E).
-- [Docs/E2E_VERIFICATION.md](Docs/E2E_VERIFICATION.md) — E2E scenarios (Career, Finance), AgentLog audit, checklist.
-- [Docs/MAC_BACKEND_PLAN.md](Docs/MAC_BACKEND_PLAN.md) — Concrete plan for the Mac-hosted Rails + Postgres backend, including SSH bootstrap commands and first schema.
-
-Out of scope: DIYProjectManager retooling; see README for planning history.
+Analyze recent agent logs over SSH to see what your AI brain is up to:
+```bash
+./bin/analyze_agent_logs.sh
+```
+*(Tip: Set `AGENTKVT_PROD_HOST` to define your own server IP, or add `--raw` to view detailed sampled log excerpts.)*

@@ -19,6 +19,7 @@ let package = Package(
             dependencies: ["ManagerCore"],
             linkerSettings: [
                 .linkedFramework("CloudKit"),
+                .linkedFramework("EventKit"),
                 .linkedFramework("IOKit"),
             ]
         ),

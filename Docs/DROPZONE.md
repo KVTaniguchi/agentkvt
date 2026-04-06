@@ -13,8 +13,8 @@ The agent receives files from the main machine via a single **read-only** direct
 - **CSV** — read as UTF-8 text.
 - **TXT** — read as UTF-8 text.
 
-Dropped files are parsed and their content is passed to the MissionRunner as **additional context** for each scheduled mission run. Content is capped (default 100KB) to avoid oversized prompts.
+Dropped files are parsed and their content is available to the agent via the `list_dropzone_files` and `read_dropzone_file` tools. Content is capped (default 100KB) to avoid oversized prompts.
 
 ## Usage
 
-When the Mac runner runs in scheduler mode (`RUN_SCHEDULER=1`), it starts the Dropzone watcher and injects any parsed content into the mission context. Other users can point `AGENTKVT_INBOUND_DIR` to their own folder and use the same engine.
+When the Mac runner runs in scheduler mode (`RUN_SCHEDULER=1`), the Dropzone directory is watched via FSEvents. New files trigger an `.inboundFile` event in the `AgentExecutionQueue`. The `list_dropzone_files` and `read_dropzone_file` tools let the agent access this content during task execution.

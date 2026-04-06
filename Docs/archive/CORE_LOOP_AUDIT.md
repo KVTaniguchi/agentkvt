@@ -1,3 +1,5 @@
+> **⚠️ HISTORICAL** — This document has been archived. It describes completed work or superseded architecture. See the active docs in `Docs/` for current information.
+
 # Core Loop Audit
 
 This document audits roadmap item 1: the end-to-end path from mission authoring on iOS to mission execution on macOS to `ActionItem` display back on iOS.
