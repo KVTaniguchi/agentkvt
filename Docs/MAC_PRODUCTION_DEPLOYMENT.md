@@ -78,6 +78,21 @@ Useful starter values:
 
 Environment variables still override the file if you deliberately launch the app that way, but the config plist is the production-friendly path.
 
+### Secrets (API keys, tokens)
+
+Do **not** store `OLLAMA_API_KEY`, `AGENTKVT_AGENT_TOKEN`, or similar in `~/Library/LaunchAgents/*.plist`. Those files are easy to leak via backups, support bundles, or accidental sharing. Put secrets in the runner plist instead (same keys as environment variables), then restrict permissions:
+
+```bash
+chmod 600 ~/.agentkvt/agentkvt-runner.plist
+```
+
+If you already put `OLLAMA_API_KEY` in `com.agentkvt.macapp.plist`, migrate it once:
+
+```bash
+./bin/agentkvt_move_ollama_key_off_launchagent.sh
+launchctl kickstart -k "gui/$(id -u)/com.agentkvt.macapp"
+```
+
 For the current backend pivot smoke environment, there is one important distinction:
 
 - signed/TestFlight macOS app: use the shared app-group config/log paths above

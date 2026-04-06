@@ -38,6 +38,12 @@
     PlistBuddy/python as that user, e.g. sudo -u familyagent python3 ... on the plist path.
   - launchctl bootout/bootstrap must use the same account that owns the LaunchAgent
     (e.g. sudo -u familyagent launchctl ...), not your personal GUI uid.
+
+  Security — do NOT put API keys or tokens in this LaunchAgent plist. Files under
+  ~/Library/LaunchAgents are often copied into diagnostics or dotfile repos. Store
+  OLLAMA_API_KEY, AGENTKVT_AGENT_TOKEN, etc. in ~/.agentkvt/agentkvt-runner.plist
+  (chmod 600) and point the app there with AGENTKVT_CONFIG_FILE if needed. Use:
+    bin/agentkvt_move_ollama_key_off_launchagent.sh
 -->
 
 <plist version="1.0">

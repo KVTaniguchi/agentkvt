@@ -13,6 +13,7 @@
     <!-- Optional overrides -->
     <key>OLLAMA_BASE_URL</key>
     <string>http://localhost:11434</string>
+    <!-- Ollama web search/fetch: keep in THIS file (chmod 600), not in LaunchAgent plists. -->
     <!-- <key>OLLAMA_API_KEY</key><string>ollama_...</string> -->
     <!-- Backend API mode -->
     <!-- <key>AGENTKVT_API_BASE_URL</key><string>http://100.64.0.10:3000</string> -->
