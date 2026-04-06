@@ -12,7 +12,8 @@ class ObjectivePresentationJob < ApplicationJob
 
     objective.update_columns(
       presentation_json: result,
-      presentation_generated_at: Time.current
+      presentation_generated_at: Time.current,
+      presentation_enqueued_at: nil
     )
   end
 end

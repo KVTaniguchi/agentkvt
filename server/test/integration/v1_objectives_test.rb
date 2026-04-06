@@ -377,6 +377,86 @@ class V1ObjectivesTest < ActionDispatch::IntegrationTest
     assert_equal "Secret", objective.reload.goal
   end
 
+  # ── presentation ─────────────────────────────────────────────────────────
+
+  test "presentation returns ready status with cached layout when fresh" do
+    objective = @workspace.objectives.create!(goal: "Trip plan", status: "active", priority: 0)
+    layout = { "layout" => { "type" => "vstack", "children" => [] } }.to_json
+    objective.update_columns(
+      presentation_json: layout,
+      presentation_generated_at: Time.current
+    )
+
+    get "/v1/objectives/#{objective.id}/presentation", headers: workspace_headers
+
+    assert_response :success
+    body = JSON.parse(response.body)
+    assert_equal "ready", body["status"]
+    assert_not_nil body["layout"]
+  end
+
+  test "presentation enqueues job and returns generating when no presentation exists" do
+    objective = @workspace.objectives.create!(goal: "New objective", status: "active", priority: 0)
+    enqueued_ids = []
+
+    with_stubbed_presentation_job do |stub|
+      stub.define_singleton_method(:perform_later) { |id| enqueued_ids << id }
+      get "/v1/objectives/#{objective.id}/presentation", headers: workspace_headers
+    end
+
+    assert_response :accepted
+    assert_equal "generating", JSON.parse(response.body)["status"]
+    assert_equal [ objective.id.to_s ], enqueued_ids
+    assert_not_nil objective.reload.presentation_enqueued_at
+  end
+
+  test "presentation does not enqueue a second job when one was recently enqueued" do
+    objective = @workspace.objectives.create!(goal: "Already queued", status: "active", priority: 0)
+    objective.update_column(:presentation_enqueued_at, 30.seconds.ago)
+    enqueued_ids = []
+
+    with_stubbed_presentation_job do |stub|
+      stub.define_singleton_method(:perform_later) { |id| enqueued_ids << id }
+      get "/v1/objectives/#{objective.id}/presentation", headers: workspace_headers
+    end
+
+    assert_response :accepted
+    assert_equal "generating", JSON.parse(response.body)["status"]
+    assert_empty enqueued_ids
+  end
+
+  test "presentation re-enqueues after debounce window expires" do
+    objective = @workspace.objectives.create!(goal: "Expired debounce", status: "active", priority: 0)
+    objective.update_column(:presentation_enqueued_at, 91.seconds.ago)
+    enqueued_ids = []
+
+    with_stubbed_presentation_job do |stub|
+      stub.define_singleton_method(:perform_later) { |id| enqueued_ids << id }
+      get "/v1/objectives/#{objective.id}/presentation", headers: workspace_headers
+    end
+
+    assert_response :accepted
+    assert_equal [ objective.id.to_s ], enqueued_ids
+  end
+
+  test "presentation returns generating when cached presentation is stale" do
+    objective = @workspace.objectives.create!(goal: "Stale result", status: "active", priority: 0)
+    task = objective.tasks.create!(description: "Research it", status: "completed")
+    old_layout = { "layout" => { "type" => "vstack", "children" => [] } }.to_json
+    objective.update_columns(presentation_json: old_layout, presentation_generated_at: 10.minutes.ago)
+    objective.research_snapshots.create!(key: "price", value: "$5", task: task, checked_at: Time.current)
+    enqueued_ids = []
+
+    with_stubbed_presentation_job do |stub|
+      stub.define_singleton_method(:perform_later) { |id| enqueued_ids << id }
+      get "/v1/objectives/#{objective.id}/presentation", headers: workspace_headers
+    end
+
+    assert_response :accepted
+    assert_equal "generating", JSON.parse(response.body)["status"]
+    assert_equal [ objective.id.to_s ], enqueued_ids
+  end
+
   # ── destroy ──────────────────────────────────────────────────────────────
 
   test "destroy removes objective and returns no content" do
@@ -444,5 +524,15 @@ class V1ObjectivesTest < ActionDispatch::IntegrationTest
     yield stub
   ensure
     TaskExecutorJob.define_singleton_method(:perform_later, &original)
+  end
+
+  def with_stubbed_presentation_job
+    stub = Object.new
+    stub.define_singleton_method(:perform_later) { |_id| }
+    original = ObjectivePresentationJob.method(:perform_later)
+    ObjectivePresentationJob.define_singleton_method(:perform_later) { |id| stub.perform_later(id) }
+    yield stub
+  ensure
+    ObjectivePresentationJob.define_singleton_method(:perform_later, &original)
   end
 end

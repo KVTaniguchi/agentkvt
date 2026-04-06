@@ -89,7 +89,14 @@ module V1
         return render json: { layout: cached["layout"], status: "ready" }
       end
 
-      ObjectivePresentationJob.perform_later(objective.id.to_s)
+      # Debounce: only enqueue a new job if one hasn't been enqueued in the last 90 seconds.
+      # Without this guard, iOS polling every ~5s spawns a new inference job on every request
+      # while the previous job is still running, creating a compounding storm on Ollama.
+      unless objective.presentation_enqueued_at&.> 90.seconds.ago
+        objective.update_column(:presentation_enqueued_at, Time.current)
+        ObjectivePresentationJob.perform_later(objective.id.to_s)
+      end
+
       render json: { layout: nil, status: "generating" }, status: :accepted
     end
 
