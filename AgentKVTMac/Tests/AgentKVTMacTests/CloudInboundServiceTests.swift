@@ -9,7 +9,7 @@ struct CloudInboundServiceTests {
     private func makeTestContainer() throws -> ModelContext {
         let schema = Schema([
             LifeContext.self,
-            MissionDefinition.self,
+            ResearchSnapshot.self,
             ActionItem.self,
             AgentLog.self,
             InboundFile.self

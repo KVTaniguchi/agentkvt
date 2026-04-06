@@ -64,7 +64,7 @@ struct ChatRunnerTests {
         let registry = ToolRegistry()
         registry.register(makeFetchWorkUnitsTool(modelContext: context))
 
-        context.insert(WorkUnit(title: "Plan family trip", category: "travel", state: .pending, payloadJson: [:]))
+        context.insert(WorkUnit(title: "Plan family trip", category: "travel", state: WorkUnitState.pending.rawValue))
 
         let thread = ChatThread(title: "Work Status", allowedToolIds: [])
         context.insert(thread)

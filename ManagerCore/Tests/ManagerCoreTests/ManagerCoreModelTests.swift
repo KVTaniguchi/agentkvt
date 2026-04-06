@@ -5,21 +5,16 @@ import Testing
 
 struct ManagerCoreModelTests {
 
-    @Test("MissionDefinition can be created and has expected properties")
-    func missionDefinitionCreation() throws {
-        let mission = MissionDefinition(
-            missionName: "Find a job",
-            systemPrompt: "You are a career coach.",
-            triggerSchedule: "weekly|sunday",
-            allowedMCPTools: ["write_action_item", "web_search_and_fetch"],
-            ownerProfileId: UUID(uuidString: "11111111-1111-1111-1111-111111111111")
+    @Test("ResearchSnapshot can be created and has expected properties")
+    func researchSnapshotCreation() throws {
+        let snap = ResearchSnapshot(
+            key: "hotel_rate",
+            lastKnownValue: "$199",
+            deltaNote: "down $10"
         )
-        #expect(mission.missionName == "Find a job")
-        #expect(mission.triggerSchedule == "weekly|sunday")
-        #expect(mission.allowedMCPTools.count == 2)
-        #expect(mission.isEnabled == true)
-        #expect(mission.lastRunAt == nil)
-        #expect(mission.ownerProfileId == UUID(uuidString: "11111111-1111-1111-1111-111111111111"))
+        #expect(snap.key == "hotel_rate")
+        #expect(snap.lastKnownValue == "$199")
+        #expect(snap.deltaNote == "down $10")
     }
 
     @Test("ActionItem can be created and has expected properties")
@@ -73,7 +68,6 @@ struct ManagerCoreModelTests {
     func stigmergyModelsRoundTrip() throws {
         let schema = Schema([
             LifeContext.self,
-            MissionDefinition.self,
             ActionItem.self,
             AgentLog.self,
             InboundFile.self,
@@ -83,6 +77,7 @@ struct ManagerCoreModelTests {
             EphemeralPin.self,
             ResourceHealth.self,
             FamilyMember.self,
+            ResearchSnapshot.self,
         ])
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
         let container = try ModelContainer(for: schema, configurations: [config])
@@ -121,7 +116,6 @@ struct ManagerCoreModelTests {
     func schemaAndContainer() throws {
         let schema = Schema([
             LifeContext.self,
-            MissionDefinition.self,
             ActionItem.self,
             AgentLog.self,
             InboundFile.self,
@@ -131,21 +125,16 @@ struct ManagerCoreModelTests {
             EphemeralPin.self,
             ResourceHealth.self,
             FamilyMember.self,
+            ResearchSnapshot.self,
         ])
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
         let container = try ModelContainer(for: schema, configurations: [config])
         let context = ModelContext(container)
 
-        let mission = MissionDefinition(
-            missionName: "Test",
-            systemPrompt: "Test prompt",
-            triggerSchedule: "daily|09:00",
-            allowedMCPTools: ["write_action_item"]
-        )
-        context.insert(mission)
+        let snap = ResearchSnapshot(key: "metric", lastKnownValue: "42")
+        context.insert(snap)
 
         let item = ActionItem(title: "Test action", systemIntent: "test")
-        item.missionId = mission.id
         context.insert(item)
 
         let thread = ChatThread(title: "Assistant")
@@ -156,15 +145,14 @@ struct ManagerCoreModelTests {
 
         try context.save()
 
-        let missionDesc = FetchDescriptor<MissionDefinition>()
-        let missions = try context.fetch(missionDesc)
-        #expect(missions.count == 1)
-        #expect(missions[0].missionName == "Test")
+        let snapDesc = FetchDescriptor<ResearchSnapshot>()
+        let snaps = try context.fetch(snapDesc)
+        #expect(snaps.count == 1)
+        #expect(snaps[0].key == "metric")
 
         let itemDesc = FetchDescriptor<ActionItem>()
         let items = try context.fetch(itemDesc)
         #expect(items.count == 1)
-        #expect(items[0].missionId == mission.id)
 
         let threadDesc = FetchDescriptor<ChatThread>()
         let threads = try context.fetch(threadDesc)
@@ -176,10 +164,9 @@ struct ManagerCoreModelTests {
         #expect(messages[0].threadId == thread.id)
     }
 
-    @Test("Deleting a mission persists removal while mission-linked rows remain readable")
-    func missionDeletionPersistsAcrossContexts() throws {
+    @Test("Deleting an ActionItem persists removal across SwiftData contexts")
+    func actionItemDeletionPersistsAcrossContexts() throws {
         let schema = Schema([
-            MissionDefinition.self,
             ActionItem.self,
             AgentLog.self,
         ])
@@ -187,42 +174,28 @@ struct ManagerCoreModelTests {
         let container = try ModelContainer(for: schema, configurations: [config])
         let context = ModelContext(container)
 
-        let mission = MissionDefinition(
-            missionName: "Nightly Briefing",
-            systemPrompt: "Summarize the latest updates.",
-            triggerSchedule: "daily|20:00",
-            allowedMCPTools: ["write_action_item"]
-        )
         let actionItem = ActionItem(
             title: "Review nightly briefing",
-            systemIntent: SystemIntent.urlOpen.rawValue,
-            missionId: mission.id
+            systemIntent: SystemIntent.urlOpen.rawValue
         )
         let log = AgentLog(
-            missionId: mission.id,
-            missionName: mission.missionName,
-            phase: "outcome",
+            phase: "assistant_final",
             content: "Mission completed successfully."
         )
 
-        context.insert(mission)
         context.insert(actionItem)
         context.insert(log)
         try context.save()
 
-        context.delete(mission)
+        context.delete(actionItem)
         try context.save()
 
         let verificationContext = ModelContext(container)
-        let missions = try verificationContext.fetch(FetchDescriptor<MissionDefinition>())
         let actionItems = try verificationContext.fetch(FetchDescriptor<ActionItem>())
         let logs = try verificationContext.fetch(FetchDescriptor<AgentLog>())
 
-        #expect(missions.isEmpty)
-        #expect(actionItems.count == 1)
-        #expect(actionItems[0].missionId == mission.id)
+        #expect(actionItems.isEmpty)
         #expect(logs.count == 1)
-        #expect(logs[0].missionId == mission.id)
-        #expect(logs[0].missionName == "Nightly Briefing")
+        #expect(logs[0].phase == "assistant_final")
     }
 }

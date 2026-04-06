@@ -9,7 +9,6 @@ import Testing
 private func makeTestContainer() throws -> (ModelContext, ModelContainer) {
     let schema = Schema([
         LifeContext.self,
-        MissionDefinition.self,
         ActionItem.self,
         AgentLog.self,
         ChatThread.self,
@@ -18,6 +17,7 @@ private func makeTestContainer() throws -> (ModelContext, ModelContainer) {
         EphemeralPin.self,
         ResourceHealth.self,
         FamilyMember.self,
+        ResearchSnapshot.self,
     ])
     let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
     let container = try ModelContainer(for: schema, configurations: [config])
@@ -69,24 +69,31 @@ private func makeStubWebSearchAndFetchTool(result: String) -> ToolRegistry.Tool 
     )
 }
 
+private func makeTaskRunner(
+    modelContext: ModelContext,
+    client: any OllamaClientProtocol,
+    registry: ToolRegistry
+) -> AgentTaskRunner {
+    AgentTaskRunner(modelContext: modelContext, client: client, registry: registry)
+}
+
 // MARK: - 1. Job Scout Pipeline Test
 
 struct JobScoutPipelineTest {
 
-    @Test("MissionRunner injects selected tool guidance into the runtime prompt automatically")
-    func missionRunnerInjectsToolGuidance() async throws {
+    @Test("AgentTaskRunner injects selected tool guidance into the runtime prompt automatically")
+    func taskRunnerInjectsToolGuidance() async throws {
         let (context, _) = try makeTestContainer()
         let registry = makeTestRegistry(modelContext: context, includeWebSearch: true)
 
-        let mission = MissionDefinition(
-            missionName: "Tech Job Scout",
+        let request = AgentTaskRunner.Request(
+            id: UUID(),
+            taskName: "Tech Job Scout",
             systemPrompt: "Search for iOS engineer roles at Series B startups and surface the strongest matches.",
             triggerSchedule: "weekly|sunday",
-            allowedMCPTools: ["write_action_item", "web_search_and_fetch"]
+            allowedToolIds: ["write_action_item", "web_search_and_fetch"],
+            ownerProfileId: nil
         )
-        mission.isEnabled = true
-        context.insert(mission)
-        try context.save()
 
         let mockClient = MockOllamaClient(responses: [
             .assistantWithToolCalls([
@@ -95,8 +102,8 @@ struct JobScoutPipelineTest {
             .assistantFinal(content: "Found one high-match iOS role.")
         ])
 
-        let runner = MissionRunner(modelContext: context, client: mockClient, registry: registry)
-        try await runner.run(mission)
+        let runner = makeTaskRunner(modelContext: context, client: mockClient, registry: registry)
+        _ = try await runner.run(request)
 
         let capturedMessages = await mockClient.capturedMessages()
         let firstChat = capturedMessages.first
@@ -115,8 +122,8 @@ struct JobScoutPipelineTest {
         #expect(firstToolNames.contains("web_search_and_fetch"))
     }
 
-    @Test("MissionRunner defers write_action_item when it is batched with a fresh web search")
-    func missionRunnerDefersVisibleActionUntilAfterSearchResults() async throws {
+    @Test("AgentTaskRunner defers write_action_item when it is batched with a fresh web search")
+    func taskRunnerDefersVisibleActionUntilAfterSearchResults() async throws {
         let (context, _) = try makeTestContainer()
         let registry = makeTestRegistry(
             modelContext: context,
@@ -128,15 +135,14 @@ struct JobScoutPipelineTest {
             """
         )
 
-        let mission = MissionDefinition(
-            missionName: "Universal Studios, Orlando trip",
+        let request = AgentTaskRunner.Request(
+            id: UUID(),
+            taskName: "Universal Studios, Orlando trip",
             systemPrompt: "Research the strongest Universal Orlando package option for July 11-15 and create one clear next step.",
             triggerSchedule: "once",
-            allowedMCPTools: ["web_search_and_fetch", "write_action_item"]
+            allowedToolIds: ["web_search_and_fetch", "write_action_item"],
+            ownerProfileId: nil
         )
-        mission.isEnabled = true
-        context.insert(mission)
-        try context.save()
 
         let mockClient = MockOllamaClient(responses: [
             .assistantWithToolCalls([
@@ -157,8 +163,8 @@ struct JobScoutPipelineTest {
             .assistantFinal(content: "Reviewed the fetched package details and created one focused next step.")
         ])
 
-        let runner = MissionRunner(modelContext: context, client: mockClient, registry: registry)
-        try await runner.run(mission)
+        let runner = makeTaskRunner(modelContext: context, client: mockClient, registry: registry)
+        _ = try await runner.run(request)
 
         let items = try context.fetch(FetchDescriptor<ActionItem>())
         #expect(items.count == 1, "Expected exactly one ActionItem after the deferred write_action_item flow.")
@@ -191,20 +197,19 @@ struct JobScoutPipelineTest {
         })
     }
 
-    @Test("When a job mission is due, agent creates exactly one Review ActionItem and outcome log")
+    @Test("When a job mission is due, agent creates exactly one Review ActionItem and final assistant log")
     func jobScoutCreatesReviewActionAndOutcomeLog() async throws {
         let (context, _) = try makeTestContainer()
         let registry = makeTestRegistry(modelContext: context)
 
-        let mission = MissionDefinition(
-            missionName: "Tech Job Scout",
+        let request = AgentTaskRunner.Request(
+            id: UUID(),
+            taskName: "Tech Job Scout",
             systemPrompt: "You are a job scout. Identify high-match iOS roles and create one action per lead.",
             triggerSchedule: "weekly|sunday",
-            allowedMCPTools: ["write_action_item"]
+            allowedToolIds: ["write_action_item"],
+            ownerProfileId: nil
         )
-        mission.isEnabled = true
-        context.insert(mission)
-        try context.save()
 
         let mockClient = MockOllamaClient(responses: [
             .assistantWithToolCalls([
@@ -213,8 +218,8 @@ struct JobScoutPipelineTest {
             .assistantFinal(content: "Found one high-match iOS role (Acme Corp). One low-match Android role was skipped.")
         ])
 
-        let runner = MissionRunner(modelContext: context, client: mockClient, registry: registry)
-        try await runner.run(mission)
+        let runner = makeTaskRunner(modelContext: context, client: mockClient, registry: registry)
+        _ = try await runner.run(request)
 
         let itemDesc = FetchDescriptor<ActionItem>()
         let items = try context.fetch(itemDesc)
@@ -222,60 +227,16 @@ struct JobScoutPipelineTest {
         let reviewItem = items.first!
         #expect(reviewItem.title.contains("Review"), "Expected ActionItem title to contain 'Review', got '\(reviewItem.title)'")
         #expect(reviewItem.relevanceScore >= 0.8, "Expected relevanceScore >= 0.8 (default is 1.0)")
-        #expect(reviewItem.missionId == mission.id, "Expected ActionItem to retain the originating mission id")
 
-        let logDesc = FetchDescriptor<AgentLog>(predicate: #Predicate<AgentLog> { $0.phase == "outcome" })
+        let logDesc = FetchDescriptor<AgentLog>(predicate: #Predicate<AgentLog> { $0.phase == "assistant_final" })
         let logs = try context.fetch(logDesc)
-        #expect(logs.count >= 1, "Expected at least one AgentLog with phase 'outcome'")
+        #expect(logs.count >= 1, "Expected at least one AgentLog with phase 'assistant_final'")
         #expect(logs.contains { $0.content.contains("high-match") || $0.content.contains("Acme") })
 
         let toolLogDesc = FetchDescriptor<AgentLog>(predicate: #Predicate<AgentLog> { $0.phase == "tool_call" || $0.phase == "tool_result" })
         let toolLogs = try context.fetch(toolLogDesc)
         #expect(toolLogs.contains { $0.toolName == "write_action_item" && $0.phase == "tool_call" })
         #expect(toolLogs.contains { $0.toolName == "write_action_item" && $0.phase == "tool_result" })
-    }
-
-    @Test("MissionRunner recovers a missing write_action_item by creating one from the final report")
-    func missionRunnerRecoversMissingActionItem() async throws {
-        let (context, _) = try makeTestContainer()
-        let registry = makeTestRegistry(modelContext: context)
-
-        let mission = MissionDefinition(
-            missionName: "Tech Job Scout",
-            systemPrompt: "Investigate iOS jobs in Philadelphia and create one action item with the best lead.",
-            triggerSchedule: "weekly|sunday",
-            allowedMCPTools: ["write_action_item"]
-        )
-        mission.isEnabled = true
-        context.insert(mission)
-        try context.save()
-
-        let mockClient = MockOllamaClient(responses: [
-            .assistantFinal(content: "Senior iOS Developer at Penn Interactive. Best lead: https://jobs.example.com/philly-ios"),
-            .assistantWithToolCalls([
-                .writeActionItem(
-                    title: "Review: Penn Interactive iOS role",
-                    systemIntent: "url.open",
-                    payloadJson: "{\"url\":\"https://jobs.example.com/philly-ios\",\"label\":\"Open Penn Interactive role\"}"
-                )
-            ]),
-            .assistantFinal(content: "Created one action item for the best Philly lead.")
-        ])
-
-        let runner = MissionRunner(modelContext: context, client: mockClient, registry: registry)
-        try await runner.run(mission)
-
-        let itemDesc = FetchDescriptor<ActionItem>()
-        let items = try context.fetch(itemDesc)
-        #expect(items.count == 1, "Expected recovery path to create exactly one ActionItem.")
-        #expect(items[0].systemIntent == "url.open")
-        #expect(items[0].title.contains("Penn Interactive"))
-
-        let logs = try context.fetch(FetchDescriptor<AgentLog>())
-        #expect(logs.contains { $0.phase == "warning" && $0.content.contains("Attempting one recovery pass") })
-        #expect(!logs.contains { $0.phase == "warning" && $0.content.contains("even after recovery") })
-        #expect(logs.contains { $0.phase == "tool_call" && $0.toolName == "write_action_item" })
-        #expect(logs.contains { $0.phase == "tool_result" && $0.toolName == "write_action_item" })
     }
 }
 
@@ -288,15 +249,14 @@ struct ImpulsiveExpenseGuardTest {
         let (context, _) = try makeTestContainer()
         let registry = makeTestRegistry(modelContext: context)
 
-        let mission = MissionDefinition(
-            missionName: "Budget Sentinel",
+        let request = AgentTaskRunner.Request(
+            id: UUID(),
+            taskName: "Budget Sentinel",
             systemPrompt: "Flag impulsive expenses between $20 and $50. Do not flag utility bills or expenses over $100. Create one action per flagged transaction with systemIntent reminder.add.",
             triggerSchedule: "daily|09:00",
-            allowedMCPTools: ["write_action_item"]
+            allowedToolIds: ["write_action_item"],
+            ownerProfileId: nil
         )
-        mission.isEnabled = true
-        context.insert(mission)
-        try context.save()
 
         let mockClient = MockOllamaClient(responses: [
             .assistantWithToolCalls([
@@ -305,8 +265,8 @@ struct ImpulsiveExpenseGuardTest {
             .assistantFinal(content: "Flagged one impulsive charge ($45). $200 utility bill not in range.")
         ])
 
-        let runner = MissionRunner(modelContext: context, client: mockClient, registry: registry)
-        try await runner.run(mission)
+        let runner = makeTaskRunner(modelContext: context, client: mockClient, registry: registry)
+        _ = try await runner.run(request)
 
         let itemDesc = FetchDescriptor<ActionItem>()
         let items = try context.fetch(itemDesc)
@@ -332,15 +292,14 @@ struct HomeschoolLessonDeliveryTest {
         let (context, _) = try makeTestContainer()
         let registry = makeTestRegistry(modelContext: context, includeSendNotification: true, notificationOutboxDir: outboxDir)
 
-        let mission = MissionDefinition(
-            missionName: "Homeschool Lesson",
+        let request = AgentTaskRunner.Request(
+            id: UUID(),
+            taskName: "Homeschool Lesson",
             systemPrompt: "Create a Harry Potter themed chemistry lesson. Send a notification email with the lesson summary and create an action 'Launch Today's Lesson'.",
             triggerSchedule: "daily|08:00",
-            allowedMCPTools: ["write_action_item", "send_notification_email"]
+            allowedToolIds: ["write_action_item", "send_notification_email"],
+            ownerProfileId: nil
         )
-        mission.isEnabled = true
-        context.insert(mission)
-        try context.save()
 
         let mockClient = MockOllamaClient(responses: [
             .assistantWithToolCalls([
@@ -350,8 +309,8 @@ struct HomeschoolLessonDeliveryTest {
             .assistantFinal(content: "Lesson created and notification sent.")
         ])
 
-        let runner = MissionRunner(modelContext: context, client: mockClient, registry: registry)
-        try await runner.run(mission)
+        let runner = makeTaskRunner(modelContext: context, client: mockClient, registry: registry)
+        _ = try await runner.run(request)
 
         let itemDesc = FetchDescriptor<ActionItem>()
         let items = try context.fetch(itemDesc)
@@ -369,8 +328,6 @@ struct HomeschoolLessonDeliveryTest {
 }
 
 // MARK: - 4. Sovereign Context (Bee) Update Test
-// Business outcome: agent "learns" from Bee-sourced notes and updates internal facts;
-// subsequent missions (e.g. Job Scout) can then prioritize using this context.
 
 struct SovereignContextUpdateTest {
 
@@ -379,15 +336,14 @@ struct SovereignContextUpdateTest {
         let (context, _) = try makeTestContainer()
         let registry = makeTestRegistry(modelContext: context, includeBeeAI: true)
 
-        let mission = MissionDefinition(
-            missionName: "Context Sync",
+        let request = AgentTaskRunner.Request(
+            id: UUID(),
+            taskName: "Context Sync",
             systemPrompt: "Fetch Bee context and store the summary under the key focus_areas so future missions can prioritize accordingly.",
             triggerSchedule: "daily|07:00",
-            allowedMCPTools: ["fetch_bee_ai_context"]
+            allowedToolIds: ["fetch_bee_ai_context"],
+            ownerProfileId: nil
         )
-        mission.isEnabled = true
-        context.insert(mission)
-        try context.save()
 
         let mockBeeJson = """
         {"insights":[{"text":"I want to focus more on Swift 6 Concurrency this month","timestamp":"2025-03-15T10:00:00Z"}]}
@@ -405,8 +361,8 @@ struct SovereignContextUpdateTest {
             .assistantFinal(content: "Stored Bee context under focus_areas.")
         ])
 
-        let runner = MissionRunner(modelContext: context, client: mockClient, registry: registry)
-        try await runner.run(mission)
+        let runner = makeTaskRunner(modelContext: context, client: mockClient, registry: registry)
+        _ = try await runner.run(request)
 
         unsetenv("MOCK_BEE_AI_RESPONSE_JSON")
 

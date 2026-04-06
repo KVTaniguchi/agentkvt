@@ -35,7 +35,7 @@ private actor MockOllamaState {
 }
 
 /// Mock LLM client that returns predefined responses in order (for business-outcome integration tests).
-public final class MockOllamaClient: OllamaClientProtocol {
+public final class MockOllamaClient: OllamaClientProtocol, @unchecked Sendable {
     private let state: MockOllamaState
 
     public init(responses: [OllamaClient.Message]) {
