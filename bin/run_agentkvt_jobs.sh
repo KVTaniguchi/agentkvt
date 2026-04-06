@@ -48,8 +48,7 @@ RAILS_ENV_EFFECTIVE="${RAILS_ENV:-development}"
 echo "AgentKVT Jobs: RAILS_ENV=${RAILS_ENV_EFFECTIVE}" >&2
 
 cd "${SERVER_DIR}"
-# macOS forked Solid Queue processes have been unstable on the production Mac.
-# Run the supervisor in async mode so workers/dispatchers stay in-process.
+# PGGSSENCMODE=disable (set above) prevents the libpq GSS-probe segfault on fork.
 # Use bundle exec so the same gem set resolves as Puma (avoids GemNotFound when
 # bin/jobs shebang picks up a different Ruby than bundle exec rails).
-exec bundle exec ruby "${SERVER_DIR}/bin/jobs" start --mode=async
+exec bundle exec ruby "${SERVER_DIR}/bin/jobs" start

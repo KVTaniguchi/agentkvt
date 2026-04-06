@@ -19,6 +19,7 @@ struct ObjectiveDetailView: View {
     @State private var lastLoadedAt: Date?
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
 
     init(objective: IOSBackendObjective) {
         self.objective = objective
@@ -43,6 +44,13 @@ struct ObjectiveDetailView: View {
 
     private var onlineAgentRegistrationsCount: Int {
         detail?.onlineAgentRegistrationsCount ?? 0
+    }
+
+    /// System `borderedProminent` + default tint often yields a pale blue fill in dark mode; white labels are hard to read.
+    private var runNowProminentTint: Color {
+        colorScheme == .dark
+            ? Color(red: 0.13, green: 0.38, blue: 0.82)
+            : Color(red: 0.0, green: 0.45, blue: 0.94)
     }
 
     private var runNowLabel: String {
@@ -221,6 +229,7 @@ struct ObjectiveDetailView: View {
                         Label(runNowLabel, systemImage: "play.circle.fill")
                     }
                     .buttonStyle(.borderedProminent)
+                    .tint(runNowProminentTint)
                     .disabled(isStartingWork || isDeleting)
 
                     if displayedObjective.status == "active", taskCounts.inProgress > 0 {
