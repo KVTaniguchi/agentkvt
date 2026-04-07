@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_04_05_221000) do
+ActiveRecord::Schema[8.0].define(version: 2026_04_06_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -34,6 +34,9 @@ ActiveRecord::Schema[8.0].define(version: 2026_04_05_221000) do
     t.text "goal", null: false
     t.string "status", null: false, default: "pending"
     t.integer "priority", null: false, default: 0
+    t.text "presentation_json"
+    t.datetime "presentation_generated_at"
+    t.datetime "presentation_enqueued_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["workspace_id", "status"], name: "index_objectives_on_workspace_id_and_status"
@@ -183,25 +186,6 @@ ActiveRecord::Schema[8.0].define(version: 2026_04_05_221000) do
     t.index ["workspace_id", "timestamp"], name: "index_inbound_files_on_workspace_id_and_timestamp"
   end
 
-  create_table "missions", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
-    t.uuid "workspace_id", null: false
-    t.uuid "owner_profile_id"
-    t.uuid "source_device_id"
-    t.string "mission_name", null: false
-    t.text "system_prompt", null: false
-    t.string "trigger_schedule", null: false
-    t.jsonb "allowed_mcp_tools", default: [], null: false
-    t.boolean "is_enabled", default: true, null: false
-    t.datetime "last_run_at"
-    t.datetime "source_updated_at"
-    t.datetime "created_at", null: false
-    t.datetime "updated_at", null: false
-    t.datetime "run_requested_at"
-    t.index ["owner_profile_id"], name: "index_missions_on_owner_profile_id"
-    t.index ["source_device_id"], name: "index_missions_on_source_device_id"
-    t.index ["workspace_id", "is_enabled"], name: "index_missions_on_workspace_id_and_is_enabled"
-    t.index ["workspace_id"], name: "index_missions_on_workspace_id"
-  end
 
   create_table "users", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.string "apple_subject", null: false
@@ -236,9 +220,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_04_05_221000) do
 
   add_foreign_key "agent_registrations", "workspaces"
   add_foreign_key "action_items", "family_members", column: "owner_profile_id"
-  add_foreign_key "action_items", "missions", column: "source_mission_id"
   add_foreign_key "action_items", "workspaces"
-  add_foreign_key "agent_logs", "missions"
   add_foreign_key "agent_logs", "workspaces"
   add_foreign_key "chat_messages", "chat_threads"
   add_foreign_key "chat_messages", "family_members", column: "author_profile_id"
@@ -251,9 +233,6 @@ ActiveRecord::Schema[8.0].define(version: 2026_04_05_221000) do
   add_foreign_key "inbound_files", "workspaces"
   add_foreign_key "life_context_entries", "users", column: "updated_by_user_id"
   add_foreign_key "life_context_entries", "workspaces"
-  add_foreign_key "missions", "devices", column: "source_device_id"
-  add_foreign_key "missions", "family_members", column: "owner_profile_id"
-  add_foreign_key "missions", "workspaces"
   add_foreign_key "workspace_memberships", "users"
   add_foreign_key "workspace_memberships", "workspaces"
   add_foreign_key "objectives", "workspaces"
