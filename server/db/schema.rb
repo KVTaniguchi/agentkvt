@@ -15,64 +15,6 @@ ActiveRecord::Schema[8.0].define(version: 2026_04_06_120000) do
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
 
-  create_table "agent_registrations", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
-    t.uuid     "workspace_id", null: false
-    t.string   "agent_id", null: false
-    t.string   "webhook_url"
-    t.jsonb    "capabilities", null: false, default: []
-    t.string   "status", null: false, default: "online"
-    t.datetime "last_seen_at", null: false, default: -> { "CURRENT_TIMESTAMP" }
-    t.datetime "created_at", null: false
-    t.datetime "updated_at", null: false
-    t.index [ "workspace_id", "agent_id" ], name: "index_agent_registrations_on_workspace_id_and_agent_id", unique: true
-    t.index [ "capabilities" ], name: "index_agent_registrations_on_capabilities", using: :gin
-    t.index [ "last_seen_at" ], name: "index_agent_registrations_on_last_seen_at"
-  end
-
-  create_table "objectives", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
-    t.uuid "workspace_id", null: false
-    t.text "goal", null: false
-    t.string "status", null: false, default: "pending"
-    t.integer "priority", null: false, default: 0
-    t.text "presentation_json"
-    t.datetime "presentation_generated_at"
-    t.datetime "presentation_enqueued_at"
-    t.datetime "created_at", null: false
-    t.datetime "updated_at", null: false
-    t.index ["workspace_id", "status"], name: "index_objectives_on_workspace_id_and_status"
-    t.index ["workspace_id"], name: "index_objectives_on_workspace_id"
-  end
-
-  create_table "tasks", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
-    t.uuid "objective_id", null: false
-    t.text "description", null: false
-    t.string "status", null: false, default: "pending"
-    t.text "result_summary"
-    t.datetime "claimed_at"
-    t.string "claimed_by_agent_id"
-    t.jsonb  "required_capabilities", null: false, default: []
-    t.datetime "created_at", null: false
-    t.datetime "updated_at", null: false
-    t.index ["objective_id", "status"], name: "index_tasks_on_objective_id_and_status"
-    t.index ["objective_id"], name: "index_tasks_on_objective_id"
-    t.index ["required_capabilities"], name: "index_tasks_on_required_capabilities", using: :gin
-  end
-
-  create_table "research_snapshots", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
-    t.uuid "objective_id", null: false
-    t.uuid "task_id"
-    t.string "key", null: false
-    t.text "value", null: false
-    t.text "previous_value"
-    t.text "delta_note"
-    t.datetime "checked_at", null: false, default: -> { "CURRENT_TIMESTAMP" }
-    t.datetime "created_at", null: false
-    t.datetime "updated_at", null: false
-    t.index ["objective_id", "key"], name: "index_research_snapshots_on_objective_id_and_key", unique: true
-    t.index ["objective_id"], name: "index_research_snapshots_on_objective_id"
-    t.index ["task_id"], name: "index_research_snapshots_on_task_id"
-  end
-
   create_table "action_items", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.uuid "workspace_id", null: false
     t.uuid "source_mission_id"
@@ -107,6 +49,20 @@ ActiveRecord::Schema[8.0].define(version: 2026_04_06_120000) do
     t.index ["mission_id"], name: "index_agent_logs_on_mission_id"
     t.index ["workspace_id", "timestamp"], name: "index_agent_logs_on_workspace_id_and_timestamp"
     t.index ["workspace_id"], name: "index_agent_logs_on_workspace_id"
+  end
+
+  create_table "agent_registrations", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "workspace_id", null: false
+    t.string "agent_id", null: false
+    t.string "webhook_url"
+    t.jsonb "capabilities", default: [], null: false
+    t.string "status", default: "online", null: false
+    t.datetime "last_seen_at", default: -> { "CURRENT_TIMESTAMP" }, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["capabilities"], name: "index_agent_registrations_on_capabilities", using: :gin
+    t.index ["last_seen_at"], name: "index_agent_registrations_on_last_seen_at"
+    t.index ["workspace_id", "agent_id"], name: "index_agent_registrations_on_workspace_id_and_agent_id", unique: true
   end
 
   create_table "chat_messages", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -158,18 +114,6 @@ ActiveRecord::Schema[8.0].define(version: 2026_04_06_120000) do
     t.index ["workspace_id"], name: "index_family_members_on_workspace_id"
   end
 
-  create_table "life_context_entries", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
-    t.uuid "workspace_id", null: false
-    t.uuid "updated_by_user_id"
-    t.string "key", null: false
-    t.text "value", null: false
-    t.datetime "created_at", null: false
-    t.datetime "updated_at", null: false
-    t.index ["updated_by_user_id"], name: "index_life_context_entries_on_updated_by_user_id"
-    t.index ["workspace_id", "key"], name: "index_life_context_entries_on_workspace_id_and_key", unique: true
-    t.index ["workspace_id"], name: "index_life_context_entries_on_workspace_id"
-  end
-
   create_table "inbound_files", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.uuid "workspace_id", null: false
     t.uuid "uploaded_by_profile_id"
@@ -186,6 +130,61 @@ ActiveRecord::Schema[8.0].define(version: 2026_04_06_120000) do
     t.index ["workspace_id", "timestamp"], name: "index_inbound_files_on_workspace_id_and_timestamp"
   end
 
+  create_table "life_context_entries", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "workspace_id", null: false
+    t.uuid "updated_by_user_id"
+    t.string "key", null: false
+    t.text "value", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["updated_by_user_id"], name: "index_life_context_entries_on_updated_by_user_id"
+    t.index ["workspace_id", "key"], name: "index_life_context_entries_on_workspace_id_and_key", unique: true
+    t.index ["workspace_id"], name: "index_life_context_entries_on_workspace_id"
+  end
+
+  create_table "objectives", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "workspace_id", null: false
+    t.text "goal", null: false
+    t.string "status", default: "pending", null: false
+    t.integer "priority", default: 0, null: false
+    t.text "presentation_json"
+    t.datetime "presentation_generated_at"
+    t.datetime "presentation_enqueued_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["workspace_id", "status"], name: "index_objectives_on_workspace_id_and_status"
+    t.index ["workspace_id"], name: "index_objectives_on_workspace_id"
+  end
+
+  create_table "research_snapshots", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "objective_id", null: false
+    t.uuid "task_id"
+    t.string "key", null: false
+    t.text "value", null: false
+    t.text "previous_value"
+    t.text "delta_note"
+    t.datetime "checked_at", default: -> { "CURRENT_TIMESTAMP" }, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["objective_id", "key"], name: "index_research_snapshots_on_objective_id_and_key", unique: true
+    t.index ["objective_id"], name: "index_research_snapshots_on_objective_id"
+    t.index ["task_id"], name: "index_research_snapshots_on_task_id"
+  end
+
+  create_table "tasks", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "objective_id", null: false
+    t.text "description", null: false
+    t.string "status", default: "pending", null: false
+    t.text "result_summary"
+    t.datetime "claimed_at"
+    t.string "claimed_by_agent_id"
+    t.jsonb "required_capabilities", default: [], null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["objective_id", "status"], name: "index_tasks_on_objective_id_and_status"
+    t.index ["objective_id"], name: "index_tasks_on_objective_id"
+    t.index ["required_capabilities"], name: "index_tasks_on_required_capabilities", using: :gin
+  end
 
   create_table "users", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.string "apple_subject", null: false
@@ -218,10 +217,10 @@ ActiveRecord::Schema[8.0].define(version: 2026_04_06_120000) do
     t.index ["slug"], name: "index_workspaces_on_slug", unique: true
   end
 
-  add_foreign_key "agent_registrations", "workspaces"
   add_foreign_key "action_items", "family_members", column: "owner_profile_id"
   add_foreign_key "action_items", "workspaces"
   add_foreign_key "agent_logs", "workspaces"
+  add_foreign_key "agent_registrations", "workspaces"
   add_foreign_key "chat_messages", "chat_threads"
   add_foreign_key "chat_messages", "family_members", column: "author_profile_id"
   add_foreign_key "chat_threads", "family_members", column: "created_by_profile_id"
@@ -233,10 +232,10 @@ ActiveRecord::Schema[8.0].define(version: 2026_04_06_120000) do
   add_foreign_key "inbound_files", "workspaces"
   add_foreign_key "life_context_entries", "users", column: "updated_by_user_id"
   add_foreign_key "life_context_entries", "workspaces"
-  add_foreign_key "workspace_memberships", "users"
-  add_foreign_key "workspace_memberships", "workspaces"
   add_foreign_key "objectives", "workspaces"
-  add_foreign_key "tasks", "objectives"
   add_foreign_key "research_snapshots", "objectives"
   add_foreign_key "research_snapshots", "tasks"
+  add_foreign_key "tasks", "objectives"
+  add_foreign_key "workspace_memberships", "users"
+  add_foreign_key "workspace_memberships", "workspaces"
 end
