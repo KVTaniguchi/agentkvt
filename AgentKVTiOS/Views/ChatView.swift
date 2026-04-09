@@ -222,6 +222,13 @@ private struct ChatThreadDetailView: View {
         }
         .navigationTitle(thread?.title ?? "Chat")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            // Prevent inherited leading toolbar content from rendering alongside
+            // the system back button in this pushed detail screen.
+            ToolbarItem(placement: .topBarLeading) {
+                EmptyView()
+            }
+        }
         .refreshable {
             await chatStore.refreshThread(id: threadID)
         }
