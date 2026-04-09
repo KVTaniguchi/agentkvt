@@ -571,21 +571,36 @@ private struct ObjectiveActivityCard: View {
                 }
             }
 
-            HStack(spacing: 8) {
-                if taskCounts.hasAnyTasks {
-                    ObjectiveMetricChip(label: "\(taskCounts.pending) pending", tint: .orange)
-                    ObjectiveMetricChip(label: "\(taskCounts.inProgress) active", tint: .blue)
-                    ObjectiveMetricChip(label: "\(taskCounts.completed) done", tint: .green)
-                    if taskCounts.failed > 0 {
-                        ObjectiveMetricChip(label: "\(taskCounts.failed) failed", tint: .red)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    if taskCounts.hasAnyTasks {
+                        if taskCounts.pending > 0 {
+                            ObjectiveMetricChip(count: taskCounts.pending, label: "pending", tint: .orange)
+                        }
+                        if taskCounts.inProgress > 0 {
+                            ObjectiveMetricChip(count: taskCounts.inProgress, label: "active", tint: .blue)
+                        }
+                        if taskCounts.completed > 0 {
+                            ObjectiveMetricChip(count: taskCounts.completed, label: "done", tint: .green)
+                        }
+                        if taskCounts.failed > 0 {
+                            ObjectiveMetricChip(count: taskCounts.failed, label: "failed", tint: .red)
+                        }
+                    }
+                    if onlineAgentRegistrationsCount > 0 {
+                        ObjectiveMetricChip(
+                            count: onlineAgentRegistrationsCount,
+                            label: onlineAgentRegistrationsCount == 1 ? "agent online" : "agents online",
+                            tint: .teal
+                        )
+                    }
+                    if snapshotCount > 0 {
+                        ObjectiveMetricChip(count: snapshotCount, label: "snapshots", tint: .secondary)
+                    }
+                    if logCount > 0 {
+                        ObjectiveMetricChip(count: logCount, label: "logs", tint: .secondary)
                     }
                 }
-                ObjectiveMetricChip(
-                    label: onlineAgentRegistrationsCount == 1 ? "1 agent online" : "\(onlineAgentRegistrationsCount) agents online",
-                    tint: onlineAgentRegistrationsCount > 0 ? .teal : .orange
-                )
-                ObjectiveMetricChip(label: "\(snapshotCount) snapshots", tint: .secondary)
-                ObjectiveMetricChip(label: "\(logCount) logs", tint: .secondary)
             }
 
             if let lastLoadedAt {
@@ -622,17 +637,24 @@ private struct ObjectiveResearchDetailView: View {
 }
 
 private struct ObjectiveMetricChip: View {
+    let count: Int
     let label: String
     let tint: Color
 
     var body: some View {
-        Text(label)
-            .font(.caption)
-            .foregroundStyle(tint)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(tint.opacity(0.12))
-            .clipShape(Capsule())
+        VStack(spacing: 1) {
+            Text("\(count)")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(tint)
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(tint.opacity(0.8))
+        }
+        .frame(minWidth: 56)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(tint.opacity(0.12))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 }
 

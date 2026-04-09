@@ -110,6 +110,59 @@ func supervisorTimeoutCreatesStallActionItem() async throws {
     #expect(found, "Expected research settle timeout to create an 'Agent Stalled' ActionItem.")
 }
 
+/// Regression test for the April 2026 incident where `default-local.store`
+/// became corrupted (NSSQLiteErrorDomain=1), causing all worker loops to crash
+/// silently after webhook delivery. Fix: delete the store so SwiftData recreates
+/// it clean. This test verifies the pool can accept a payload and create work
+/// units without errors on a fresh in-memory container (equivalent to a clean store).
+@Test("Fresh container after store deletion: pool creates work units without crashing")
+func freshContainerAfterStoreDeletionCreatesWorkUnits() async throws {
+    // Simulate a freshly recreated store by using a brand-new in-memory container.
+    let (container, context) = try makeContainer()
+
+    let pool = makePool(
+        container: container,
+        context: context,
+        client: MockOllamaClient(responses: [.assistantFinal(content: "Research complete.")]),
+        timeoutSeconds: 10
+    )
+    await pool.start()
+
+    let taskId = UUID()
+    let objectiveId = UUID()
+    let json = taskSearchJSON(taskId: taskId, objectiveId: objectiveId, description: "Verify SEPTA API docs")
+    let payload = try #require(TaskSearchPayload(json: json))
+    await pool.enqueue(payload)
+
+    // Supervisor should create at least a root WorkUnit without crashing.
+    let deadline = Date().addingTimeInterval(5)
+    var rootFound = false
+    while Date() < deadline {
+        let readContext = ModelContext(container)
+        let units = try readContext.fetch(FetchDescriptor<WorkUnit>())
+        if units.contains(where: { $0.objectiveId == objectiveId && $0.workType == "objective_root" }) {
+            rootFound = true
+            break
+        }
+        try await Task.sleep(for: .milliseconds(100))
+    }
+
+    #expect(rootFound, "Fresh pool should create root WorkUnit — store corruption fix regression.")
+}
+
+/// Verifies that BackendAPIClient contains no reference to `/v1/missions`,
+/// confirming the old polling path was removed and will not flood the API with 404s.
+@Test("BackendAPIClient source contains no v1/missions path")
+func backendAPIClientHasNoMissionsPath() throws {
+    let sourceURL = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()          // AgentKVTMacTests/
+        .deletingLastPathComponent()          // Tests/
+        .deletingLastPathComponent()          // AgentKVTMac/
+        .appendingPathComponent("Sources/AgentKVTMac/BackendAPIClient.swift")
+    let source = try String(contentsOf: sourceURL, encoding: .utf8)
+    #expect(!source.contains("v1/missions"), "BackendAPIClient must not reference the removed /v1/missions endpoint.")
+}
+
 @Test("Startup sweep resumes orphaned objective by creating synthesis unit")
 func startupSweepCreatesMissingSynthesisUnit() async throws {
     let (container, context) = try makeContainer()
