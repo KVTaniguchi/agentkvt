@@ -42,8 +42,8 @@ struct ObjectivesDashboardView: View {
                     }
                 }
             }
-            .sheet(isPresented: $showCreateSheet) {
-                CreateObjectiveSheet()
+            .fullScreenCover(isPresented: $showCreateSheet) {
+                ObjectiveComposerView()
             }
             .familyProfileToolbar()
             .alert("Could Not Delete Objective", isPresented: Binding(
@@ -112,73 +112,5 @@ struct ObjectiveRow: View {
                 .foregroundStyle(.tertiary)
         }
         .padding(.vertical, 4)
-    }
-}
-
-// MARK: - Create sheet
-
-struct CreateObjectiveSheet: View {
-    @Environment(ObjectivesStore.self) private var store
-    @Environment(\.dismiss) private var dismiss
-
-    @State private var goal = ""
-    @State private var launchActive = true
-    @State private var isSaving = false
-    @State private var errorMessage: String?
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("Goal") {
-                    TextField("e.g. San Diego trip logistics", text: $goal, axis: .vertical)
-                        .lineLimit(3...6)
-                }
-                Section {
-                    Toggle("Start immediately (Active)", isOn: $launchActive)
-                } footer: {
-                    Text("Active objectives trigger the Mac agent to decompose tasks automatically.")
-                }
-            }
-            .navigationTitle("New Objective")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        Task { await save() }
-                    }
-                    .disabled(goal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving)
-                }
-            }
-            .alert("Could Not Create Objective", isPresented: Binding(
-                get: { errorMessage != nil },
-                set: { if !$0 { errorMessage = nil } }
-            )) {
-                Button("OK", role: .cancel) { errorMessage = nil }
-            } message: {
-                Text(errorMessage ?? "An error occurred.")
-            }
-            .overlay {
-                if isSaving { ProgressView() }
-            }
-        }
-    }
-
-    @MainActor
-    private func save() async {
-        let trimmed = goal.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-
-        isSaving = true
-        defer { isSaving = false }
-
-        do {
-            _ = try await store.createObjective(goal: trimmed, status: launchActive ? "active" : "pending")
-            dismiss()
-        } catch {
-            errorMessage = error.localizedDescription
-        }
     }
 }

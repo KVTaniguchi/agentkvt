@@ -9,7 +9,7 @@ module V1
       objective = current_workspace.objectives.create!(objective_params)
 
       # Kick off LLM task decomposition for active objectives immediately
-      kickoff_objective(objective) if objective.status == "active"
+      ObjectiveKickoff.new.call(objective) if objective.status == "active"
 
       render json: { objective: serialize_objective(objective) }, status: :created
     end
@@ -37,7 +37,7 @@ module V1
 
       # Activating an objective should either create fresh tasks or re-enqueue pending ones.
       if objective.saved_change_to_status? && objective.status == "active"
-        kickoff_objective(objective)
+        ObjectiveKickoff.new.call(objective)
       end
 
       render json: { objective: serialize_objective(objective) }
@@ -45,7 +45,7 @@ module V1
 
     def run_now
       objective = current_workspace.objectives.find(params[:id])
-      kickoff_objective(objective)
+      ObjectiveKickoff.new.call(objective)
 
       render json: { objective: serialize_objective(objective.reload) }
     end
@@ -56,7 +56,7 @@ module V1
       objective.tasks.where(status: "in_progress").find_each do |task|
         task.update!(status: "pending", result_summary: nil, claimed_at: nil, claimed_by_agent_id: nil)
       end
-      kickoff_objective(objective)
+      ObjectiveKickoff.new.call(objective)
 
       render json: { objective: serialize_objective(objective.reload) }
     end
@@ -69,7 +69,7 @@ module V1
         task.update!(status: "pending", result_summary: nil, claimed_at: nil, claimed_by_agent_id: nil)
       end
       objective.research_snapshots.destroy_all
-      kickoff_objective(objective)
+      ObjectiveKickoff.new.call(objective)
 
       render json: { objective: serialize_objective(objective.reload) }
     end
@@ -112,24 +112,17 @@ module V1
     end
 
     def objective_params
-      params.require(:objective).permit(:goal, :status, :priority)
-    end
-
-    def kickoff_objective(objective)
-      objective.update!(status: "active") unless objective.status == "active"
-
-      if objective.tasks.empty?
-        ObjectivePlannerJob.perform_later(objective.id.to_s)
-        return
-      end
-
-      objective.tasks.where(status: "failed").find_each do |task|
-        task.update!(status: "pending", result_summary: nil)
-      end
-
-      objective.tasks.where(status: "pending").find_each do |task|
-        TaskExecutorJob.perform_later(task.id.to_s)
-      end
+      params.require(:objective).permit(
+        :goal,
+        :status,
+        :priority,
+        :objective_kind,
+        :creation_source,
+        brief_json: [
+          :deliverable,
+          { context: [], success_criteria: [], constraints: [], preferences: [], open_questions: [] }
+        ]
+      )
     end
   end
 end

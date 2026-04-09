@@ -133,7 +133,7 @@ public final class ChatRunner: @unchecked Sendable {
                 if let toolName = payload.toolName {
                     eventMetadata["tool_name"] = toolName
                 }
-                try? await backendClient.createAgentLog(
+                _ = try? await backendClient.createAgentLog(
                     phase: payload.phase,
                     content: payload.content,
                     metadata: eventMetadata

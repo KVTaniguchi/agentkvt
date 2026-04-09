@@ -9,6 +9,10 @@ Rails.application.routes.draw do
     resources :chat_threads, only: [:index, :create, :show] do
       resources :chat_messages, only: [:create]
     end
+    resources :objective_drafts, only: [:create, :show] do
+      post :finalize, on: :member
+      resources :messages, only: [:create], controller: "objective_draft_messages"
+    end
     resources :inbound_files, only: [:index, :create]
 
     resources :life_context, only: [:index, :update], controller: "life_context_entries", param: :key

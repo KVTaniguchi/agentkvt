@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_04_06_120000) do
+ActiveRecord::Schema[8.0].define(version: 2026_04_09_070000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -147,13 +147,48 @@ ActiveRecord::Schema[8.0].define(version: 2026_04_06_120000) do
     t.text "goal", null: false
     t.string "status", default: "pending", null: false
     t.integer "priority", default: 0, null: false
+    t.jsonb "brief_json", default: {}, null: false
+    t.string "objective_kind"
+    t.string "creation_source", default: "manual", null: false
     t.text "presentation_json"
     t.datetime "presentation_generated_at"
     t.datetime "presentation_enqueued_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.index ["workspace_id", "objective_kind"], name: "index_objectives_on_workspace_id_and_objective_kind"
     t.index ["workspace_id", "status"], name: "index_objectives_on_workspace_id_and_status"
     t.index ["workspace_id"], name: "index_objectives_on_workspace_id"
+  end
+
+  create_table "objective_draft_messages", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "objective_draft_id", null: false
+    t.string "role", null: false
+    t.text "content", null: false
+    t.datetime "timestamp", default: -> { "CURRENT_TIMESTAMP" }, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["objective_draft_id", "timestamp"], name: "index_objective_draft_messages_on_draft_and_timestamp"
+    t.index ["objective_draft_id"], name: "index_objective_draft_messages_on_objective_draft_id"
+  end
+
+  create_table "objective_drafts", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "workspace_id", null: false
+    t.uuid "created_by_profile_id"
+    t.uuid "finalized_objective_id"
+    t.string "template_key", default: "generic", null: false
+    t.string "status", default: "drafting", null: false
+    t.jsonb "brief_json", default: {}, null: false
+    t.text "suggested_goal"
+    t.text "assistant_message"
+    t.jsonb "missing_fields", default: [], null: false
+    t.boolean "ready_to_finalize", default: false, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["created_by_profile_id"], name: "index_objective_drafts_on_created_by_profile_id"
+    t.index ["finalized_objective_id"], name: "index_objective_drafts_on_finalized_objective_id"
+    t.index ["workspace_id", "created_at"], name: "index_objective_drafts_on_workspace_id_and_created_at"
+    t.index ["workspace_id", "status"], name: "index_objective_drafts_on_workspace_id_and_status"
+    t.index ["workspace_id"], name: "index_objective_drafts_on_workspace_id"
   end
 
   create_table "research_snapshots", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -232,6 +267,10 @@ ActiveRecord::Schema[8.0].define(version: 2026_04_06_120000) do
   add_foreign_key "inbound_files", "workspaces"
   add_foreign_key "life_context_entries", "users", column: "updated_by_user_id"
   add_foreign_key "life_context_entries", "workspaces"
+  add_foreign_key "objective_draft_messages", "objective_drafts"
+  add_foreign_key "objective_drafts", "family_members", column: "created_by_profile_id"
+  add_foreign_key "objective_drafts", "objectives", column: "finalized_objective_id"
+  add_foreign_key "objective_drafts", "workspaces"
   add_foreign_key "objectives", "workspaces"
   add_foreign_key "research_snapshots", "objectives"
   add_foreign_key "research_snapshots", "tasks"

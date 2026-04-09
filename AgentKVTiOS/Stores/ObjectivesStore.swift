@@ -46,7 +46,7 @@ final class ObjectivesStore {
     @MainActor
     func createObjective(goal: String, status: String = "active") async throws -> IOSBackendObjective {
         let objective = try await sync.createObjectiveRemote(goal: goal, status: status, priority: 0)
-        objectives.insert(objective, at: 0)
+        upsertObjective(objective)
         return objective
     }
 
@@ -59,9 +59,7 @@ final class ObjectivesStore {
     @MainActor
     func updateObjective(id: UUID, goal: String, status: String, priority: Int) async throws -> IOSBackendObjective {
         let updated = try await sync.updateObjectiveRemote(id: id, goal: goal, status: status, priority: priority)
-        if let idx = objectives.firstIndex(where: { $0.id == id }) {
-            objectives[idx] = updated
-        }
+        upsertObjective(updated)
         return updated
     }
 
@@ -69,33 +67,21 @@ final class ObjectivesStore {
     @MainActor
     func runObjectiveNow(id: UUID) async throws -> IOSBackendObjective {
         let updated = try await sync.runObjectiveNowRemote(id: id)
-        if let idx = objectives.firstIndex(where: { $0.id == id }) {
-            objectives[idx] = updated
-        } else {
-            objectives.insert(updated, at: 0)
-        }
+        upsertObjective(updated)
         return updated
     }
 
     @MainActor
     func resetStuckTasksAndRun(id: UUID) async throws -> IOSBackendObjective {
         let updated = try await sync.resetStuckTasksAndRunObjectiveRemote(id: id)
-        if let idx = objectives.firstIndex(where: { $0.id == id }) {
-            objectives[idx] = updated
-        } else {
-            objectives.insert(updated, at: 0)
-        }
+        upsertObjective(updated)
         return updated
     }
 
     @MainActor
     func rerunObjective(id: UUID) async throws -> IOSBackendObjective {
         let updated = try await sync.rerunObjectiveRemote(id: id)
-        if let idx = objectives.firstIndex(where: { $0.id == id }) {
-            objectives[idx] = updated
-        } else {
-            objectives.insert(updated, at: 0)
-        }
+        upsertObjective(updated)
         return updated
     }
 
@@ -109,5 +95,20 @@ final class ObjectivesStore {
     /// Fetches the generative UI layout for the given objective's research results.
     func fetchPresentation(for id: UUID) async throws -> UIPresentation {
         try await sync.fetchObjectivePresentationRemote(id: id)
+    }
+
+    @MainActor
+    func upsertObjective(_ objective: IOSBackendObjective) {
+        if let idx = objectives.firstIndex(where: { $0.id == objective.id }) {
+            objectives[idx] = objective
+        } else {
+            objectives.insert(objective, at: 0)
+        }
+        objectives.sort {
+            if $0.priority == $1.priority {
+                return $0.createdAt > $1.createdAt
+            }
+            return $0.priority > $1.priority
+        }
     }
 }

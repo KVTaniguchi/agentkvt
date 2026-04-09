@@ -353,7 +353,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                 if postRunCount <= preRunSnapshotCount {
                     let shortId = claimed.workUnitId.uuidString.prefix(8).lowercased()
                     let key = "research_\(shortId)"
-                    try? await backendClient.writeResearchSnapshot(
+                    _ = try? await backendClient.writeResearchSnapshot(
                         objectiveId: claimed.objectiveId,
                         taskId: claimed.taskId,
                         key: key,

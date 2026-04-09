@@ -17,6 +17,7 @@ Verify: `curl -sS http://127.0.0.1:3000/healthz`
 
 ### Models
 - **Objective** — User-defined goals that the system decomposes into tasks.
+- **ObjectiveDraft / ObjectiveDraftMessage** — Ephemeral guided-authoring sessions for objective composition before final creation.
 - **Task** — Concrete research/synthesis steps within an objective. Dispatched to Mac agents via webhooks.
 - **ResearchSnapshot** — Persisted findings from agent research, linked to objectives.
 - **ActionItem** — Dynamic buttons for the iOS dashboard (agent writes, user acts).
@@ -28,7 +29,10 @@ Verify: `curl -sS http://127.0.0.1:3000/healthz`
 - **InboundFile** — Uploaded files waiting for agent processing.
 
 ### Services
-- **ObjectivePlanner** — LLM-assisted task decomposition. Sends objective goal to Ollama and persists resulting tasks.
+- **ObjectiveComposer** — Direct Rails-to-Ollama drafting loop for interactive objective composition and follow-up questions.
+- **ObjectivePlanner** — LLM-assisted task decomposition. Builds planner input from the objective goal plus any structured brief metadata before persisting tasks.
+- **ObjectivePlanningInputBuilder** — Normalizes `goal`, `objective_kind`, and `brief_json` into the planner-facing prompt payload.
+- **ObjectiveKickoff** — Shared activation path that enqueues planning when an objective becomes active.
 - **ObjectivePresentationBuilder** — Generates structured UI layouts from research snapshots for iOS generative results views.
 - **MacAgentClient** — Dispatches task webhooks to registered Mac agents.
 
@@ -48,6 +52,10 @@ Verify: `curl -sS http://127.0.0.1:3000/healthz`
 | POST | `/v1/objectives/:id/run_now` | Trigger immediate execution |
 | POST | `/v1/objectives/:id/rerun` | Reset and re-execute |
 | POST | `/v1/objectives/:id/reset_stuck_tasks_and_run` | Reset stuck tasks |
+| POST | `/v1/objective_drafts` | Start a guided objective draft session |
+| GET | `/v1/objective_drafts/:id` | Resume a guided objective draft |
+| POST | `/v1/objective_drafts/:id/messages` | Submit a drafting turn and receive the next assistant response |
+| POST | `/v1/objective_drafts/:id/finalize` | Create the real objective from the draft snapshot |
 | GET | `/v1/objectives/:id/presentation` | Generative results layout |
 | GET | `/v1/action_items` | List action items |
 | POST | `/v1/action_items/:id/handle` | Mark action as handled |
@@ -83,3 +91,5 @@ See [Docs/DEPLOYMENT.md](../Docs/DEPLOYMENT.md) for full production deployment i
 | `AGENTKVT_ALLOW_HTTP` | Set to `1` for HTTP (Tailscale/LAN) |
 | `AGENTKVT_BIND_ALL_INTERFACES` | Set to `1` to bind `0.0.0.0` |
 | `OLLAMA_HOST` | Ollama base URL for ObjectivePlanner |
+| `OLLAMA_MODEL` | Default Ollama model used by planner and composer |
+| `OBJECTIVE_COMPOSER_MODEL` | Optional Ollama model override for guided objective drafting |

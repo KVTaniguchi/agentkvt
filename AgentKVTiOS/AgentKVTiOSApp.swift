@@ -9,6 +9,7 @@ struct AgentKVTiOSApp: App {
     @State private var agentLogsStore: AgentLogsStore
     @State private var actionsStore: ActionsStore
     @State private var objectivesStore: ObjectivesStore
+    @State private var objectiveDraftStore: ObjectiveDraftStore
     @State private var chatStore: ChatStore
     @State private var inboundFilesStore: InboundFilesStore
 
@@ -23,6 +24,7 @@ struct AgentKVTiOSApp: App {
         _agentLogsStore = State(wrappedValue: AgentLogsStore(sync: sync))
         _actionsStore = State(wrappedValue: ActionsStore(sync: sync))
         _objectivesStore = State(wrappedValue: ObjectivesStore(sync: sync))
+        _objectiveDraftStore = State(wrappedValue: ObjectiveDraftStore(sync: sync))
         _chatStore = State(wrappedValue: ChatStore(sync: sync))
         _inboundFilesStore = State(wrappedValue: InboundFilesStore(sync: sync))
     }
@@ -36,6 +38,7 @@ struct AgentKVTiOSApp: App {
                 .environment(agentLogsStore)
                 .environment(actionsStore)
                 .environment(objectivesStore)
+                .environment(objectiveDraftStore)
                 .environment(chatStore)
                 .environment(inboundFilesStore)
         }

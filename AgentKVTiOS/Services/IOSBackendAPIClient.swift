@@ -194,14 +194,163 @@ struct IOSBackendInboundFile: Codable, Sendable, Identifiable {
     let fileBase64: String?
 }
 
-struct IOSBackendObjective: Codable, Sendable, Identifiable {
+struct IOSBackendObjectiveBrief: Codable, Sendable, Equatable {
+    let context: [String]
+    let successCriteria: [String]
+    let constraints: [String]
+    let preferences: [String]
+    let deliverable: String?
+    let openQuestions: [String]
+
+    init(
+        context: [String] = [],
+        successCriteria: [String] = [],
+        constraints: [String] = [],
+        preferences: [String] = [],
+        deliverable: String? = nil,
+        openQuestions: [String] = []
+    ) {
+        self.context = context
+        self.successCriteria = successCriteria
+        self.constraints = constraints
+        self.preferences = preferences
+        let trimmedDeliverable = deliverable?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.deliverable = (trimmedDeliverable?.isEmpty == false) ? trimmedDeliverable : nil
+        self.openQuestions = openQuestions
+    }
+
+    var hasContent: Bool {
+        !context.isEmpty ||
+        !successCriteria.isEmpty ||
+        !constraints.isEmpty ||
+        !preferences.isEmpty ||
+        deliverable != nil ||
+        !openQuestions.isEmpty
+    }
+
+    var jsonObject: [String: Any] {
+        [
+            "context": context,
+            "success_criteria": successCriteria,
+            "constraints": constraints,
+            "preferences": preferences,
+            "deliverable": deliverable ?? "",
+            "open_questions": openQuestions
+        ]
+    }
+}
+
+struct IOSBackendObjective: Decodable, Sendable, Identifiable {
     let id: UUID
     let workspaceId: UUID
     let goal: String
     let status: String   // "pending" | "active" | "completed" | "archived"
     let priority: Int
+    let briefJson: IOSBackendObjectiveBrief
+    let objectiveKind: String?
+    let creationSource: String
+    let plannerSummary: String
     let createdAt: Date
     let updatedAt: Date
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case workspaceId
+        case goal
+        case status
+        case priority
+        case briefJson
+        case objectiveKind
+        case creationSource
+        case plannerSummary
+        case createdAt
+        case updatedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        workspaceId = try container.decode(UUID.self, forKey: .workspaceId)
+        goal = try container.decode(String.self, forKey: .goal)
+        status = try container.decode(String.self, forKey: .status)
+        priority = try container.decode(Int.self, forKey: .priority)
+        briefJson = try container.decodeIfPresent(IOSBackendObjectiveBrief.self, forKey: .briefJson) ?? .init()
+        objectiveKind = try container.decodeIfPresent(String.self, forKey: .objectiveKind)
+        creationSource = try container.decodeIfPresent(String.self, forKey: .creationSource) ?? "manual"
+        plannerSummary = try container.decodeIfPresent(String.self, forKey: .plannerSummary) ?? goal
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+    }
+}
+
+struct IOSBackendObjectiveDraftMessage: Codable, Sendable, Identifiable {
+    let id: UUID
+    let objectiveDraftId: UUID
+    let role: String
+    let content: String
+    let timestamp: Date
+    let createdAt: Date
+    let updatedAt: Date
+}
+
+struct IOSBackendObjectiveDraft: Decodable, Sendable, Identifiable {
+    let id: UUID
+    let workspaceId: UUID
+    let createdByProfileId: UUID?
+    let finalizedObjectiveId: UUID?
+    let status: String
+    let templateKey: String
+    let briefJson: IOSBackendObjectiveBrief
+    let suggestedGoal: String?
+    let assistantMessage: String?
+    let missingFields: [String]
+    let readyToFinalize: Bool
+    let plannerSummary: String
+    let messages: [IOSBackendObjectiveDraftMessage]
+    let createdAt: Date
+    let updatedAt: Date
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case workspaceId
+        case createdByProfileId
+        case finalizedObjectiveId
+        case status
+        case templateKey
+        case briefJson
+        case suggestedGoal
+        case assistantMessage
+        case missingFields
+        case readyToFinalize
+        case plannerSummary
+        case messages
+        case createdAt
+        case updatedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        workspaceId = try container.decode(UUID.self, forKey: .workspaceId)
+        createdByProfileId = try container.decodeIfPresent(UUID.self, forKey: .createdByProfileId)
+        finalizedObjectiveId = try container.decodeIfPresent(UUID.self, forKey: .finalizedObjectiveId)
+        status = try container.decode(String.self, forKey: .status)
+        templateKey = try container.decode(String.self, forKey: .templateKey)
+        briefJson = try container.decodeIfPresent(IOSBackendObjectiveBrief.self, forKey: .briefJson) ?? .init()
+        suggestedGoal = try container.decodeIfPresent(String.self, forKey: .suggestedGoal)
+        assistantMessage = try container.decodeIfPresent(String.self, forKey: .assistantMessage)
+        missingFields = try container.decodeIfPresent([String].self, forKey: .missingFields) ?? []
+        readyToFinalize = try container.decodeIfPresent(Bool.self, forKey: .readyToFinalize) ?? false
+        plannerSummary = try container.decodeIfPresent(String.self, forKey: .plannerSummary) ?? ""
+        messages = try container.decodeIfPresent([IOSBackendObjectiveDraftMessage].self, forKey: .messages) ?? []
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+    }
+}
+
+struct IOSBackendFinalizeObjectiveDraftResult: Sendable {
+    let objective: IOSBackendObjective
+    let objectiveDraft: IOSBackendObjectiveDraft
 }
 
 struct IOSBackendTask: Codable, Sendable, Identifiable {
@@ -312,12 +461,21 @@ private struct IOSBackendInboundFileEnvelope: Codable {
     let inboundFile: IOSBackendInboundFile
 }
 
-private struct IOSBackendObjectivesEnvelope: Codable {
+private struct IOSBackendObjectivesEnvelope: Decodable {
     let objectives: [IOSBackendObjective]
 }
 
-private struct IOSBackendObjectiveEnvelope: Codable {
+private struct IOSBackendObjectiveEnvelope: Decodable {
     let objective: IOSBackendObjective
+}
+
+private struct IOSBackendObjectiveDraftEnvelope: Decodable {
+    let objectiveDraft: IOSBackendObjectiveDraft
+}
+
+private struct IOSBackendFinalizeObjectiveDraftEnvelope: Decodable {
+    let objective: IOSBackendObjective
+    let objectiveDraft: IOSBackendObjectiveDraft
 }
 
 actor IOSBackendAPIClient {
@@ -505,23 +663,46 @@ actor IOSBackendAPIClient {
         fileData: Data,
         uploadedByProfileId: UUID?
     ) async throws -> IOSBackendInboundFile {
-        var inboundFile: [String: Any] = [
-            "id": id.uuidString,
-            "file_name": fileName,
-            "file_base64": fileData.base64EncodedString()
-        ]
-        if let contentType, !contentType.isEmpty {
-            inboundFile["content_type"] = contentType
-        }
-        if let uploadedByProfileId {
-            inboundFile["uploaded_by_profile_id"] = uploadedByProfileId.uuidString
+        let boundary = "Boundary-\(UUID().uuidString)"
+        var body = Data()
+
+        func appendField(_ name: String, value: String) {
+            body.append("--\(boundary)\r\n".data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n".data(using: .utf8)!)
+            body.append("\(value)\r\n".data(using: .utf8)!)
         }
 
-        let data = try await performRequest(
-            path: "v1/inbound_files",
-            method: "POST",
-            jsonBody: ["inbound_file": inboundFile]
-        )
+        appendField("inbound_file[id]", value: id.uuidString)
+        appendField("inbound_file[file_name]", value: fileName)
+        if let contentType, !contentType.isEmpty {
+            appendField("inbound_file[content_type]", value: contentType)
+        }
+        if let uploadedByProfileId {
+            appendField("inbound_file[uploaded_by_profile_id]", value: uploadedByProfileId.uuidString)
+        }
+
+        let mimeType = contentType ?? "application/octet-stream"
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"inbound_file[file]\"; filename=\"\(fileName)\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: \(mimeType)\r\n\r\n".data(using: .utf8)!)
+        body.append(fileData)
+        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+
+        var request = URLRequest(url: try url(for: "v1/inbound_files"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 300
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(workspaceSlug, forHTTPHeaderField: "X-Workspace-Slug")
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+        let (data, response) = try await session.upload(for: request, from: body)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw IOSBackendAPIError.invalidPayload("missing HTTP response")
+        }
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            let responseBody = String(data: data, encoding: .utf8) ?? "<non-utf8 body>"
+            throw IOSBackendAPIError.requestFailed(statusCode: httpResponse.statusCode, body: responseBody)
+        }
         return try decoder.decode(IOSBackendInboundFileEnvelope.self, from: data).inboundFile
     }
 
@@ -530,11 +711,33 @@ actor IOSBackendAPIClient {
         return try decoder.decode(IOSBackendObjectivesEnvelope.self, from: data).objectives
     }
 
-    func createObjective(goal: String, status: String, priority: Int) async throws -> IOSBackendObjective {
+    func createObjective(
+        goal: String,
+        status: String,
+        priority: Int,
+        objectiveKind: String? = nil,
+        creationSource: String? = nil,
+        briefJson: IOSBackendObjectiveBrief? = nil
+    ) async throws -> IOSBackendObjective {
+        var objective: [String: Any] = [
+            "goal": goal,
+            "status": status,
+            "priority": priority
+        ]
+        if let objectiveKind, !objectiveKind.isEmpty {
+            objective["objective_kind"] = objectiveKind
+        }
+        if let creationSource, !creationSource.isEmpty {
+            objective["creation_source"] = creationSource
+        }
+        if let briefJson {
+            objective["brief_json"] = briefJson.jsonObject
+        }
+
         let data = try await performRequest(
             path: "v1/objectives",
             method: "POST",
-            jsonBody: ["objective": ["goal": goal, "status": status, "priority": priority]]
+            jsonBody: ["objective": objective]
         )
         return try decoder.decode(IOSBackendObjectiveEnvelope.self, from: data).objective
     }
@@ -544,13 +747,106 @@ actor IOSBackendAPIClient {
         return try decoder.decode(IOSBackendObjectiveDetail.self, from: data)
     }
 
-    func updateObjective(id: UUID, goal: String, status: String, priority: Int) async throws -> IOSBackendObjective {
+    func updateObjective(
+        id: UUID,
+        goal: String,
+        status: String,
+        priority: Int,
+        objectiveKind: String? = nil,
+        creationSource: String? = nil,
+        briefJson: IOSBackendObjectiveBrief? = nil
+    ) async throws -> IOSBackendObjective {
+        var objective: [String: Any] = [
+            "goal": goal,
+            "status": status,
+            "priority": priority
+        ]
+        if let objectiveKind, !objectiveKind.isEmpty {
+            objective["objective_kind"] = objectiveKind
+        }
+        if let creationSource, !creationSource.isEmpty {
+            objective["creation_source"] = creationSource
+        }
+        if let briefJson {
+            objective["brief_json"] = briefJson.jsonObject
+        }
+
         let data = try await performRequest(
             path: "v1/objectives/\(id.uuidString)",
             method: "PATCH",
-            jsonBody: ["objective": ["goal": goal, "status": status, "priority": priority]]
+            jsonBody: ["objective": objective]
         )
         return try decoder.decode(IOSBackendObjectiveEnvelope.self, from: data).objective
+    }
+
+    func createObjectiveDraft(
+        templateKey: String,
+        seedText: String?,
+        createdByProfileId: UUID?
+    ) async throws -> IOSBackendObjectiveDraft {
+        var draft: [String: Any] = [
+            "template_key": templateKey
+        ]
+        if let seedText, !seedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            draft["seed_text"] = seedText
+        }
+        if let createdByProfileId {
+            draft["created_by_profile_id"] = createdByProfileId.uuidString
+        }
+
+        let data = try await performRequest(
+            path: "v1/objective_drafts",
+            method: "POST",
+            jsonBody: ["objective_draft": draft]
+        )
+        return try decoder.decode(IOSBackendObjectiveDraftEnvelope.self, from: data).objectiveDraft
+    }
+
+    func fetchObjectiveDraft(id: UUID) async throws -> IOSBackendObjectiveDraft {
+        let data = try await performRequest(path: "v1/objective_drafts/\(id.uuidString)")
+        return try decoder.decode(IOSBackendObjectiveDraftEnvelope.self, from: data).objectiveDraft
+    }
+
+    func createObjectiveDraftMessage(
+        draftId: UUID,
+        content: String
+    ) async throws -> IOSBackendObjectiveDraft {
+        let data = try await performRequest(
+            path: "v1/objective_drafts/\(draftId.uuidString)/messages",
+            method: "POST",
+            jsonBody: [
+                "objective_draft_message": [
+                    "content": content
+                ]
+            ]
+        )
+        return try decoder.decode(IOSBackendObjectiveDraftEnvelope.self, from: data).objectiveDraft
+    }
+
+    func finalizeObjectiveDraft(
+        id: UUID,
+        goal: String,
+        status: String,
+        priority: Int,
+        briefJson: IOSBackendObjectiveBrief
+    ) async throws -> IOSBackendFinalizeObjectiveDraftResult {
+        let data = try await performRequest(
+            path: "v1/objective_drafts/\(id.uuidString)/finalize",
+            method: "POST",
+            jsonBody: [
+                "objective_draft": [
+                    "goal": goal,
+                    "status": status,
+                    "priority": priority,
+                    "brief_json": briefJson.jsonObject
+                ]
+            ]
+        )
+        let decoded = try decoder.decode(IOSBackendFinalizeObjectiveDraftEnvelope.self, from: data)
+        return IOSBackendFinalizeObjectiveDraftResult(
+            objective: decoded.objective,
+            objectiveDraft: decoded.objectiveDraft
+        )
     }
 
     func runObjectiveNow(id: UUID) async throws -> IOSBackendObjective {
@@ -812,6 +1108,49 @@ final class IOSBackendSyncService {
     func fetchInboundFilesRemote(limit: Int = 100) async throws -> [IOSBackendInboundFile] {
         guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
         return try await client.fetchInboundFiles(limit: limit)
+    }
+
+    func createObjectiveDraftRemote(
+        templateKey: String,
+        seedText: String? = nil,
+        createdByProfileId: UUID?
+    ) async throws -> IOSBackendObjectiveDraft {
+        guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
+        return try await client.createObjectiveDraft(
+            templateKey: templateKey,
+            seedText: seedText,
+            createdByProfileId: createdByProfileId
+        )
+    }
+
+    func fetchObjectiveDraftRemote(id: UUID) async throws -> IOSBackendObjectiveDraft {
+        guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
+        return try await client.fetchObjectiveDraft(id: id)
+    }
+
+    func createObjectiveDraftMessageRemote(
+        draftId: UUID,
+        content: String
+    ) async throws -> IOSBackendObjectiveDraft {
+        guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
+        return try await client.createObjectiveDraftMessage(draftId: draftId, content: content)
+    }
+
+    func finalizeObjectiveDraftRemote(
+        id: UUID,
+        goal: String,
+        status: String,
+        priority: Int,
+        briefJson: IOSBackendObjectiveBrief
+    ) async throws -> IOSBackendFinalizeObjectiveDraftResult {
+        guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
+        return try await client.finalizeObjectiveDraft(
+            id: id,
+            goal: goal,
+            status: status,
+            priority: priority,
+            briefJson: briefJson
+        )
     }
 
     func createInboundFileRemote(

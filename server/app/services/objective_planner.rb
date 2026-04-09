@@ -20,12 +20,13 @@ class ObjectivePlanner
   # UI and Mac agent pipeline still have work items.
   def call(objective)
     goal = objective.goal.to_s.strip
-    min_task_count = minimum_task_count(goal)
+    planning_input = ObjectivePlanningInputBuilder.for_objective(objective)
+    min_task_count = minimum_task_count(planning_input.presence || goal)
     raw = nil
     raw = @client.chat(
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: objective.goal }
+        { role: "user", content: planning_input.presence || objective.goal }
       ],
       format: "json"
     )
@@ -40,7 +41,7 @@ class ObjectivePlanner
 
     if llm_descriptions.length < min_task_count
       llm_descriptions += supplemental_descriptions(
-        goal: goal,
+        goal: planning_input.presence || goal,
         existing: llm_descriptions,
         needed: (min_task_count - llm_descriptions.length)
       )

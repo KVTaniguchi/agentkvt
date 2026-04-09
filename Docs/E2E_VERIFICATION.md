@@ -32,6 +32,34 @@ Why this scenario first:
 - it uses web search tools that produce concrete, verifiable output
 - it has clear success criteria (research results with hotels, activities, etc.)
 
+## Guided Composer Scenarios
+
+These scenarios verify the new guided objective composer before exercising the full objective execution loop.
+
+### Scenario: Date Night
+
+- Seed prompt: "Help me plan a date night"
+- Template: `date_night`
+- Status: active
+
+Verify:
+- the composer asks 1-2 focused follow-up questions about budget, timing, and preferences
+- the live summary card fills in context, constraints, preferences, and success criteria without requiring copy-paste from another LLM
+- the review screen shows a concise canonical goal and the exact planner-facing summary
+- after finalizing, the created objective contains structured brief data and produces tasks tailored to the stated budget, location, and vibe
+
+### Scenario: Budget
+
+- Seed prompt: "Help me make a budget"
+- Template: `budget`
+- Status: active
+
+Verify:
+- the composer asks focused follow-up questions about income cadence, major expenses, and budgeting goals
+- the live summary card highlights any missing planning inputs before finalization
+- the finalized objective stores structured brief data and a canonical goal instead of only the original seed phrase
+- the resulting task list reflects the captured constraints and success criteria rather than generic financial advice
+
 ## E2E Checklist
 
 ### 1. Prepare the iOS app
@@ -76,12 +104,15 @@ In the iOS app:
 
 1. Open the Objectives tab
 2. Tap **+**
-3. Enter "Plan a weekend trip to San Diego"
-4. Leave "Start immediately (Active)" toggled on
-5. Tap Save
+3. Pick a starter template or keep the generic flow
+4. Either type a short seed phrase and continue the guided draft, or use the legacy fallback form if the composer API is unavailable
+5. Review the canonical goal and planner summary
+6. Leave "Start immediately (Active)" toggled on
+7. Tap Save
 
 Verify:
 - the objective appears in the list with "Active" status
+- if the guided composer was used, the review screen should have shown structured context and missing-field guidance before saving
 - after a few seconds, tasks should appear in the detail view
 
 ### 5. Wait for task execution

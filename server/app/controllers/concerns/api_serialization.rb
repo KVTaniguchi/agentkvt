@@ -129,6 +129,38 @@ module ApiSerialization
     }
   end
 
+  def serialize_objective_draft_message(message)
+    {
+      id: message.id,
+      objective_draft_id: message.objective_draft_id,
+      role: message.role,
+      content: message.content,
+      timestamp: iso8601(message.timestamp),
+      created_at: iso8601(message.created_at),
+      updated_at: iso8601(message.updated_at)
+    }
+  end
+
+  def serialize_objective_draft(draft)
+    {
+      id: draft.id,
+      workspace_id: draft.workspace_id,
+      created_by_profile_id: draft.created_by_profile_id,
+      finalized_objective_id: draft.finalized_objective_id,
+      status: draft.status,
+      template_key: draft.template_key,
+      brief_json: ObjectivePlanningInputBuilder.normalize_brief(draft.brief_json),
+      suggested_goal: draft.suggested_goal,
+      assistant_message: draft.assistant_message,
+      missing_fields: draft.missing_fields,
+      ready_to_finalize: draft.ready_to_finalize,
+      planner_summary: draft.planner_summary,
+      messages: draft.objective_draft_messages.chronological.map { |message| serialize_objective_draft_message(message) },
+      created_at: iso8601(draft.created_at),
+      updated_at: iso8601(draft.updated_at)
+    }
+  end
+
   def serialize_objective(objective)
     {
       id: objective.id,
@@ -136,6 +168,10 @@ module ApiSerialization
       goal: objective.goal,
       status: objective.status,
       priority: objective.priority,
+      brief_json: ObjectivePlanningInputBuilder.normalize_brief(objective.brief_json),
+      objective_kind: objective.objective_kind,
+      creation_source: objective.creation_source,
+      planner_summary: ObjectivePlanningInputBuilder.for_objective(objective),
       created_at: iso8601(objective.created_at),
       updated_at: iso8601(objective.updated_at)
     }

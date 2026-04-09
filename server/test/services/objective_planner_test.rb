@@ -104,6 +104,37 @@ class ObjectivePlannerTest < ActiveSupport::TestCase
     assert_equal tasks.length, @objective.reload.tasks.count
   end
 
+  test "planner prompt includes objective brief metadata when present" do
+    captured_messages = nil
+    objective = @workspace.objectives.create!(
+      goal: "Help me make a budget",
+      status: "active",
+      objective_kind: "budget",
+      brief_json: {
+        context: ["Monthly family budget for a four-person household"],
+        success_criteria: ["Save at least $500 per month"],
+        constraints: ["Keep restaurant spending under $300"],
+        preferences: ["Simple category structure"],
+        deliverable: "Monthly category budget with recommended caps",
+        open_questions: []
+      }
+    )
+
+    client = Object.new
+    client.define_singleton_method(:chat) do |messages:, **_kwargs|
+      captured_messages = messages
+      JSON.generate([{ "description" => "Build a monthly category budget" }])
+    end
+
+    ObjectivePlanner.new(client: client).call(objective)
+
+    planning_input = captured_messages.last.fetch(:content)
+    assert_includes planning_input, "Objective archetype: Budget"
+    assert_includes planning_input, "Success criteria:"
+    assert_includes planning_input, "Constraints:"
+    assert_includes planning_input, "Deliverable:"
+  end
+
   private
 
   # Returns a minimal duck-typed Ollama client that always returns +response+.

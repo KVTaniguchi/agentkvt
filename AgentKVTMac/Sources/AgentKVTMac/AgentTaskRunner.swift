@@ -268,7 +268,7 @@ return result
                 content = arguments
                 toolName = name
                 toolTranscript.append(self.toolTranscriptLine(prefix: "tool_call", name: name, content: arguments))
-            case .toolCallCompleted(let name, let toolResult, let wasDeferred):
+            case .toolCallCompleted(let name, let toolResult, _):
                 phase = "tool_result"
                 content = toolResult
                 toolName = name

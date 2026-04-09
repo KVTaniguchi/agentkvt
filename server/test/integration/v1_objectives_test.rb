@@ -40,6 +40,33 @@ class V1ObjectivesTest < ActionDispatch::IntegrationTest
     assert_not_nil obj["updated_at"]
   end
 
+  test "index serializes guided objective metadata when present" do
+    objective = @workspace.objectives.create!(
+      goal: "Plan a date night",
+      status: "pending",
+      priority: 0,
+      objective_kind: "date_night",
+      creation_source: "guided",
+      brief_json: {
+        context: ["Friday night in Brooklyn"],
+        success_criteria: ["Dinner and one activity"],
+        constraints: ["Stay under $180"],
+        preferences: ["Cozy atmosphere"],
+        deliverable: "Recommended plan with backup option",
+        open_questions: []
+      }
+    )
+
+    get "/v1/objectives", headers: workspace_headers
+    assert_response :success
+
+    serialized = JSON.parse(response.body)["objectives"].find { |item| item["id"] == objective.id.to_s }
+    assert_equal "date_night", serialized["objective_kind"]
+    assert_equal "guided", serialized["creation_source"]
+    assert_equal [ "Friday night in Brooklyn" ], serialized.dig("brief_json", "context")
+    assert_includes serialized["planner_summary"], "Objective archetype: Date Night"
+  end
+
   # ── create ─────────────────────────────────────────────────────────────────
 
   test "create with pending status persists objective and skips ObjectivePlanner" do
@@ -85,6 +112,36 @@ class V1ObjectivesTest < ActionDispatch::IntegrationTest
 
     assert_response :created
     assert_equal 0, JSON.parse(response.body).dig("objective", "priority")
+  end
+
+  test "create accepts structured objective brief metadata" do
+    with_stubbed_planner do
+      post "/v1/objectives",
+           params: {
+             objective: {
+               goal: "Create a monthly family budget",
+               status: "pending",
+               objective_kind: "budget",
+               creation_source: "manual",
+               brief_json: {
+                 context: ["Monthly family budget"],
+                 success_criteria: ["Save $500 per month"],
+                 constraints: ["Keep dining out under $300"],
+                 preferences: ["Simple categories"],
+                 deliverable: "Monthly category budget",
+                 open_questions: []
+               }
+             }
+           },
+           as: :json,
+           headers: workspace_headers
+    end
+
+    assert_response :created
+    created = @workspace.objectives.order(:created_at).last
+    assert_equal "budget", created.objective_kind
+    assert_equal "manual", created.creation_source
+    assert_equal [ "Monthly family budget" ], created.brief_json["context"]
   end
 
   test "create rejects unknown status" do

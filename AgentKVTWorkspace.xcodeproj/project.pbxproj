@@ -26,6 +26,8 @@
 		A1000018 /* ObjectivesDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000017 /* ObjectivesDashboardView.swift */; };
 		A1000019 /* ObjectiveDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000018 /* ObjectiveDetailView.swift */; };
 		A1000020 /* GenerativeResultsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000019 /* GenerativeResultsView.swift */; };
+		A1000021 /* ObjectiveDraftStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000020 /* ObjectiveDraftStore.swift */; };
+		A1000022 /* ObjectiveComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000021 /* ObjectiveComposerView.swift */; };
 		B1000001 /* ManagerCore in Frameworks */ = {isa = PBXBuildFile; productRef = A3000001 /* ManagerCore */; };
 		B1000002 /* ManagerCoreIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000002 /* ManagerCoreIntegrationTests.swift */; };
 		B1000003 /* InboundFilesImportUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000003 /* InboundFilesImportUITests.swift */; };
@@ -33,6 +35,7 @@
 		B1000005 /* RemoteIntentRouterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000005 /* RemoteIntentRouterTests.swift */; };
 		B1000006 /* ObjectivesStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000006 /* ObjectivesStoreTests.swift */; };
 		B1000007 /* IOSBackendSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000007 /* IOSBackendSettingsTests.swift */; };
+		B1000008 /* ObjectiveDraftStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000008 /* ObjectiveDraftStoreTests.swift */; };
 		C1000001 /* AgentKVTMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2000001 /* AgentKVTMacApp.swift */; };
 		C1000002 /* AgentKVTMac in Frameworks */ = {isa = PBXBuildFile; productRef = C3000002 /* AgentKVTMac */; };
 		C1000003 /* ManagerCore in Frameworks */ = {isa = PBXBuildFile; productRef = A3000001 /* ManagerCore */; };
@@ -70,6 +73,8 @@
 		A2000017 /* ObjectivesDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ObjectivesDashboardView.swift; sourceTree = "<group>"; };
 		A2000018 /* ObjectiveDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ObjectiveDetailView.swift; sourceTree = "<group>"; };
 		A2000019 /* GenerativeResultsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenerativeResultsView.swift; sourceTree = "<group>"; };
+		A2000020 /* ObjectiveDraftStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ObjectiveDraftStore.swift; sourceTree = "<group>"; };
+		A2000021 /* ObjectiveComposerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ObjectiveComposerView.swift; sourceTree = "<group>"; };
 		B2000001 /* AgentKVTiOSTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AgentKVTiOSTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B2000002 /* ManagerCoreIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManagerCoreIntegrationTests.swift; sourceTree = "<group>"; };
 		B2000003 /* InboundFilesImportUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboundFilesImportUITests.swift; sourceTree = "<group>"; };
@@ -77,6 +82,7 @@
 		B2000005 /* RemoteIntentRouterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteIntentRouterTests.swift; sourceTree = "<group>"; };
 		B2000006 /* ObjectivesStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ObjectivesStoreTests.swift; sourceTree = "<group>"; };
 		B2000007 /* IOSBackendSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSBackendSettingsTests.swift; sourceTree = "<group>"; };
+		B2000008 /* ObjectiveDraftStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ObjectiveDraftStoreTests.swift; sourceTree = "<group>"; };
 		C2000000 /* AgentKVTMacApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AgentKVTMacApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C2000001 /* AgentKVTMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKVTMacApp.swift; sourceTree = "<group>"; };
 		C2000002 /* AgentKVTMac.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AgentKVTMac.entitlements; sourceTree = "<group>"; };
@@ -151,6 +157,7 @@
 				A2000005 /* AgentLogView.swift */,
 				A2000006 /* ChatView.swift */,
 				A2000017 /* ObjectivesDashboardView.swift */,
+				A2000021 /* ObjectiveComposerView.swift */,
 				A2000018 /* ObjectiveDetailView.swift */,
 				A2000019 /* GenerativeResultsView.swift */,
 			);
@@ -190,6 +197,7 @@
 			children = (
 				A2000015 /* ActionsStore.swift */,
 				A2000016 /* ObjectivesStore.swift */,
+				A2000020 /* ObjectiveDraftStore.swift */,
 			);
 			path = Stores;
 			sourceTree = "<group>";
@@ -203,6 +211,7 @@
 				B2000005 /* RemoteIntentRouterTests.swift */,
 				B2000006 /* ObjectivesStoreTests.swift */,
 				B2000007 /* IOSBackendSettingsTests.swift */,
+				B2000008 /* ObjectiveDraftStoreTests.swift */,
 			);
 			path = AgentKVTiOS/AgentKVTiOSTests;
 			sourceTree = SOURCE_ROOT;
@@ -377,7 +386,9 @@
 				A1000015 /* IOSBackendSettings.swift in Sources */,
 				A1000016 /* ActionsStore.swift in Sources */,
 				A1000017 /* ObjectivesStore.swift in Sources */,
+				A1000021 /* ObjectiveDraftStore.swift in Sources */,
 				A1000018 /* ObjectivesDashboardView.swift in Sources */,
+				A1000022 /* ObjectiveComposerView.swift in Sources */,
 				A1000019 /* ObjectiveDetailView.swift in Sources */,
 				A1000020 /* GenerativeResultsView.swift in Sources */,
 			);
@@ -393,6 +404,7 @@
 				B1000005 /* RemoteIntentRouterTests.swift in Sources */,
 				B1000006 /* ObjectivesStoreTests.swift in Sources */,
 				B1000007 /* IOSBackendSettingsTests.swift in Sources */,
+				B1000008 /* ObjectiveDraftStoreTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

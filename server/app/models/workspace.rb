@@ -9,6 +9,7 @@ class Workspace < ApplicationRecord
   has_many :action_items, dependent: :destroy
   has_many :agent_logs, dependent: :destroy
   has_many :objectives, dependent: :destroy
+  has_many :objective_drafts, dependent: :destroy
   has_many :agent_registrations, dependent: :destroy
 
   validates :name, presence: true

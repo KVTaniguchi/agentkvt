@@ -22,12 +22,12 @@ public func makeReadResearchSnapshotTool(modelContext: ModelContext) -> ToolRegi
                 predicate: #Predicate<ResearchSnapshot> { $0.key == key }
             )
             guard let snapshot = try? modelContext.fetch(descriptor).first else {
-                return "ResearchSnapshot not found for key=\\(key). This is the first check."
+                return "ResearchSnapshot not found for key=\(key). This is the first check."
             }
             let formatter = ISO8601DateFormatter()
             let checkedAtStr = formatter.string(from: snapshot.checkedAt)
             let deltaStr = snapshot.deltaNote ?? "none"
-            return "ResearchSnapshot found: key=\\(snapshot.key) lastKnownValue=\\(snapshot.lastKnownValue) checkedAt=\\(checkedAtStr) deltaNote=\\(deltaStr)"
+            return "ResearchSnapshot found: key=\(snapshot.key) lastKnownValue=\(snapshot.lastKnownValue) checkedAt=\(checkedAtStr) deltaNote=\(deltaStr)"
         }
     )
 }
@@ -63,7 +63,7 @@ public func makeWriteResearchSnapshotTool(modelContext: ModelContext) -> ToolReg
                 let record = ResearchSnapshot(key: key, lastKnownValue: currentValue)
                 modelContext.insert(record)
                 try? modelContext.save()
-                return "ResearchSnapshot created: first observation of key=\\(key) value=\\(currentValue)"
+                return "ResearchSnapshot created: first observation of key=\(key) value=\(currentValue)"
             }
 
             let previous = snapshot.lastKnownValue
@@ -72,7 +72,7 @@ public func makeWriteResearchSnapshotTool(modelContext: ModelContext) -> ToolReg
                 snapshot.checkedAt = Date()
                 snapshot.deltaNote = nil
                 try? modelContext.save()
-                return "unchanged: value=\\(currentValue)"
+                return "unchanged: value=\(currentValue)"
             }
 
             // Attempt numeric delta evaluation
@@ -83,16 +83,16 @@ public func makeWriteResearchSnapshotTool(modelContext: ModelContext) -> ToolReg
                     snapshot.deltaNote = nil
                     snapshot.lastKnownValue = currentValue
                     try? modelContext.save()
-                    return "unchanged: value=\\(currentValue) (numeric delta \\(delta) below threshold=\\(threshold))"
+                    return "unchanged: value=\(currentValue) (numeric delta \(delta) below threshold=\(threshold))"
                 }
             }
 
-            let note = "Changed from \\(previous) to \\(currentValue)"
+            let note = "Changed from \(previous) to \(currentValue)"
             snapshot.lastKnownValue = currentValue
             snapshot.checkedAt = Date()
             snapshot.deltaNote = note
             try? modelContext.save()
-            return "changed: \\(note)"
+            return "changed: \(note)"
         }
     )
 }

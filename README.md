@@ -18,31 +18,34 @@ AgentKVT is a sovereign, self-hosted personal agent ecosystem. It operates entir
 
 By utilizing a central **Rails + PostgreSQL** backend on a Mac server instead of iCloud, multiple family members with different Apple IDs can seamlessly share a unified workspace.
 
+The latest objective flow now includes a guided **Objective Composer** on iOS. Instead of copy-pasting a prompt from a separate LLM, the app can open a draft session that talks directly to the Rails server, lets the server-side model ask a few high-value follow-up questions, and finalizes a structured planner brief before creating the real objective.
+
 ## Core Architecture
 
 AgentKVT consists of three cooperating layers:
 
-1. **The Remote (iOS):** A SwiftUI dashboard running on your iPhone. It's backend-first—you create **Objectives** and review **ActionItems**, context, and logs by connecting to the Rails API (often over Tailscale). Real-time status chips show when the Mac agent is actively working.
-2. **The API & Store (Server):** A Mac-hosted **Ruby on Rails** application exposing versioned HTTP endpoints. Postgres serves as the definitive, multi-device source of truth for workspaces, tasks, research snapshots, action items, and agent logs. 
+1. **The Remote (iOS):** A SwiftUI dashboard running on your iPhone. It's backend-first—you create **Objectives**, draft guided objective briefs, and review **ActionItems**, context, and logs by connecting to the Rails API (often over Tailscale). Real-time status chips show when the Mac agent is actively working.
+2. **The API & Store (Server):** A Mac-hosted **Ruby on Rails** application exposing versioned HTTP endpoints. Postgres serves as the definitive, multi-device source of truth for workspaces, objective drafts, tasks, research snapshots, action items, and agent logs. 
 3. **The Brain (macOS):** An event-driven macOS background application `ObjectiveExecutionPool` that pulls tasks from the Rails server. It runs an autonomous loop using local LLMs (via Ollama) and a registry of sandboxed MCP (Model Context Protocol) tools to conduct research and synthesis.
 
 ## How the Objectives Pipeline Works
 
 *Note: This objectives-based pipeline completely replaces the legacy "Missions" engine.*
 
-1. **Create an Objective:** A user adds a high-level goal in the iOS app.
-2. **Task Planning:** The Rails backend breaks down the objective into actionable **Tasks** using LLM-assisted planning.
-3. **Execution Delivery:** The Mac Brain continuously polls or receives webhooks from the server. It picks up pending tasks and dispatches them to worker threads.
-4. **Agentic Loop:** The local LLM research engine runs multi-step tasks using over 20+ allowed system tools (secure browsing, file reading, semantic search, etc.).
-5. **Results & Action Items:** Research findings are synced back to the Postgres database as **ResearchSnapshots** and presented natively in the iOS app. If the agent discovers a concrete next step (e.g., "Review Acme Corp Job Description" or "Approve Trip Budget"), an **ActionItem** is created.
-6. **Transparency:** Every single step, tool call, and token metric is preserved as an **AgentLog** for a complete audit trail.
+1. **Draft or Create an Objective:** A user can either add a direct objective or open the guided Objective Composer in the iOS app.
+2. **Guided Structuring:** The Rails backend can hold a resumable objective draft, ask a few focused follow-up questions, and build a structured planner brief before finalization.
+3. **Task Planning:** Once finalized, the Rails backend breaks down the objective into actionable **Tasks** using LLM-assisted planning informed by both the goal and the structured brief.
+4. **Execution Delivery:** The Mac Brain continuously polls or receives webhooks from the server. It picks up pending tasks and dispatches them to worker threads.
+5. **Agentic Loop:** The local LLM research engine runs multi-step tasks using over 20+ allowed system tools (secure browsing, file reading, semantic search, etc.).
+6. **Results & Action Items:** Research findings are synced back to the Postgres database as **ResearchSnapshots** and presented natively in the iOS app. If the agent discovers a concrete next step (e.g., "Review Acme Corp Job Description" or "Approve Trip Budget"), an **ActionItem** is created.
+7. **Transparency:** Every single step, tool call, and token metric is preserved as an **AgentLog** for a complete audit trail.
 
 ## Repository Structure
 
 - **`ManagerCore/`** — Shared Swift package defining the SwiftData/Model schema (`Objective`, `Task`, `ActionItem`, `AgentLog`, `ChatThread`, etc.) used by both Mac and iOS clients.
 - **`AgentKVTMac/`** — The macOS background agent app. Includes the event-driven scheduler, task runners, the sandboxed tool registry, and the Ollama client integration.
-- **`AgentKVTiOS/`** — The iOS SwiftUI project. Features tabs for Objectives, Actions, Context, Log, Chat, and Files. 
-- **`server/`** — The Ruby on Rails API. Provides the core PostgreSQL database, schema, and API controllers.
+- **`AgentKVTiOS/`** — The iOS SwiftUI project. Features tabs for Objectives, Actions, Context, Log, Chat, and Files, plus the guided Objective Composer flow.
+- **`server/`** — The Ruby on Rails API. Provides the core PostgreSQL database, schema, API controllers, and synchronous objective draft/composer endpoints.
 - **`Docs/`** — Extensive architectural guides, deployment instructions, and vision documents.
 
 ## Detailed Documentation
