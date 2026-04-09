@@ -182,6 +182,16 @@ public final class OllamaClient: @unchecked Sendable {
         public let message: Message?
         public let done: Bool?
         public let error: String?
+        /// Number of tokens in the prompt (Ollama: prompt_eval_count).
+        public let promptEvalCount: Int?
+        /// Number of tokens generated (Ollama: eval_count).
+        public let evalCount: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case message, done, error
+            case promptEvalCount = "prompt_eval_count"
+            case evalCount = "eval_count"
+        }
     }
 
     private struct ManualToolResponse: Decodable {
@@ -232,6 +242,9 @@ public final class OllamaClient: @unchecked Sendable {
         }
         let parsed = try JSONDecoder().decode(ChatResponse.self, from: data)
         guard let msg = parsed.message else { throw OllamaError.noMessage }
+        if let input = parsed.promptEvalCount, let output = parsed.evalCount {
+            Task { await TokenUsageLogger.shared.record(model: model, promptTokens: input, completionTokens: output) }
+        }
         return coerceAssistantMessageIfNeeded(msg, tools: tools)
     }
 

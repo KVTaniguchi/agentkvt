@@ -529,6 +529,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
 
             Instructions:
             1. Prefer reconciling and summarizing the server findings above; use read_objective_snapshot if you need a fresher list mid-run.
+            1a. Call list_dropzone_files first — if any user-uploaded files are relevant to this objective, read them with read_dropzone_file and incorporate that context before searching the web.
             2. Use multi_step_search only if you need one last current fact to close a gap.
             3. Write at least one final objective snapshot with write_objective_snapshot using:
                - objective_id: \(claimed.objectiveId.uuidString)
@@ -569,6 +570,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
 
             Instructions:
             1. Call read_objective_snapshot with objective_id \(claimed.objectiveId.uuidString) (and task_id \(claimed.taskId.uuidString) if you need an updated list) before spending tokens on overlapping searches.
+            1a. Call list_dropzone_files — if any user-uploaded files are relevant to this work unit, read them with read_dropzone_file and treat their contents as authoritative user-provided context.
             2. Use multi_step_search to research gaps or updates for this focused subproblem.
             3. Write 1-3 objective snapshots that capture durable findings from this work unit. Each value must be human-readable prose sentences — NOT JSON, NOT tool-call format.
             4. Every snapshot from this work unit must include:
@@ -585,7 +587,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             taskName: "Objective Work Unit: \(claimed.title.prefix(60))",
             systemPrompt: systemPrompt,
             triggerSchedule: "objective_board",
-            allowedToolIds: ["read_objective_snapshot", "multi_step_search", "write_objective_snapshot"],
+            allowedToolIds: ["read_objective_snapshot", "multi_step_search", "write_objective_snapshot", "list_dropzone_files", "read_dropzone_file"],
             ownerProfileId: nil,
             isEnabled: true,
             lastRunAt: nil,
