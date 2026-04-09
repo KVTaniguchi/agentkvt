@@ -31,7 +31,7 @@ struct ObjectivesDashboardView: View {
             }
             .emptyState(
                 store.objectives.isEmpty && !store.isLoading && store.errorMessage == nil,
-                message: "No objectives yet. Tap + to create one."
+                message: "No objectives yet. Tap + to start a guided draft or create one directly."
             )
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {

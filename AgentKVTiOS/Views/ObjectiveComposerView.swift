@@ -51,6 +51,29 @@ private enum ObjectiveComposerTemplate: String, CaseIterable, Identifiable {
     }
 }
 
+private struct PendingObjectiveComposerTurn {
+    let userMessageID = UUID()
+    let thinkingMessageID = UUID()
+    let content: String
+}
+
+private enum ObjectiveComposerTimelineItem: Identifiable {
+    case message(IOSBackendObjectiveDraftMessage)
+    case pendingUser(id: UUID, content: String)
+    case thinking(id: UUID)
+
+    var id: UUID {
+        switch self {
+        case .message(let message):
+            return message.id
+        case .pendingUser(let id, _):
+            return id
+        case .thinking(let id):
+            return id
+        }
+    }
+}
+
 struct ObjectiveComposerView: View {
     @Environment(ObjectiveDraftStore.self) private var draftStore
     @Environment(ObjectivesStore.self) private var objectivesStore
@@ -64,9 +87,21 @@ struct ObjectiveComposerView: View {
     @State private var startImmediately = true
     @State private var showingLegacyFallback = false
     @State private var localErrorMessage: String?
+    @State private var pendingTurn: PendingObjectiveComposerTurn?
+    @State private var isSummaryExpanded = false
+    @FocusState private var isDraftMessageFieldFocused: Bool
 
     private var draft: IOSBackendObjectiveDraft? {
         draftStore.activeDraft
+    }
+
+    private var timelineItems: [ObjectiveComposerTimelineItem] {
+        var items = (draft?.messages ?? []).map(ObjectiveComposerTimelineItem.message)
+        if let pendingTurn {
+            items.append(.pendingUser(id: pendingTurn.userMessageID, content: pendingTurn.content))
+            items.append(.thinking(id: pendingTurn.thinkingMessageID))
+        }
+        return items
     }
 
     private var navigationTitle: String {
@@ -90,7 +125,7 @@ struct ObjectiveComposerView: View {
             Group {
                 if showingLegacyFallback {
                     LegacyObjectiveCreateView(
-                        fallbackMessage: "Guided drafting is not available on this server yet. You can still create a standard objective below."
+                        fallbackMessage: "Guided drafting is not available on this server right now. You can still create a standard objective below, or restart the Rails API on the server to re-enable the interactive composer."
                     ) {
                         draftStore.reset()
                         dismiss()
@@ -151,6 +186,8 @@ struct ObjectiveComposerView: View {
                     .font(.headline)
                     .padding(.top, 8)
 
+                ObjectiveCreationGuideCard()
+
                 ForEach(ObjectiveComposerTemplate.allCases) { template in
                     Button {
                         Task { await beginDraft(for: template) }
@@ -193,26 +230,35 @@ struct ObjectiveComposerView: View {
     private var draftingView: some View {
         VStack(spacing: 0) {
             if let draft {
-                ObjectiveDraftSummaryCard(draft: draft)
+                ObjectiveDraftSummaryCard(
+                    draft: draft,
+                    isExpanded: isSummaryExpanded,
+                    onToggle: {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            isSummaryExpanded.toggle()
+                        }
+                    }
+                )
                     .padding([.horizontal, .top])
             }
 
-            if let draft {
+            if draft != nil {
                 ScrollViewReader { proxy in
                     List {
-                        ForEach(draft.messages) { message in
-                            ObjectiveComposerMessageRow(message: message)
-                                .id(message.id)
+                        ForEach(timelineItems) { item in
+                            ObjectiveComposerTimelineRow(item: item)
+                                .id(item.id)
                                 .listRowSeparator(.hidden)
                                 .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                         }
                     }
                     .listStyle(.plain)
+                    .scrollDismissesKeyboard(.interactively)
                     .onAppear {
-                        scrollToLatest(proxy: proxy, messages: draft.messages)
+                        scrollToLatest(proxy: proxy, items: timelineItems)
                     }
-                    .onChange(of: draft.messages.map(\.id)) { _, _ in
-                        scrollToLatest(proxy: proxy, messages: draft.messages)
+                    .onChange(of: timelineItems.map(\.id)) { _, _ in
+                        scrollToLatest(proxy: proxy, items: timelineItems)
                     }
                 }
             } else {
@@ -224,6 +270,16 @@ struct ObjectiveComposerView: View {
             }
 
             VStack(alignment: .leading, spacing: 8) {
+                Text("Reply in plain language. After each turn, AgentKVT updates the summary card so you can see what the planner understands.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if draftStore.isSending {
+                    Label("Planner is thinking. This can take a bit when the server model is busy.", systemImage: "hourglass")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 if canReview {
                     Label("This draft is ready to review.", systemImage: "checkmark.seal")
                         .font(.caption)
@@ -234,11 +290,19 @@ struct ObjectiveComposerView: View {
                     TextField("Reply to the planner", text: $draftedMessage, axis: .vertical)
                         .textFieldStyle(.roundedBorder)
                         .lineLimit(1...5)
+                        .focused($isDraftMessageFieldFocused)
 
                     Button("Send") {
                         Task { await sendDraftMessage() }
                     }
                     .buttonStyle(.borderedProminent)
+                    .overlay {
+                        if draftStore.isSending {
+                            ProgressView()
+                                .tint(.white)
+                        }
+                    }
+                    .opacity(draftStore.isSending ? 0.85 : 1)
                     .disabled(
                         draftedMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
                         draftStore.isSending ||
@@ -249,26 +313,41 @@ struct ObjectiveComposerView: View {
             .padding()
             .background(.thinMaterial)
         }
+        .onChange(of: isDraftMessageFieldFocused) { _, isFocused in
+            if isFocused && isSummaryExpanded {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    isSummaryExpanded = false
+                }
+            }
+        }
     }
 
     private var reviewView: some View {
         Form {
-            Section("Goal") {
+            Section {
                 TextField("Objective goal", text: $reviewGoal, axis: .vertical)
                     .lineLimit(2...4)
+            } header: {
+                Text("Goal")
+            } footer: {
+                Text("This is the final title shown in your objectives list. Keep it short and outcome-focused.")
             }
 
-            Section("Planner Summary") {
+            Section {
                 Text(plannerSummary)
                     .font(.footnote.monospaced())
                     .textSelection(.enabled)
                     .foregroundStyle(.primary)
+            } header: {
+                Text("Planner Summary")
+            } footer: {
+                Text("This is the exact structured summary the server planner will use to decompose work after you create the objective.")
             }
 
             Section {
                 Toggle("Start immediately (Active)", isOn: $startImmediately)
             } footer: {
-                Text("Active objectives trigger the Mac agent to decompose tasks automatically.")
+                Text("Active objectives are created and then immediately sent to the Mac agent for planning.")
             }
 
             if let draft, !draft.missingFields.isEmpty {
@@ -311,6 +390,8 @@ struct ObjectiveComposerView: View {
 
     @MainActor
     private func beginDraft(for template: ObjectiveComposerTemplate) async {
+        pendingTurn = nil
+        isSummaryExpanded = false
         do {
             _ = try await draftStore.startDraft(
                 templateKey: template.rawValue,
@@ -328,10 +409,19 @@ struct ObjectiveComposerView: View {
 
     @MainActor
     private func sendDraftMessage() async {
+        let trimmed = draftedMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        isDraftMessageFieldFocused = false
+        draftedMessage = ""
+        pendingTurn = PendingObjectiveComposerTurn(content: trimmed)
+
         do {
-            _ = try await draftStore.sendMessage(draftedMessage)
-            draftedMessage = ""
+            _ = try await draftStore.sendMessage(trimmed)
+            pendingTurn = nil
         } catch {
+            draftedMessage = trimmed
+            pendingTurn = nil
             localErrorMessage = error.localizedDescription
             IOSRuntimeLog.log("[ObjectiveComposerView] send draft message failed: \(error)")
         }
@@ -363,6 +453,8 @@ struct ObjectiveComposerView: View {
     @MainActor
     private func handleLeadingAction() {
         if showingLegacyFallback || stage == .archetypes {
+            pendingTurn = nil
+            isSummaryExpanded = false
             draftStore.reset()
             dismiss()
             return
@@ -373,6 +465,8 @@ struct ObjectiveComposerView: View {
             stage = .drafting
         case .drafting:
             stage = .archetypes
+            pendingTurn = nil
+            isSummaryExpanded = false
             draftStore.reset()
             selectedTemplate = nil
         case .archetypes:
@@ -385,12 +479,14 @@ struct ObjectiveComposerView: View {
         await draftStore.resumePersistedDraftIfNeeded()
         guard !showingLegacyFallback else { return }
         guard let draft = draftStore.activeDraft, draft.status == "drafting" else { return }
+        pendingTurn = nil
+        isSummaryExpanded = false
         selectedTemplate = ObjectiveComposerTemplate(rawValue: draft.templateKey)
         stage = .drafting
     }
 
-    private func scrollToLatest(proxy: ScrollViewProxy, messages: [IOSBackendObjectiveDraftMessage]) {
-        guard let lastID = messages.last?.id else { return }
+    private func scrollToLatest(proxy: ScrollViewProxy, items: [ObjectiveComposerTimelineItem]) {
+        guard let lastID = items.last?.id else { return }
         DispatchQueue.main.async {
             withAnimation {
                 proxy.scrollTo(lastID, anchor: .bottom)
@@ -401,6 +497,8 @@ struct ObjectiveComposerView: View {
 
 private struct ObjectiveDraftSummaryCard: View {
     let draft: IOSBackendObjectiveDraft
+    let isExpanded: Bool
+    let onToggle: () -> Void
 
     static func humanizedField(_ field: String) -> String {
         field
@@ -410,8 +508,17 @@ private struct ObjectiveDraftSummaryCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("What AgentKVT Understands")
-                .font(.headline)
+            HStack(alignment: .center, spacing: 12) {
+                Text("What AgentKVT Understands")
+                    .font(.headline)
+
+                Spacer()
+
+                Button(isExpanded ? "Hide" : "Show") {
+                    onToggle()
+                }
+                .font(.caption.weight(.semibold))
+            }
 
             if let suggestedGoal = draft.suggestedGoal, !suggestedGoal.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
@@ -423,13 +530,15 @@ private struct ObjectiveDraftSummaryCard: View {
                 }
             }
 
-            ObjectiveBriefSection(title: "Context", items: draft.briefJson.context)
-            ObjectiveBriefSection(title: "Success Criteria", items: draft.briefJson.successCriteria)
-            ObjectiveBriefSection(title: "Constraints", items: draft.briefJson.constraints)
-            ObjectiveBriefSection(title: "Preferences", items: draft.briefJson.preferences)
+            if isExpanded {
+                ObjectiveBriefSection(title: "Context", items: draft.briefJson.context)
+                ObjectiveBriefSection(title: "Success Criteria", items: draft.briefJson.successCriteria)
+                ObjectiveBriefSection(title: "Constraints", items: draft.briefJson.constraints)
+                ObjectiveBriefSection(title: "Preferences", items: draft.briefJson.preferences)
 
-            if let deliverable = draft.briefJson.deliverable, !deliverable.isEmpty {
-                ObjectiveBriefSection(title: "Deliverable", items: [deliverable])
+                if let deliverable = draft.briefJson.deliverable, !deliverable.isEmpty {
+                    ObjectiveBriefSection(title: "Deliverable", items: [deliverable])
+                }
             }
 
             if !draft.missingFields.isEmpty {
@@ -437,11 +546,56 @@ private struct ObjectiveDraftSummaryCard: View {
                     Text("Still Missing")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
-                    Text(draft.missingFields.map(Self.humanizedField).joined(separator: ", "))
-                        .font(.footnote)
+                    Text(missingFieldsSummary)
+                        .font(isExpanded ? .footnote : .caption)
                         .foregroundStyle(.secondary)
                 }
+            } else if draft.readyToFinalize {
+                Label("Ready to review", systemImage: "checkmark.seal")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
+        }
+        .padding(16)
+        .background(Color(.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+
+    private var missingFieldsSummary: String {
+        if isExpanded {
+            return draft.missingFields.map(Self.humanizedField).joined(separator: ", ")
+        }
+
+        let preview = draft.missingFields.prefix(2).map(Self.humanizedField).joined(separator: ", ")
+        let extraCount = max(0, draft.missingFields.count - 2)
+        if extraCount > 0 {
+            return "\(preview) + \(extraCount) more"
+        }
+        return preview
+    }
+}
+
+private struct ObjectiveCreationGuideCard: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("How Objective Creation Works")
+                .font(.headline)
+
+            Text("1. Choose a template or start with a custom objective.")
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+
+            Text("2. The server asks a few clarifying questions and builds a structured planning brief.")
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+
+            Text("3. Review the final goal and planner summary before creating the objective.")
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+
+            Text("If guided drafting is unavailable, the app falls back to a standard one-field objective form.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
         }
         .padding(16)
         .background(Color(.secondarySystemBackground))
@@ -469,12 +623,34 @@ private struct ObjectiveBriefSection: View {
     }
 }
 
-private struct ObjectiveComposerMessageRow: View {
-    let message: IOSBackendObjectiveDraftMessage
+private struct ObjectiveComposerTimelineRow: View {
+    let item: ObjectiveComposerTimelineItem
 
-    private var isUser: Bool {
-        message.role == "user"
+    var body: some View {
+        switch item {
+        case .message(let message):
+            ObjectiveComposerMessageBubble(
+                speaker: message.role == "user" ? "You" : "Planner",
+                content: message.content,
+                isUser: message.role == "user"
+            )
+        case .pendingUser(_, let content):
+            ObjectiveComposerMessageBubble(
+                speaker: "You",
+                content: content,
+                isUser: true
+            )
+            .opacity(0.85)
+        case .thinking:
+            ObjectiveComposerThinkingBubble()
+        }
     }
+}
+
+private struct ObjectiveComposerMessageBubble: View {
+    let speaker: String
+    let content: String
+    let isUser: Bool
 
     private var bubbleColor: Color {
         isUser ? .blue : Color(.secondarySystemBackground)
@@ -489,11 +665,11 @@ private struct ObjectiveComposerMessageRow: View {
             if isUser { Spacer(minLength: 28) }
 
             VStack(alignment: isUser ? .trailing : .leading, spacing: 4) {
-                Text(isUser ? "You" : "Planner")
+                Text(speaker)
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                Text(message.content)
+                Text(content)
                     .foregroundStyle(textColor)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
@@ -503,6 +679,32 @@ private struct ObjectiveComposerMessageRow: View {
             }
 
             if !isUser { Spacer(minLength: 28) }
+        }
+    }
+}
+
+private struct ObjectiveComposerThinkingBubble: View {
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Planner")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                HStack(spacing: 10) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Working on the next draft turn…")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .background(Color(.secondarySystemBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            }
+
+            Spacer(minLength: 28)
         }
     }
 }
@@ -528,15 +730,19 @@ private struct LegacyObjectiveCreateView: View {
                 }
             }
 
-            Section("Goal") {
+            Section {
                 TextField("e.g. San Diego trip logistics", text: $goal, axis: .vertical)
                     .lineLimit(3...6)
+            } header: {
+                Text("Goal")
+            } footer: {
+                Text("Use a concise outcome-oriented goal. Guided drafting is better for objectives that need constraints, preferences, or follow-up questions.")
             }
 
             Section {
                 Toggle("Start immediately (Active)", isOn: $launchActive)
             } footer: {
-                Text("Active objectives trigger the Mac agent to decompose tasks automatically.")
+                Text("Active objectives are created and then immediately sent to the Mac agent for planning.")
             }
 
             Section {

@@ -479,6 +479,9 @@ private struct IOSBackendFinalizeObjectiveDraftEnvelope: Decodable {
 }
 
 actor IOSBackendAPIClient {
+    private static let defaultRequestTimeout: TimeInterval = 60
+    private static let draftRequestTimeout: TimeInterval = 300
+
     let baseURL: URL
     let workspaceSlug: String
 
@@ -797,7 +800,8 @@ actor IOSBackendAPIClient {
         let data = try await performRequest(
             path: "v1/objective_drafts",
             method: "POST",
-            jsonBody: ["objective_draft": draft]
+            jsonBody: ["objective_draft": draft],
+            timeoutInterval: Self.draftRequestTimeout
         )
         return try decoder.decode(IOSBackendObjectiveDraftEnvelope.self, from: data).objectiveDraft
     }
@@ -818,7 +822,8 @@ actor IOSBackendAPIClient {
                 "objective_draft_message": [
                     "content": content
                 ]
-            ]
+            ],
+            timeoutInterval: Self.draftRequestTimeout
         )
         return try decoder.decode(IOSBackendObjectiveDraftEnvelope.self, from: data).objectiveDraft
     }
@@ -840,7 +845,8 @@ actor IOSBackendAPIClient {
                     "priority": priority,
                     "brief_json": briefJson.jsonObject
                 ]
-            ]
+            ],
+            timeoutInterval: Self.draftRequestTimeout
         )
         let decoded = try decoder.decode(IOSBackendFinalizeObjectiveDraftEnvelope.self, from: data)
         return IOSBackendFinalizeObjectiveDraftResult(
@@ -891,10 +897,12 @@ actor IOSBackendAPIClient {
     private func performRequest(
         path: String,
         method: String = "GET",
-        jsonBody: [String: Any]? = nil
+        jsonBody: [String: Any]? = nil,
+        timeoutInterval: TimeInterval = 60
     ) async throws -> Data {
         var request = URLRequest(url: try url(for: path))
         request.httpMethod = method
+        request.timeoutInterval = timeoutInterval
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue(workspaceSlug, forHTTPHeaderField: "X-Workspace-Slug")
 

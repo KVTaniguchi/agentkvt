@@ -13,11 +13,18 @@ public protocol OllamaClientProtocol {
 public final class OllamaClient: @unchecked Sendable {
     public let baseURL: URL
     public let model: String
+    public let timeoutInterval: TimeInterval
     private let session: URLSession
 
-    public init(baseURL: URL = URL(string: "http://localhost:11434")!, model: String = "llama4:latest", session: URLSession = .shared) {
+    public init(
+        baseURL: URL = URL(string: "http://localhost:11434")!,
+        model: String = "llama4:latest",
+        timeoutInterval: TimeInterval = 300,
+        session: URLSession = .shared
+    ) {
         self.baseURL = baseURL
         self.model = model
+        self.timeoutInterval = timeoutInterval
         self.session = session
     }
 
@@ -223,6 +230,7 @@ public final class OllamaClient: @unchecked Sendable {
         let url = baseURL.appending(path: "api/chat")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
+        request.timeoutInterval = timeoutInterval
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(
             ChatRequest(
