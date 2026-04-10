@@ -130,6 +130,9 @@ public func runAgentKVTMacRunner() async {
     registry.register(makeReadResearchSnapshotTool(modelContext: context))
     registry.register(makeWriteResearchSnapshotTool(modelContext: context))
     registry.register(makeMultiStepSearchTool(apiKey: settings.ollamaAPIKey))
+    if let geminiKey = settings.geminiAPIKey, !geminiKey.isEmpty {
+        registry.register(makeGeminiAskTool(apiKey: geminiKey))
+    }
 
     if !settings.localFileAllowedDirectories.isEmpty {
         registry.register(makeReadLocalFileTool(allowedDirectories: settings.localFileAllowedDirectories))
