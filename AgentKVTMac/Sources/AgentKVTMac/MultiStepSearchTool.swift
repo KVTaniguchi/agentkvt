@@ -93,19 +93,37 @@ private func cap(_ string: String, chars: Int) -> String {
 }
 
 /// Strips ```json fences and parses a JSON array of objects into string dictionaries (values coerced to strings).
+/// Also handles the double-nested pattern the LLM sometimes emits:
+///   {"steps_json": "[{...}]"}  or  {"steps_json": {"steps_json": "[{...}]"}}
 private func parseStepObjects(from stepsJson: String) -> [[String: String]]? {
     let stripped = stripMarkdownCodeFences(stepsJson.trimmingCharacters(in: .whitespacesAndNewlines))
     guard let data = stripped.data(using: .utf8) else { return nil }
     guard let top = try? JSONSerialization.jsonObject(with: data) else { return nil }
-    let objects: [[String: Any]]
-    if let arr = top as? [[String: Any]] {
-        objects = arr
-    } else if let single = top as? [String: Any] {
-        objects = [single]
-    } else {
-        return nil
+    return extractStepObjects(from: top, depth: 0)
+}
+
+private func extractStepObjects(from value: Any, depth: Int) -> [[String: String]]? {
+    guard depth < 4 else { return nil }
+    if let arr = value as? [[String: Any]] {
+        return arr.map(stringifyStepDictionary)
     }
-    return objects.map(stringifyStepDictionary)
+    if let dict = value as? [String: Any] {
+        // Unwrap {"steps_json": "..."} or {"steps_json": [...]} recursively
+        if let inner = dict["steps_json"] {
+            if let innerString = inner as? String {
+                let stripped = stripMarkdownCodeFences(innerString.trimmingCharacters(in: .whitespacesAndNewlines))
+                if let data = stripped.data(using: .utf8),
+                   let parsed = try? JSONSerialization.jsonObject(with: data) {
+                    return extractStepObjects(from: parsed, depth: depth + 1)
+                }
+            } else {
+                return extractStepObjects(from: inner, depth: depth + 1)
+            }
+        }
+        // Single-step object passed directly
+        return [stringifyStepDictionary(dict)]
+    }
+    return nil
 }
 
 private func stripMarkdownCodeFences(_ raw: String) -> String {

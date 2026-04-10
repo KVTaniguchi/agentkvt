@@ -119,6 +119,8 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         let workType: String
         var resultSummary: String?
         var lastError: String?
+        /// Number of times this work unit has been reset to pending after a transient timeout.
+        var retryCount: Int?
     }
 
     private struct ClaimedWork: Sendable {
@@ -168,50 +170,65 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                 title: payload.description,
                 parentObjectiveGoal: parentGoal
             )
-            try updateRootState(rootId: root.id, state: WorkUnitState.inProgress.rawValue, phase: "decomposing")
-            await logEvent(
-                phase: "objective_supervisor",
-                content: "Supervisor started board work for task: \(payload.description)",
-                objectiveId: objectiveId,
-                taskId: taskId,
-                taskName: "Objective Supervisor"
-            )
 
-            let initialUnits = await createResearchRound(
-                objectiveId: objectiveId,
-                taskId: taskId,
-                rootTaskDescription: payload.description,
-                parentObjectiveGoal: parentGoal,
-                planningRound: 1,
-                completedSummaries: []
-            )
-            if initialUnits == 0 {
-                _ = try createWorkUnit(
+            // If research already timed out in a prior supervisor run, skip straight to synthesis
+            // with whatever snapshots were gathered rather than re-queueing research work units.
+            let alreadyTimedOut = root.activePhaseHint == "timed_out"
+
+            if alreadyTimedOut {
+                await logEvent(
+                    phase: "objective_supervisor",
+                    content: "Supervisor resuming after research timeout — skipping to synthesis for task: \(payload.description)",
                     objectiveId: objectiveId,
                     taskId: taskId,
-                    title: payload.description,
-                    workType: Constants.researchType,
-                    activePhaseHint: "research",
-                    planningRound: 1,
+                    taskName: "Objective Supervisor"
+                )
+            } else {
+                try updateRootState(rootId: root.id, state: WorkUnitState.inProgress.rawValue, phase: "decomposing")
+                await logEvent(
+                    phase: "objective_supervisor",
+                    content: "Supervisor started board work for task: \(payload.description)",
+                    objectiveId: objectiveId,
+                    taskId: taskId,
+                    taskName: "Objective Supervisor"
+                )
+
+                let initialUnits = await createResearchRound(
+                    objectiveId: objectiveId,
+                    taskId: taskId,
                     rootTaskDescription: payload.description,
                     parentObjectiveGoal: parentGoal,
-                    priority: 1.0
+                    planningRound: 1,
+                    completedSummaries: []
                 )
-            }
-            try await waitForResearchToSettle(objectiveId: objectiveId, taskId: taskId)
-
-            let roundOneSummaries = try completedSummaries(objectiveId: objectiveId, taskId: taskId)
-            let followUpUnits = await createResearchRound(
-                objectiveId: objectiveId,
-                taskId: taskId,
-                rootTaskDescription: payload.description,
-                parentObjectiveGoal: parentGoal,
-                planningRound: 2,
-                completedSummaries: roundOneSummaries
-            )
-            if followUpUnits > 0 {
-                try updateRootState(rootId: root.id, state: WorkUnitState.inProgress.rawValue, phase: "follow_up")
+                if initialUnits == 0 {
+                    _ = try createWorkUnit(
+                        objectiveId: objectiveId,
+                        taskId: taskId,
+                        title: payload.description,
+                        workType: Constants.researchType,
+                        activePhaseHint: "research",
+                        planningRound: 1,
+                        rootTaskDescription: payload.description,
+                        parentObjectiveGoal: parentGoal,
+                        priority: 1.0
+                    )
+                }
                 try await waitForResearchToSettle(objectiveId: objectiveId, taskId: taskId)
+
+                let roundOneSummaries = try completedSummaries(objectiveId: objectiveId, taskId: taskId)
+                let followUpUnits = await createResearchRound(
+                    objectiveId: objectiveId,
+                    taskId: taskId,
+                    rootTaskDescription: payload.description,
+                    parentObjectiveGoal: parentGoal,
+                    planningRound: 2,
+                    completedSummaries: roundOneSummaries
+                )
+                if followUpUnits > 0 {
+                    try updateRootState(rootId: root.id, state: WorkUnitState.inProgress.rawValue, phase: "follow_up")
+                    try await waitForResearchToSettle(objectiveId: objectiveId, taskId: taskId)
+                }
             }
 
             _ = try ensureSynthesisWorkUnit(
@@ -463,7 +480,17 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             )
         } catch {
             heartbeatTask.cancel()
-            try blockWorkUnit(claimed.workUnitId, error: String(describing: error))
+            let isTransientTimeout = (error as? URLError)?.code == .timedOut
+            if isTransientTimeout {
+                let currentRetries = claimed.payload.retryCount ?? 0
+                if currentRetries < 2 {
+                    try resetWorkUnitToPending(claimed.workUnitId, reason: "Ollama request timed out; will retry (attempt \(currentRetries + 1))")
+                } else {
+                    try blockWorkUnit(claimed.workUnitId, error: "Ollama timed out after \(currentRetries + 1) attempts; blocked to allow synthesis to proceed with available data.")
+                }
+            } else {
+                try blockWorkUnit(claimed.workUnitId, error: String(describing: error))
+            }
             await logEvent(
                 phase: "error",
                 content: "Work unit failed: \(error)",
@@ -1017,6 +1044,22 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         unit.lastHeartbeatAt = Date()
         if var payload = decodePayload(unit.moundPayload) {
             payload.lastError = String(error.prefix(600))
+            unit.moundPayload = encodePayload(payload)
+        }
+        try context.save()
+    }
+
+    private func resetWorkUnitToPending(_ workUnitId: UUID, reason: String) throws {
+        let context = freshContext()
+        guard let unit = try fetchWorkUnit(workUnitId, in: context) else { return }
+        unit.state = WorkUnitState.pending.rawValue
+        unit.claimedUntil = nil
+        unit.workerLabel = nil
+        unit.activePhaseHint = "retry"
+        unit.updatedAt = Date()
+        if var payload = decodePayload(unit.moundPayload) {
+            payload.lastError = String(reason.prefix(600))
+            payload.retryCount = (payload.retryCount ?? 0) + 1
             unit.moundPayload = encodePayload(payload)
         }
         try context.save()
