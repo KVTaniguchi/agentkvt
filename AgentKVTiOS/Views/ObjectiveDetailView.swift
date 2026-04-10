@@ -9,6 +9,7 @@ struct ObjectiveDetailView: View {
     @State private var pollTask: Task<Void, Never>?
     @State private var isLoading = false
     @State private var isStartingWork = false
+    @State private var actionInProgress: String?
     @State private var errorMessage: String?
     @State private var actionError: String?
     @State private var showEditPromptSheet = false
@@ -42,6 +43,14 @@ struct ObjectiveDetailView: View {
         ObjectiveTaskCounts(tasks: tasks)
     }
 
+    private var needsPlanReview: Bool {
+        taskCounts.proposed > 0
+    }
+
+    private var hasApprovedPlanWaitingToStart: Bool {
+        displayedObjective.status == "pending" && taskCounts.pending > 0
+    }
+
     private var onlineAgentRegistrationsCount: Int {
         detail?.onlineAgentRegistrationsCount ?? 0
     }
@@ -56,9 +65,10 @@ struct ObjectiveDetailView: View {
     private var runNowLabel: String {
         switch displayedObjective.status {
         case "pending":
-            return "Start work now"
+            if hasApprovedPlanWaitingToStart { return "Start approved plan" }
+            return "Generate plan"
         case "active":
-            if tasks.isEmpty { return "Plan tasks now" }
+            if tasks.isEmpty { return "Generate plan" }
             if taskCounts.pending > 0 { return "Run now (queue pending)" }
             if taskCounts.failed > 0 && taskCounts.inProgress == 0 { return "Retry failed tasks" }
             if taskCounts.completed > 0 && taskCounts.pending == 0 && taskCounts.inProgress == 0 {
@@ -71,6 +81,14 @@ struct ObjectiveDetailView: View {
     }
 
     private var actionsFooter: String {
+        if needsPlanReview {
+            return "Approve the proposed tasks to let the Mac agent begin. If the plan misses the mark, edit the prompt and regenerate it first."
+        }
+
+        if hasApprovedPlanWaitingToStart {
+            return "This objective already has an approved plan. Start work when you're ready, or edit the prompt and regenerate the plan if you want a different breakdown."
+        }
+
         switch displayedObjective.status {
         case "active":
             return """
@@ -78,7 +96,7 @@ struct ObjectiveDetailView: View {
             “Rerun all tasks” sets every task back to pending and dispatches the Mac agent again.
             """
         default:
-            return "Activates this objective and starts planning or task execution."
+            return "Generates a proposed task plan for review. Work begins after you approve the plan."
         }
     }
 
@@ -103,13 +121,37 @@ struct ObjectiveDetailView: View {
 
         switch displayedObjective.status {
         case "pending":
+            if taskCounts.proposed > 0 {
+                return ObjectiveActivitySummary(
+                    title: "Plan ready for review",
+                    message: "\(taskCounts.proposed) proposed task(s) are ready. Approve the plan when it looks right, or edit the prompt and regenerate it first.",
+                    systemImage: "checklist.checked",
+                    tint: .teal
+                )
+            }
+            if taskCounts.pending > 0 {
+                return ObjectiveActivitySummary(
+                    title: "Approved plan ready",
+                    message: "\(taskCounts.pending) approved task(s) are ready. Start work when you want the Mac agent to begin.",
+                    systemImage: "play.circle.fill",
+                    tint: .blue
+                )
+            }
             return ObjectiveActivitySummary(
                 title: "Saved but not started",
-                message: "No planner or Mac-agent work has been dispatched yet. Use Start work now in Actions below.",
+                message: "No plan has been generated yet. Use Generate plan in Actions below, then review the proposed tasks before work begins.",
                 systemImage: "pause.circle.fill",
                 tint: .orange
             )
         case "active":
+            if taskCounts.proposed > 0 {
+                return ObjectiveActivitySummary(
+                    title: "Plan ready for review",
+                    message: "\(taskCounts.proposed) proposed task(s) are ready. Approve the plan to dispatch work, or edit the prompt and regenerate the task breakdown.",
+                    systemImage: "checklist.checked",
+                    tint: .teal
+                )
+            }
             if taskCounts.inProgress > 0 {
                 return ObjectiveActivitySummary(
                     title: "Agent is working",
@@ -136,7 +178,7 @@ struct ObjectiveDetailView: View {
             if tasks.isEmpty {
                 return ObjectiveActivitySummary(
                     title: "Planning tasks",
-                    message: "The server should break this prompt into concrete research tasks first. If nothing appears, tap Plan Tasks Now.",
+                    message: "The server should break this prompt into concrete research tasks first. If nothing appears after a moment, try Generate plan again.",
                     systemImage: "sparkles",
                     tint: .blue,
                     showsProgress: shouldAutoRefresh
@@ -223,31 +265,81 @@ struct ObjectiveDetailView: View {
 
             if displayedObjective.status == "pending" || displayedObjective.status == "active" {
                 Section {
-                    Button {
-                        Task { await runObjectiveNow() }
-                    } label: {
-                        Label(runNowLabel, systemImage: "play.circle.fill")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(runNowProminentTint)
-                    .disabled(isStartingWork || isDeleting)
-
-                    if displayedObjective.status == "active", taskCounts.inProgress > 0 {
+                    if needsPlanReview {
                         Button {
-                            Task { await resetStuckTasksAndRun() }
+                            actionInProgress = "approvePlan"
+                            Task { await approveObjectivePlan() }
                         } label: {
-                            Label("Reset stuck tasks & run", systemImage: "arrow.uturn.backward.circle")
+                            HStack {
+                                Label(
+                                    displayedObjective.status == "active" ? "Approve plan & start work" : "Approve plan",
+                                    systemImage: "checkmark.circle.fill"
+                                )
+                                if actionInProgress == "approvePlan" || isStartingWork && actionInProgress == nil {
+                                    ProgressView().padding(.leading, 4)
+                                }
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(runNowProminentTint)
+                        .disabled(isStartingWork || isDeleting)
+                        
+                        Button {
+                            actionInProgress = "regeneratePlan"
+                            Task { await regenerateObjectivePlan() }
+                        } label: {
+                            HStack {
+                                Label("Regenerate plan", systemImage: "arrow.trianglehead.clockwise")
+                                if actionInProgress == "regeneratePlan" {
+                                    ProgressView().padding(.leading, 4)
+                                }
+                            }
                         }
                         .disabled(isStartingWork || isDeleting)
-                    }
+                    } else {
+                        Button {
+                            actionInProgress = "runNow"
+                            Task { await runObjectiveNow() }
+                        } label: {
+                            HStack {
+                                Label(runNowLabel, systemImage: "play.circle.fill")
+                                if actionInProgress == "runNow" {
+                                    ProgressView().padding(.leading, 4)
+                                }
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(runNowProminentTint)
+                        .disabled(isStartingWork || isDeleting)
 
-                    if displayedObjective.status == "active" {
-                        Button(role: .destructive) {
-                            showRerunAllConfirmation = true
-                        } label: {
-                            Label("Rerun all tasks", systemImage: "arrow.clockwise.circle")
+                        if displayedObjective.status == "active", taskCounts.inProgress > 0 {
+                            Button {
+                                actionInProgress = "resetTasks"
+                                Task { await resetStuckTasksAndRun() }
+                            } label: {
+                                HStack {
+                                    Label("Reset stuck tasks & run", systemImage: "arrow.uturn.backward.circle")
+                                    if actionInProgress == "resetTasks" {
+                                        ProgressView().padding(.leading, 4)
+                                    }
+                                }
+                            }
+                            .disabled(isStartingWork || isDeleting)
                         }
-                        .disabled(isStartingWork || isDeleting)
+
+                        if displayedObjective.status == "active" {
+                            Button(role: .destructive) {
+                                showRerunAllConfirmation = true
+                            } label: {
+                                HStack {
+                                    Label("Rerun all tasks", systemImage: "arrow.clockwise.circle")
+                                    if actionInProgress == "rerunTasks" {
+                                        ProgressView().padding(.leading, 4)
+                                    }
+                                }
+                            }
+                            .disabled(isStartingWork || isDeleting)
+                        }
                     }
                 } header: {
                     Text("Actions")
@@ -266,6 +358,10 @@ struct ObjectiveDetailView: View {
                 }
             } header: {
                 Text("Prompt")
+            } footer: {
+                if needsPlanReview {
+                    Text("If you change the prompt, regenerate the plan so the proposed task list matches the updated objective.")
+                }
             }
 
             // Tasks
@@ -333,8 +429,19 @@ struct ObjectiveDetailView: View {
         }
         .refreshable { await loadDetail(showSpinner: false) }
         .overlay {
-            if isLoading || isDeleting || isStartingWork {
-                ProgressView()
+            if isDeleting {
+                ZStack {
+                    Color.black.opacity(0.4).ignoresSafeArea()
+                    VStack(spacing: 12) {
+                        ProgressView()
+                        Text("Deleting...")
+                            .foregroundStyle(.secondary)
+                            .font(.headline)
+                    }
+                    .padding(24)
+                    .background(.regularMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                }
             }
         }
         .alert("Could Not Load Detail", isPresented: Binding(
@@ -436,7 +543,10 @@ struct ObjectiveDetailView: View {
     private func runObjectiveNow() async {
         actionError = nil
         isStartingWork = true
-        defer { isStartingWork = false }
+        defer {
+            isStartingWork = false
+            actionInProgress = nil
+        }
 
         do {
             displayedObjective = try await store.runObjectiveNow(id: displayedObjective.id)
@@ -448,10 +558,52 @@ struct ObjectiveDetailView: View {
     }
 
     @MainActor
+    private func approveObjectivePlan() async {
+        actionError = nil
+        isStartingWork = true
+        defer {
+            isStartingWork = false
+            actionInProgress = nil
+        }
+
+        do {
+            displayedObjective = try await store.approveObjectivePlan(id: displayedObjective.id)
+            await loadDetail(showSpinner: false)
+            if displayedObjective.status == "active" {
+                await refreshDetailBurst()
+            }
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func regenerateObjectivePlan() async {
+        actionError = nil
+        isStartingWork = true
+        defer {
+            isStartingWork = false
+            actionInProgress = nil
+        }
+
+        do {
+            displayedObjective = try await store.regenerateObjectivePlan(id: displayedObjective.id)
+            detail = nil
+            await loadDetail(showSpinner: false)
+            await refreshDetailBurst()
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    @MainActor
     private func resetStuckTasksAndRun() async {
         actionError = nil
         isStartingWork = true
-        defer { isStartingWork = false }
+        defer {
+            isStartingWork = false
+            actionInProgress = nil
+        }
 
         do {
             displayedObjective = try await store.resetStuckTasksAndRun(id: displayedObjective.id)
@@ -466,7 +618,11 @@ struct ObjectiveDetailView: View {
     private func rerunAllTasks() async {
         actionError = nil
         isStartingWork = true
-        defer { isStartingWork = false }
+        actionInProgress = "rerunTasks"
+        defer { 
+            isStartingWork = false 
+            actionInProgress = nil
+        }
 
         do {
             displayedObjective = try await store.rerunObjective(id: displayedObjective.id)
@@ -506,12 +662,14 @@ struct ObjectiveDetailView: View {
 }
 
 private struct ObjectiveTaskCounts {
+    let proposed: Int
     let pending: Int
     let inProgress: Int
     let completed: Int
     let failed: Int
 
     init(tasks: [IOSBackendTask]) {
+        self.proposed = tasks.filter { $0.status == "proposed" }.count
         self.pending = tasks.filter { $0.status == "pending" }.count
         self.inProgress = tasks.filter { $0.status == "in_progress" }.count
         self.completed = tasks.filter { $0.status == "completed" }.count
@@ -519,7 +677,7 @@ private struct ObjectiveTaskCounts {
     }
 
     var hasAnyTasks: Bool {
-        pending + inProgress + completed + failed > 0
+        proposed + pending + inProgress + completed + failed > 0
     }
 }
 
@@ -574,6 +732,9 @@ private struct ObjectiveActivityCard: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     if taskCounts.hasAnyTasks {
+                        if taskCounts.proposed > 0 {
+                            ObjectiveMetricChip(count: taskCounts.proposed, label: "proposed", tint: .teal)
+                        }
                         if taskCounts.pending > 0 {
                             ObjectiveMetricChip(count: taskCounts.pending, label: "pending", tint: .orange)
                         }
@@ -769,6 +930,7 @@ struct TaskRow: View {
 
     private var statusColor: Color {
         switch task.status {
+        case "proposed": return .teal
         case "in_progress": return .blue
         case "completed":   return .green
         case "failed":      return .red
