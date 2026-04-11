@@ -174,6 +174,85 @@ private func makeFinalizeEnvelopeData() -> Data {
     return Data(json.utf8)
 }
 
+private func makeObjectiveEnvelopeData(
+    id: UUID = UUID(uuidString: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")!,
+    goal: String = "Create an energy-saving action plan.",
+    status: String = "active",
+    priority: Int = 0
+) -> Data {
+    let json = """
+    {
+      "objective": {
+        "id": "\(id.uuidString)",
+        "workspace_id": "11111111-1111-1111-1111-111111111111",
+        "goal": "\(goal)",
+        "status": "\(status)",
+        "priority": \(priority),
+        "brief_json": {
+          "context": ["Utility bills uploaded"],
+          "success_criteria": ["Lower energy costs"],
+          "constraints": ["No major purchases this month"],
+          "preferences": ["Focus on immediate savings"],
+          "deliverable": "Action plan",
+          "open_questions": []
+        },
+        "objective_kind": "household_planning",
+        "creation_source": "guided",
+        "planner_summary": "Goal: \(goal)",
+        "created_at": "2026-04-09T10:00:00Z",
+        "updated_at": "2026-04-09T10:01:00Z"
+      }
+    }
+    """
+    return Data(json.utf8)
+}
+
+private func makeObjectiveFeedbackSubmitEnvelopeData(
+    objectiveId: UUID = UUID(uuidString: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")!,
+    feedbackId: UUID = UUID(uuidString: "d0d0d0d0-d0d0-d0d0-d0d0-d0d0d0d0d0d0")!
+) -> Data {
+    let json = """
+    {
+      "objective": {
+        "id": "\(objectiveId.uuidString)",
+        "workspace_id": "11111111-1111-1111-1111-111111111111",
+        "goal": "Create an energy-saving action plan.",
+        "status": "active",
+        "priority": 0,
+        "created_at": "2026-04-09T10:00:00Z",
+        "updated_at": "2026-04-09T10:01:00Z"
+      },
+      "objective_feedback": {
+        "id": "\(feedbackId.uuidString)",
+        "objective_id": "\(objectiveId.uuidString)",
+        "task_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "research_snapshot_id": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+        "role": "user",
+        "feedback_kind": "compare_options",
+        "status": "queued",
+        "content": "Go deeper on resort fees.",
+        "completion_summary": null,
+        "completed_at": null,
+        "created_at": "2026-04-10T10:00:00Z",
+        "updated_at": "2026-04-10T10:01:00Z"
+      },
+      "follow_up_tasks": [
+        {
+          "id": "abababab-abab-abab-abab-abababababab",
+          "objective_id": "\(objectiveId.uuidString)",
+          "source_feedback_id": "\(feedbackId.uuidString)",
+          "description": "Compare resort fees for the shortlisted hotels",
+          "status": "proposed",
+          "result_summary": null,
+          "created_at": "2026-04-10T10:00:00Z",
+          "updated_at": "2026-04-10T10:01:00Z"
+        }
+      ]
+    }
+    """
+    return Data(json.utf8)
+}
+
 private func makeResponse(
     path: String,
     data: Data
@@ -191,6 +270,37 @@ private func makeResponse(
         )
         return (response, data)
     }
+}
+
+private func requestBodyData(from request: URLRequest) throws -> Data {
+    if let body = request.httpBody {
+        return body
+    }
+
+    guard let stream = request.httpBodyStream else {
+        throw NSError(domain: "IOSBackendAPIClientTests", code: 1, userInfo: [NSLocalizedDescriptionKey: "Missing request body"])
+    }
+
+    stream.open()
+    defer { stream.close() }
+
+    var data = Data()
+    let bufferSize = 4096
+    let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
+    defer { buffer.deallocate() }
+
+    while stream.hasBytesAvailable {
+        let bytesRead = stream.read(buffer, maxLength: bufferSize)
+        if bytesRead < 0 {
+            throw stream.streamError ?? NSError(domain: "IOSBackendAPIClientTests", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to read request body stream"])
+        }
+        if bytesRead == 0 {
+            break
+        }
+        data.append(buffer, count: bytesRead)
+    }
+
+    return data
 }
 
 private func makeClient(host: String) -> IOSBackendAPIClient {
@@ -284,5 +394,160 @@ struct IOSBackendAPIClientTests {
 
         let request = try #require(BackendRequestCaptureURLProtocol.recordedRequest(for: key))
         #expect(request.timeoutInterval == 60)
+    }
+
+    @Test("submitObjectiveFeedback posts the content, kind, and anchors")
+    func submitObjectiveFeedbackPostsFeedbackPayload() async throws {
+        let objectiveID = UUID(uuidString: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")!
+        let taskID = UUID(uuidString: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")!
+        let snapshotID = UUID(uuidString: "cccccccc-cccc-cccc-cccc-cccccccccccc")!
+        let host = "objective-feedback-\(UUID().uuidString.lowercased()).example.test"
+        let path = "/v1/objectives/\(objectiveID.uuidString)/feedback"
+        let key = BackendRequestCaptureURLProtocol.requestKey(host: host, path: path)
+        BackendRequestCaptureURLProtocol.setRequestHandler(
+            for: key,
+            handler: makeResponse(path: path, data: makeObjectiveFeedbackSubmitEnvelopeData(objectiveId: objectiveID))
+        )
+
+        let client = makeClient(host: host)
+        let result = try await client.submitObjectiveFeedback(
+            id: objectiveID,
+            content: "Go deeper on resort fees.",
+            feedbackKind: "compare_options",
+            taskId: taskID,
+            researchSnapshotId: snapshotID
+        )
+
+        let request = try #require(BackendRequestCaptureURLProtocol.recordedRequest(for: key))
+        let bodyData = try requestBodyData(from: request)
+        let jsonObject = try #require(JSONSerialization.jsonObject(with: bodyData) as? [String: Any])
+        let feedback = try #require(jsonObject["objective_feedback"] as? [String: Any])
+
+        #expect(request.httpMethod == "POST")
+        #expect(feedback["content"] as? String == "Go deeper on resort fees.")
+        #expect(feedback["feedback_kind"] as? String == "compare_options")
+        #expect(feedback["task_id"] as? String == taskID.uuidString)
+        #expect(feedback["research_snapshot_id"] as? String == snapshotID.uuidString)
+        #expect(result.objective.id == objectiveID)
+        #expect(result.objectiveFeedback.feedbackKind == "compare_options")
+        #expect(result.objectiveFeedback.taskId == taskID)
+        #expect(result.objectiveFeedback.researchSnapshotId == snapshotID)
+        #expect(result.followUpTasks.count == 1)
+        #expect(result.followUpTasks[0].sourceFeedbackId == result.objectiveFeedback.id)
+    }
+
+    @Test("updateObjectiveFeedback patches the feedback payload")
+    func updateObjectiveFeedbackPatchesPayload() async throws {
+        let objectiveID = UUID(uuidString: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")!
+        let feedbackID = UUID(uuidString: "d0d0d0d0-d0d0-d0d0-d0d0-d0d0d0d0d0d0")!
+        let host = "update-objective-feedback-\(UUID().uuidString.lowercased()).example.test"
+        let path = "/v1/objectives/\(objectiveID.uuidString)/objective_feedbacks/\(feedbackID.uuidString)"
+        let key = BackendRequestCaptureURLProtocol.requestKey(host: host, path: path)
+        BackendRequestCaptureURLProtocol.setRequestHandler(
+            for: key,
+            handler: makeResponse(path: path, data: makeObjectiveFeedbackSubmitEnvelopeData(objectiveId: objectiveID, feedbackId: feedbackID))
+        )
+
+        let client = makeClient(host: host)
+        let result = try await client.updateObjectiveFeedback(
+            objectiveId: objectiveID,
+            feedbackId: feedbackID,
+            content: "Challenge this finding.",
+            feedbackKind: "challenge_result",
+            taskId: nil,
+            researchSnapshotId: nil
+        )
+
+        let request = try #require(BackendRequestCaptureURLProtocol.recordedRequest(for: key))
+        let bodyData = try requestBodyData(from: request)
+        let jsonObject = try #require(JSONSerialization.jsonObject(with: bodyData) as? [String: Any])
+        let feedback = try #require(jsonObject["objective_feedback"] as? [String: Any])
+
+        #expect(request.httpMethod == "PATCH")
+        #expect(feedback["content"] as? String == "Challenge this finding.")
+        #expect(feedback["feedback_kind"] as? String == "challenge_result")
+        #expect(result.objectiveFeedback.id == feedbackID)
+    }
+
+    @Test("approveObjectiveFeedbackPlan posts to the feedback approval endpoint")
+    func approveObjectiveFeedbackPlanPostsToApprovalEndpoint() async throws {
+        let objectiveID = UUID(uuidString: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")!
+        let feedbackID = UUID(uuidString: "d0d0d0d0-d0d0-d0d0-d0d0-d0d0d0d0d0d0")!
+        let host = "approve-feedback-plan-\(UUID().uuidString.lowercased()).example.test"
+        let path = "/v1/objectives/\(objectiveID.uuidString)/objective_feedbacks/\(feedbackID.uuidString)/approve_plan"
+        let key = BackendRequestCaptureURLProtocol.requestKey(host: host, path: path)
+        BackendRequestCaptureURLProtocol.setRequestHandler(
+            for: key,
+            handler: makeResponse(path: path, data: makeObjectiveFeedbackSubmitEnvelopeData(objectiveId: objectiveID, feedbackId: feedbackID))
+        )
+
+        let client = makeClient(host: host)
+        let result = try await client.approveObjectiveFeedbackPlan(objectiveId: objectiveID, feedbackId: feedbackID)
+
+        let request = try #require(BackendRequestCaptureURLProtocol.recordedRequest(for: key))
+        #expect(request.httpMethod == "POST")
+        #expect(result.objectiveFeedback.id == feedbackID)
+    }
+
+    @Test("regenerateObjectiveFeedbackPlan posts to the feedback regenerate endpoint")
+    func regenerateObjectiveFeedbackPlanPostsToRegenerateEndpoint() async throws {
+        let objectiveID = UUID(uuidString: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")!
+        let feedbackID = UUID(uuidString: "d0d0d0d0-d0d0-d0d0-d0d0-d0d0d0d0d0d0")!
+        let host = "regenerate-feedback-plan-\(UUID().uuidString.lowercased()).example.test"
+        let path = "/v1/objectives/\(objectiveID.uuidString)/objective_feedbacks/\(feedbackID.uuidString)/regenerate_plan"
+        let key = BackendRequestCaptureURLProtocol.requestKey(host: host, path: path)
+        BackendRequestCaptureURLProtocol.setRequestHandler(
+            for: key,
+            handler: makeResponse(path: path, data: makeObjectiveFeedbackSubmitEnvelopeData(objectiveId: objectiveID, feedbackId: feedbackID))
+        )
+
+        let client = makeClient(host: host)
+        let result = try await client.regenerateObjectiveFeedbackPlan(objectiveId: objectiveID, feedbackId: feedbackID)
+
+        let request = try #require(BackendRequestCaptureURLProtocol.recordedRequest(for: key))
+        #expect(request.httpMethod == "POST")
+        #expect(result.followUpTasks.count == 1)
+    }
+
+    @Test("approveObjectivePlan posts to the approval endpoint")
+    func approveObjectivePlanPostsToApprovalEndpoint() async throws {
+        let objectiveID = UUID(uuidString: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")!
+        let host = "approve-plan-\(UUID().uuidString.lowercased()).example.test"
+        let path = "/v1/objectives/\(objectiveID.uuidString)/approve_plan"
+        let key = BackendRequestCaptureURLProtocol.requestKey(host: host, path: path)
+        BackendRequestCaptureURLProtocol.setRequestHandler(
+            for: key,
+            handler: makeResponse(path: path, data: makeObjectiveEnvelopeData(id: objectiveID, goal: "Approved"))
+        )
+
+        let client = makeClient(host: host)
+        let objective = try await client.approveObjectivePlan(id: objectiveID)
+
+        let request = try #require(BackendRequestCaptureURLProtocol.recordedRequest(for: key))
+        #expect(request.httpMethod == "POST")
+        #expect(request.timeoutInterval == 60)
+        #expect(objective.id == objectiveID)
+        #expect(objective.goal == "Approved")
+    }
+
+    @Test("regenerateObjectivePlan posts to the regenerate endpoint")
+    func regenerateObjectivePlanPostsToRegenerateEndpoint() async throws {
+        let objectiveID = UUID(uuidString: "cccccccc-cccc-cccc-cccc-cccccccccccc")!
+        let host = "regenerate-plan-\(UUID().uuidString.lowercased()).example.test"
+        let path = "/v1/objectives/\(objectiveID.uuidString)/regenerate_plan"
+        let key = BackendRequestCaptureURLProtocol.requestKey(host: host, path: path)
+        BackendRequestCaptureURLProtocol.setRequestHandler(
+            for: key,
+            handler: makeResponse(path: path, data: makeObjectiveEnvelopeData(id: objectiveID, goal: "Regenerated"))
+        )
+
+        let client = makeClient(host: host)
+        let objective = try await client.regenerateObjectivePlan(id: objectiveID)
+
+        let request = try #require(BackendRequestCaptureURLProtocol.recordedRequest(for: key))
+        #expect(request.httpMethod == "POST")
+        #expect(request.timeoutInterval == 60)
+        #expect(objective.id == objectiveID)
+        #expect(objective.goal == "Regenerated")
     }
 }

@@ -46,10 +46,12 @@ module V1
 
         # Update parent task status if a task_id was supplied
         if task_id && mark_task_completed
-          Task.find_by(id: task_id)&.update!(
+          task = Task.find_by(id: task_id)
+          task&.update!(
             status: "completed",
             result_summary: snapshot_params[:value].truncate(500)
           )
+          ObjectiveFeedbackLifecycle.new.refresh!(task.source_feedback.reload) if task&.source_feedback.present?
         end
 
         render json: { research_snapshot: serialize_research_snapshot(snapshot) }, status: :created

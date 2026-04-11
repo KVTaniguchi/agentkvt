@@ -8,6 +8,12 @@ protocol ObjectivesRemoteSyncing: Sendable {
     func createObjectiveRemote(goal: String, status: String, priority: Int) async throws -> IOSBackendObjective
     func fetchObjectiveDetailRemote(id: UUID) async throws -> IOSBackendObjectiveDetail
     func updateObjectiveRemote(id: UUID, goal: String, status: String, priority: Int) async throws -> IOSBackendObjective
+    func submitObjectiveFeedbackRemote(id: UUID, content: String, feedbackKind: String, taskId: UUID?, researchSnapshotId: UUID?) async throws -> IOSBackendSubmitObjectiveFeedbackResult
+    func updateObjectiveFeedbackRemote(objectiveId: UUID, feedbackId: UUID, content: String, feedbackKind: String, taskId: UUID?, researchSnapshotId: UUID?) async throws -> IOSBackendSubmitObjectiveFeedbackResult
+    func approveObjectiveFeedbackPlanRemote(objectiveId: UUID, feedbackId: UUID) async throws -> IOSBackendSubmitObjectiveFeedbackResult
+    func regenerateObjectiveFeedbackPlanRemote(objectiveId: UUID, feedbackId: UUID) async throws -> IOSBackendSubmitObjectiveFeedbackResult
+    func approveObjectivePlanRemote(id: UUID) async throws -> IOSBackendObjective
+    func regenerateObjectivePlanRemote(id: UUID) async throws -> IOSBackendObjective
     func runObjectiveNowRemote(id: UUID) async throws -> IOSBackendObjective
     func resetStuckTasksAndRunObjectiveRemote(id: UUID) async throws -> IOSBackendObjective
     func rerunObjectiveRemote(id: UUID) async throws -> IOSBackendObjective
@@ -59,6 +65,80 @@ final class ObjectivesStore {
     @MainActor
     func updateObjective(id: UUID, goal: String, status: String, priority: Int) async throws -> IOSBackendObjective {
         let updated = try await sync.updateObjectiveRemote(id: id, goal: goal, status: status, priority: priority)
+        upsertObjective(updated)
+        return updated
+    }
+
+    @MainActor
+    func submitObjectiveFeedback(
+        id: UUID,
+        content: String,
+        feedbackKind: String,
+        taskId: UUID?,
+        researchSnapshotId: UUID?
+    ) async throws -> IOSBackendSubmitObjectiveFeedbackResult {
+        let result = try await sync.submitObjectiveFeedbackRemote(
+            id: id,
+            content: content,
+            feedbackKind: feedbackKind,
+            taskId: taskId,
+            researchSnapshotId: researchSnapshotId
+        )
+        upsertObjective(result.objective)
+        return result
+    }
+
+    @MainActor
+    func updateObjectiveFeedback(
+        objectiveId: UUID,
+        feedbackId: UUID,
+        content: String,
+        feedbackKind: String,
+        taskId: UUID?,
+        researchSnapshotId: UUID?
+    ) async throws -> IOSBackendSubmitObjectiveFeedbackResult {
+        let result = try await sync.updateObjectiveFeedbackRemote(
+            objectiveId: objectiveId,
+            feedbackId: feedbackId,
+            content: content,
+            feedbackKind: feedbackKind,
+            taskId: taskId,
+            researchSnapshotId: researchSnapshotId
+        )
+        upsertObjective(result.objective)
+        return result
+    }
+
+    @MainActor
+    func approveObjectiveFeedbackPlan(
+        objectiveId: UUID,
+        feedbackId: UUID
+    ) async throws -> IOSBackendSubmitObjectiveFeedbackResult {
+        let result = try await sync.approveObjectiveFeedbackPlanRemote(objectiveId: objectiveId, feedbackId: feedbackId)
+        upsertObjective(result.objective)
+        return result
+    }
+
+    @MainActor
+    func regenerateObjectiveFeedbackPlan(
+        objectiveId: UUID,
+        feedbackId: UUID
+    ) async throws -> IOSBackendSubmitObjectiveFeedbackResult {
+        let result = try await sync.regenerateObjectiveFeedbackPlanRemote(objectiveId: objectiveId, feedbackId: feedbackId)
+        upsertObjective(result.objective)
+        return result
+    }
+
+    @MainActor
+    func approveObjectivePlan(id: UUID) async throws -> IOSBackendObjective {
+        let updated = try await sync.approveObjectivePlanRemote(id: id)
+        upsertObjective(updated)
+        return updated
+    }
+
+    @MainActor
+    func regenerateObjectivePlan(id: UUID) async throws -> IOSBackendObjective {
+        let updated = try await sync.regenerateObjectivePlanRemote(id: id)
         upsertObjective(updated)
         return updated
     }

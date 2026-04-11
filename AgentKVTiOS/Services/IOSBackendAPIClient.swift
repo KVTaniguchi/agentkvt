@@ -356,8 +356,9 @@ struct IOSBackendFinalizeObjectiveDraftResult: Sendable {
 struct IOSBackendTask: Codable, Sendable, Identifiable {
     let id: UUID
     let objectiveId: UUID
+    let sourceFeedbackId: UUID?
     let description: String
-    let status: String   // "pending" | "in_progress" | "completed" | "failed"
+    let status: String   // "proposed" | "pending" | "in_progress" | "completed" | "failed"
     let resultSummary: String?
     let createdAt: Date
     let updatedAt: Date
@@ -376,10 +377,32 @@ struct IOSBackendResearchSnapshot: Codable, Sendable, Identifiable {
     let updatedAt: Date
 }
 
+struct IOSBackendObjectiveFeedback: Codable, Sendable, Identifiable {
+    let id: UUID
+    let objectiveId: UUID
+    let taskId: UUID?
+    let researchSnapshotId: UUID?
+    let role: String
+    let feedbackKind: String
+    let status: String
+    let content: String
+    let completionSummary: String?
+    let completedAt: Date?
+    let createdAt: Date
+    let updatedAt: Date
+}
+
+struct IOSBackendSubmitObjectiveFeedbackResult: Sendable {
+    let objective: IOSBackendObjective
+    let objectiveFeedback: IOSBackendObjectiveFeedback
+    let followUpTasks: [IOSBackendTask]
+}
+
 struct IOSBackendObjectiveDetail: Decodable, Sendable {
     let objective: IOSBackendObjective
     let tasks: [IOSBackendTask]
     let researchSnapshots: [IOSBackendResearchSnapshot]
+    let objectiveFeedbacks: [IOSBackendObjectiveFeedback]
     let agentLogs: [IOSBackendAgentLog]
     /// Agents that heartbeated recently (server-side); dispatch fails if this stays 0 while using a remote API.
     let onlineAgentRegistrationsCount: Int
@@ -388,6 +411,7 @@ struct IOSBackendObjectiveDetail: Decodable, Sendable {
         case objective
         case tasks
         case researchSnapshots
+        case objectiveFeedbacks
         case agentLogs
         case onlineAgentRegistrationsCount
     }
@@ -397,6 +421,7 @@ struct IOSBackendObjectiveDetail: Decodable, Sendable {
         objective = try container.decode(IOSBackendObjective.self, forKey: .objective)
         tasks = try container.decode([IOSBackendTask].self, forKey: .tasks)
         researchSnapshots = try container.decode([IOSBackendResearchSnapshot].self, forKey: .researchSnapshots)
+        objectiveFeedbacks = try container.decodeIfPresent([IOSBackendObjectiveFeedback].self, forKey: .objectiveFeedbacks) ?? []
         agentLogs = try container.decodeIfPresent([IOSBackendAgentLog].self, forKey: .agentLogs) ?? []
         onlineAgentRegistrationsCount = try container.decodeIfPresent(Int.self, forKey: .onlineAgentRegistrationsCount) ?? 0
     }
@@ -467,6 +492,25 @@ private struct IOSBackendObjectivesEnvelope: Decodable {
 
 private struct IOSBackendObjectiveEnvelope: Decodable {
     let objective: IOSBackendObjective
+}
+
+private struct IOSBackendSubmitObjectiveFeedbackEnvelope: Decodable {
+    let objective: IOSBackendObjective
+    let objectiveFeedback: IOSBackendObjectiveFeedback
+    let followUpTasks: [IOSBackendTask]
+
+    private enum CodingKeys: String, CodingKey {
+        case objective
+        case objectiveFeedback
+        case followUpTasks
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        objective = try container.decode(IOSBackendObjective.self, forKey: .objective)
+        objectiveFeedback = try container.decode(IOSBackendObjectiveFeedback.self, forKey: .objectiveFeedback)
+        followUpTasks = try container.decodeIfPresent([IOSBackendTask].self, forKey: .followUpTasks) ?? []
+    }
 }
 
 private struct IOSBackendObjectiveDraftEnvelope: Decodable {
@@ -782,6 +826,117 @@ actor IOSBackendAPIClient {
         return try decoder.decode(IOSBackendObjectiveEnvelope.self, from: data).objective
     }
 
+    func submitObjectiveFeedback(
+        id: UUID,
+        content: String,
+        feedbackKind: String,
+        taskId: UUID?,
+        researchSnapshotId: UUID?
+    ) async throws -> IOSBackendSubmitObjectiveFeedbackResult {
+        var objectiveFeedback: [String: Any] = [
+            "content": content,
+            "feedback_kind": feedbackKind
+        ]
+        if let taskId {
+            objectiveFeedback["task_id"] = taskId.uuidString
+        }
+        if let researchSnapshotId {
+            objectiveFeedback["research_snapshot_id"] = researchSnapshotId.uuidString
+        }
+
+        let data = try await performRequest(
+            path: "v1/objectives/\(id.uuidString)/feedback",
+            method: "POST",
+            jsonBody: ["objective_feedback": objectiveFeedback]
+        )
+        let decoded = try decoder.decode(IOSBackendSubmitObjectiveFeedbackEnvelope.self, from: data)
+        return IOSBackendSubmitObjectiveFeedbackResult(
+            objective: decoded.objective,
+            objectiveFeedback: decoded.objectiveFeedback,
+            followUpTasks: decoded.followUpTasks
+        )
+    }
+
+    func updateObjectiveFeedback(
+        objectiveId: UUID,
+        feedbackId: UUID,
+        content: String,
+        feedbackKind: String,
+        taskId: UUID?,
+        researchSnapshotId: UUID?
+    ) async throws -> IOSBackendSubmitObjectiveFeedbackResult {
+        var objectiveFeedback: [String: Any] = [
+            "content": content,
+            "feedback_kind": feedbackKind
+        ]
+        if let taskId {
+            objectiveFeedback["task_id"] = taskId.uuidString
+        }
+        if let researchSnapshotId {
+            objectiveFeedback["research_snapshot_id"] = researchSnapshotId.uuidString
+        }
+
+        let data = try await performRequest(
+            path: "v1/objectives/\(objectiveId.uuidString)/objective_feedbacks/\(feedbackId.uuidString)",
+            method: "PATCH",
+            jsonBody: ["objective_feedback": objectiveFeedback]
+        )
+        let decoded = try decoder.decode(IOSBackendSubmitObjectiveFeedbackEnvelope.self, from: data)
+        return IOSBackendSubmitObjectiveFeedbackResult(
+            objective: decoded.objective,
+            objectiveFeedback: decoded.objectiveFeedback,
+            followUpTasks: decoded.followUpTasks
+        )
+    }
+
+    func approveObjectiveFeedbackPlan(
+        objectiveId: UUID,
+        feedbackId: UUID
+    ) async throws -> IOSBackendSubmitObjectiveFeedbackResult {
+        let data = try await performRequest(
+            path: "v1/objectives/\(objectiveId.uuidString)/objective_feedbacks/\(feedbackId.uuidString)/approve_plan",
+            method: "POST"
+        )
+        let decoded = try decoder.decode(IOSBackendSubmitObjectiveFeedbackEnvelope.self, from: data)
+        return IOSBackendSubmitObjectiveFeedbackResult(
+            objective: decoded.objective,
+            objectiveFeedback: decoded.objectiveFeedback,
+            followUpTasks: decoded.followUpTasks
+        )
+    }
+
+    func regenerateObjectiveFeedbackPlan(
+        objectiveId: UUID,
+        feedbackId: UUID
+    ) async throws -> IOSBackendSubmitObjectiveFeedbackResult {
+        let data = try await performRequest(
+            path: "v1/objectives/\(objectiveId.uuidString)/objective_feedbacks/\(feedbackId.uuidString)/regenerate_plan",
+            method: "POST"
+        )
+        let decoded = try decoder.decode(IOSBackendSubmitObjectiveFeedbackEnvelope.self, from: data)
+        return IOSBackendSubmitObjectiveFeedbackResult(
+            objective: decoded.objective,
+            objectiveFeedback: decoded.objectiveFeedback,
+            followUpTasks: decoded.followUpTasks
+        )
+    }
+
+    func approveObjectivePlan(id: UUID) async throws -> IOSBackendObjective {
+        let data = try await performRequest(
+            path: "v1/objectives/\(id.uuidString)/approve_plan",
+            method: "POST"
+        )
+        return try decoder.decode(IOSBackendObjectiveEnvelope.self, from: data).objective
+    }
+
+    func regenerateObjectivePlan(id: UUID) async throws -> IOSBackendObjective {
+        let data = try await performRequest(
+            path: "v1/objectives/\(id.uuidString)/regenerate_plan",
+            method: "POST"
+        )
+        return try decoder.decode(IOSBackendObjectiveEnvelope.self, from: data).objective
+    }
+
     func createObjectiveDraft(
         templateKey: String,
         seedText: String?,
@@ -1050,6 +1205,74 @@ final class IOSBackendSyncService {
     func updateObjectiveRemote(id: UUID, goal: String, status: String, priority: Int) async throws -> IOSBackendObjective {
         guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
         return try await client.updateObjective(id: id, goal: goal, status: status, priority: priority)
+    }
+
+    func submitObjectiveFeedbackRemote(
+        id: UUID,
+        content: String,
+        feedbackKind: String,
+        taskId: UUID?,
+        researchSnapshotId: UUID?
+    ) async throws -> IOSBackendSubmitObjectiveFeedbackResult {
+        guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
+        return try await client.submitObjectiveFeedback(
+            id: id,
+            content: content,
+            feedbackKind: feedbackKind,
+            taskId: taskId,
+            researchSnapshotId: researchSnapshotId
+        )
+    }
+
+    func updateObjectiveFeedbackRemote(
+        objectiveId: UUID,
+        feedbackId: UUID,
+        content: String,
+        feedbackKind: String,
+        taskId: UUID?,
+        researchSnapshotId: UUID?
+    ) async throws -> IOSBackendSubmitObjectiveFeedbackResult {
+        guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
+        return try await client.updateObjectiveFeedback(
+            objectiveId: objectiveId,
+            feedbackId: feedbackId,
+            content: content,
+            feedbackKind: feedbackKind,
+            taskId: taskId,
+            researchSnapshotId: researchSnapshotId
+        )
+    }
+
+    func approveObjectiveFeedbackPlanRemote(
+        objectiveId: UUID,
+        feedbackId: UUID
+    ) async throws -> IOSBackendSubmitObjectiveFeedbackResult {
+        guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
+        return try await client.approveObjectiveFeedbackPlan(
+            objectiveId: objectiveId,
+            feedbackId: feedbackId
+        )
+    }
+
+    func regenerateObjectiveFeedbackPlanRemote(
+        objectiveId: UUID,
+        feedbackId: UUID
+    ) async throws -> IOSBackendSubmitObjectiveFeedbackResult {
+        guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
+        return try await client.regenerateObjectiveFeedbackPlan(
+            objectiveId: objectiveId,
+            feedbackId: feedbackId
+        )
+    }
+
+    func approveObjectivePlanRemote(id: UUID) async throws -> IOSBackendObjective {
+        guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
+        return try await client.approveObjectivePlan(id: id)
+    }
+
+    func regenerateObjectivePlanRemote(id: UUID) async throws -> IOSBackendObjective {
+        guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
+        return try await client.regenerateObjectivePlan(id: id)
     }
 
     func runObjectiveNowRemote(id: UUID) async throws -> IOSBackendObjective {

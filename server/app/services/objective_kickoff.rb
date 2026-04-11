@@ -14,5 +14,11 @@ class ObjectiveKickoff
     objective.tasks.where(status: "pending").find_each do |task|
       TaskExecutorJob.perform_later(task.id.to_s)
     end
+
+    objective.objective_feedbacks.includes(:follow_up_tasks).find_each do |feedback|
+      next if feedback.follow_up_tasks.empty?
+
+      ObjectiveFeedbackLifecycle.new.refresh!(feedback)
+    end
   end
 end

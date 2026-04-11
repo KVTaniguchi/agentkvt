@@ -119,6 +119,7 @@ struct IOSBackendTaskDecodingTests {
         {
           "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
           "objective_id": "11111111-1111-1111-1111-111111111111",
+          "source_feedback_id": "dddddddd-dddd-dddd-dddd-dddddddddddd",
           "description": "Compare hotel prices",
           "status": "completed",
           "result_summary": "Best deal: Grand Hyatt at $189/night",
@@ -129,6 +130,7 @@ struct IOSBackendTaskDecodingTests {
         let task = try decode(IOSBackendTask.self, from: json)
         #expect(task.status == "completed")
         #expect(task.resultSummary == "Best deal: Grand Hyatt at $189/night")
+        #expect(task.sourceFeedbackId == UUID(uuidString: "dddddddd-dddd-dddd-dddd-dddddddddddd"))
     }
 }
 
@@ -227,6 +229,20 @@ struct IOSBackendObjectiveDetailDecodingTests {
               "updated_at": "2026-03-28T11:00:00Z"
             }
           ],
+          "objective_feedbacks": [
+            {
+              "id": "dddddddd-dddd-dddd-dddd-dddddddddddd",
+              "objective_id": "11111111-1111-1111-1111-111111111111",
+              "task_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+              "research_snapshot_id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+              "role": "user",
+              "feedback_kind": "compare_options",
+              "status": "queued",
+              "content": "Compare fees and walking distance next.",
+              "created_at": "2026-03-28T11:10:00Z",
+              "updated_at": "2026-03-28T11:10:00Z"
+            }
+          ],
           "agent_logs": [
             {
               "id": "cccccccc-cccc-cccc-cccc-cccccccccccc",
@@ -252,6 +268,8 @@ struct IOSBackendObjectiveDetailDecodingTests {
         #expect(detail.tasks[0].description == "Fetch current 30-yr rate")
         #expect(detail.researchSnapshots.count == 1)
         #expect(detail.researchSnapshots[0].key == "30yr_rate")
+        #expect(detail.objectiveFeedbacks.count == 1)
+        #expect(detail.objectiveFeedbacks[0].feedbackKind == "compare_options")
         #expect(detail.agentLogs.count == 1)
         #expect(detail.agentLogs[0].phase == "worker_claim")
         #expect(detail.onlineAgentRegistrationsCount == 2)
@@ -271,12 +289,14 @@ struct IOSBackendObjectiveDetailDecodingTests {
             "updated_at": "2026-03-28T10:00:00Z"
           },
           "tasks": [],
-          "research_snapshots": []
+          "research_snapshots": [],
+          "objective_feedbacks": []
         }
         """
         let detail = try decode(IOSBackendObjectiveDetail.self, from: json)
         #expect(detail.tasks.isEmpty)
         #expect(detail.researchSnapshots.isEmpty)
+        #expect(detail.objectiveFeedbacks.isEmpty)
         #expect(detail.onlineAgentRegistrationsCount == 0)
     }
 }
