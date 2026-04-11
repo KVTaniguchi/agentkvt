@@ -77,6 +77,7 @@ module Slack
       )
 
       record.save!
+      Slack::MessageProcessorJob.perform_later(record.id)
       :persisted
     end
   end
