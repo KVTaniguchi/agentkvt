@@ -27,19 +27,36 @@ module Slack
 
     private
 
+    # Channel IDs where bot/feed messages are allowed through (e.g. RSS feed channels).
+    # Set SLACK_FEED_CHANNEL_IDS as a comma-separated list of channel IDs.
+    def feed_channel_ids
+      @feed_channel_ids ||= ENV.fetch("SLACK_FEED_CHANNEL_IDS", "").split(",").map(&:strip).reject(&:empty?).to_set
+    end
+
+    def feed_channel?(channel_id)
+      channel_id.present? && feed_channel_ids.include?(channel_id)
+    end
+
     def skip_event?(event)
       return true unless event.is_a?(Hash)
       return true unless event["type"] == "message"
 
-      # Bot / automation — do not treat as user intake for v1
-      return true if event["bot_id"].present?
-      return true if event["subtype"] == "bot_message"
+      channel_id = event["channel"].presence
 
-      # Ephemeral / system noise (expand later)
+      # Ephemeral / system noise — always skip
       return true if event["subtype"].present? && %w[channel_join channel_leave group_join].include?(event["subtype"])
-
-      return true if event["user"].blank?
       return true if event["text"].blank?
+
+      # Bot/feed messages: allow through only from designated feed channels
+      is_bot = event["bot_id"].present? || event["subtype"] == "bot_message"
+      if is_bot
+        return true unless feed_channel?(channel_id)
+        # Feed channel bot message — allow, but require text
+        return false
+      end
+
+      # Human messages: require a user
+      return true if event["user"].blank?
 
       false
     end
@@ -49,30 +66,33 @@ module Slack
       message_ts = event["ts"].presence
       return :ignored if channel_id.blank? || message_ts.blank?
 
+      is_feed = feed_channel?(channel_id)
+      intake_kind = is_feed ? "feed_bot" : "user_typed"
+
       sanitized_event = PayloadSanitizer.sanitize(event)
       envelope = {
-        "event_id" => @payload["event_id"],
+        "event_id"   => @payload["event_id"],
         "event_time" => @payload["event_time"],
-        "team_id" => team_id,
-        "event" => sanitized_event
+        "team_id"    => team_id,
+        "event"      => sanitized_event
       }
 
       record = SlackMessage.find_or_initialize_by(
-        workspace_id: workspace.id,
+        workspace_id:  workspace.id,
         slack_team_id: team_id,
-        channel_id: channel_id,
-        message_ts: message_ts
+        channel_id:    channel_id,
+        message_ts:    message_ts
       )
 
       record.assign_attributes(
-        slack_user_id: event["user"].presence,
-        text: event["text"],
+        slack_user_id:    event["user"].presence || event["bot_id"].presence,
+        text:             event["text"],
         raw_payload_json: envelope,
-        intake_kind: "user_typed",
-        trust_tier: "low",
-        provenance_json: {
+        intake_kind:      intake_kind,
+        trust_tier:       is_feed ? "medium" : "low",
+        provenance_json:  {
           "slack_event_id" => @payload["event_id"],
-          "api_app_id" => @payload["api_app_id"]
+          "api_app_id"     => @payload["api_app_id"]
         }.compact
       )
 
