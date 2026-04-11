@@ -4,13 +4,12 @@ module Slack
   #
   # Return shape:
   #   {
-  #     "action"    => "notify_user" | "append_research" | "create_objective" | "ignore",
-  #     "summary"   => "one-sentence description of the signal",
-  #     "urgency"   => "low" | "medium" | "high",
+  #     "action"       => "append_research" | "ignore",
+  #     "summary"      => "one-sentence description of the signal",
   #     "objective_id" => "<uuid>" | nil   # set when action == "append_research"
   #   }
   class MessageClassifier
-    ACTIONS = %w[notify_user append_research create_objective ignore].freeze
+    ACTIONS = %w[append_research ignore].freeze
 
     def self.call(slack_message, objectives: [])
       new(slack_message, objectives: objectives).call
@@ -46,22 +45,16 @@ module Slack
         end
 
       system_prompt = <<~PROMPT
-        You are a signal-routing agent. Given a Slack message, decide what action to take.
-
-        Possible actions:
-        - notify_user: the message contains a significant event worth surfacing immediately (e.g. large market move, breaking news, urgent alert)
-        - append_research: the message is relevant context for one of the active objectives listed below
-        - create_objective: the message suggests a new research or action goal that does not match any existing objective
-        - ignore: the message is noise, casual conversation, or not actionable
+        You are a research signal router. Given a Slack message and a list of active objectives, decide whether the message contains new factual information that should be appended as a research finding to one of those objectives.
 
         #{objectives_block}
 
         Rules:
-        - Prefer "ignore" over "notify_user" for routine or low-signal messages.
-        - Only choose "append_research" if the message clearly relates to one of the listed objectives.
-        - Set urgency to "high" only for time-sensitive events (market drops >2%, breaking news, alerts).
+        - Choose "append_research" ONLY if the message contains concrete factual information (a price move, a news event, a data point) that directly relates to the goal of one of the listed objectives. Set objective_id to the matching objective's UUID.
+        - Choose "ignore" for everything else: casual conversation, questions, vague statements, or messages that don't clearly map to an objective.
+        - Do NOT invent objectives or suggest creating new ones.
         - Return valid JSON only, matching this schema exactly:
-          {"action": string, "summary": string, "urgency": string, "objective_id": string|null}
+          {"action": string, "summary": string, "objective_id": string|null}
       PROMPT
 
       [
@@ -73,7 +66,6 @@ module Slack
     def parse(raw)
       result = JSON.parse(raw.to_s.strip)
       result["action"]       = "ignore" unless ACTIONS.include?(result["action"])
-      result["urgency"]      = "low"    unless %w[low medium high].include?(result["urgency"])
       result["summary"]    ||= ""
       result["objective_id"] = nil unless result["objective_id"].is_a?(String) && result["objective_id"].match?(/\A[0-9a-f-]{36}\z/)
       result
