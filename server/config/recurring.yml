@@ -18,3 +18,8 @@ production:
     class: DeltaMonitorJob
     queue: background
     schedule: every hour at minute 30
+
+  rss_feed_poller:
+    class: RssFeedPollerJob
+    queue: background
+    schedule: every 15 minutes
