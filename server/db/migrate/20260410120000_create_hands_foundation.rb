@@ -8,7 +8,7 @@ class CreateHandsFoundation < ActiveRecord::Migration[8.0]
     add_index :slack_workspace_links, :slack_team_id, unique: true
 
     create_table :agent_identities, id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
-      t.references :workspace, type: :uuid, null: false, foreign_key: true
+      t.references :workspace, type: :uuid, null: false, foreign_key: true, index: false
       t.string :display_name, null: false
       t.string :from_email
       t.string :from_name
