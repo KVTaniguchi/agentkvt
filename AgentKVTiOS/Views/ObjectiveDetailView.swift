@@ -62,6 +62,14 @@ struct ObjectiveDetailView: View {
         objectiveFeedbacks.contains { $0.status == "review_required" }
     }
 
+    private var reviewRequiredFeedbacks: [IOSBackendObjectiveFeedback] {
+        objectiveFeedbacks.filter { $0.status == "review_required" }
+    }
+
+    private var feedbackHistory: [IOSBackendObjectiveFeedback] {
+        objectiveFeedbacks.filter { $0.status != "review_required" }
+    }
+
     private var hasApprovedPlanWaitingToStart: Bool {
         displayedObjective.status == "pending" && taskCounts.pending > 0
     }
@@ -184,7 +192,7 @@ struct ObjectiveDetailView: View {
             if hasFollowUpPlanReview {
                 return ObjectiveActivitySummary(
                     title: "Follow-up plan ready",
-                    message: "A follow-up batch is waiting for review. Approve, regenerate, or edit it in Feedback Loop below before more work starts.",
+                    message: "A follow-up batch is waiting for review. Use the Follow-up Review section below to approve, regenerate, or edit it before more work starts.",
                     systemImage: "arrow.triangle.branch",
                     tint: .teal
                 )
@@ -215,7 +223,7 @@ struct ObjectiveDetailView: View {
             if hasFollowUpPlanReview {
                 return ObjectiveActivitySummary(
                     title: "Follow-up plan ready",
-                    message: "A follow-up batch is waiting for review. Approve, regenerate, or edit it in Feedback Loop below before AgentKVT continues.",
+                    message: "A follow-up batch is waiting for review. Use the Follow-up Review section below to approve, regenerate, or edit it before AgentKVT continues.",
                     systemImage: "arrow.triangle.branch",
                     tint: .teal
                 )
@@ -309,6 +317,7 @@ struct ObjectiveDetailView: View {
                             objectiveStatus: displayedObjective.status,
                             tasks: tasks,
                             snapshots: snapshots,
+                            onlineAgentRegistrationsCount: onlineAgentRegistrationsCount,
                             onFeedbackMutated: {
                                 Task { await loadDetail(showSpinner: false) }
                             }
@@ -437,6 +446,14 @@ struct ObjectiveDetailView: View {
                 }
             }
 
+            if !reviewRequiredFeedbacks.isEmpty {
+                Section("Follow-up Review") {
+                    ForEach(reviewRequiredFeedbacks) { feedback in
+                        feedbackCard(for: feedback)
+                    }
+                }
+            }
+
             // Tasks
             Section {
                 if !tasks.isEmpty {
@@ -508,9 +525,9 @@ struct ObjectiveDetailView: View {
                 }
             }
 
-            if !objectiveFeedbacks.isEmpty {
+            if !feedbackHistory.isEmpty {
                 Section("Feedback Loop") {
-                    ForEach(objectiveFeedbacks) { feedback in
+                    ForEach(feedbackHistory) { feedback in
                         feedbackCard(for: feedback)
                     }
                 }
