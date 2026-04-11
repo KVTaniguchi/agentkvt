@@ -172,6 +172,7 @@ module ApiSerialization
       objective_kind: objective.objective_kind,
       creation_source: objective.creation_source,
       planner_summary: ObjectivePlanningInputBuilder.for_objective(objective),
+      hands_config: objective.hands_config || {},
       created_at: iso8601(objective.created_at),
       updated_at: iso8601(objective.updated_at)
     }
@@ -181,11 +182,37 @@ module ApiSerialization
     {
       id: task.id,
       objective_id: task.objective_id,
+      source_feedback_id: task.source_feedback_id,
       description: task.description,
       status: task.status,
       result_summary: task.result_summary,
       created_at: iso8601(task.created_at),
       updated_at: iso8601(task.updated_at)
+    }
+  end
+
+  def serialize_objective_feedback(feedback)
+    {
+      id: feedback.id,
+      objective_id: feedback.objective_id,
+      task_id: feedback.task_id,
+      research_snapshot_id: feedback.research_snapshot_id,
+      role: feedback.role,
+      feedback_kind: feedback.feedback_kind,
+      status: feedback.status,
+      content: feedback.content,
+      completion_summary: feedback.completion_summary,
+      completed_at: iso8601(feedback.completed_at),
+      created_at: iso8601(feedback.created_at),
+      updated_at: iso8601(feedback.updated_at)
+    }
+  end
+
+  def serialize_objective_feedback_mutation(feedback)
+    {
+      objective: serialize_objective(feedback.objective.reload),
+      objective_feedback: serialize_objective_feedback(feedback.reload),
+      follow_up_tasks: feedback.follow_up_tasks.order(:created_at).map { |task| serialize_task(task) }
     }
   end
 

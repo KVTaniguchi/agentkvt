@@ -40,7 +40,8 @@ class ObjectiveComposer
     raw = @client.chat(
       messages: build_messages(draft),
       model: @model,
-      format: "json"
+      format: "json",
+      task: "objective-composer"
     )
 
     normalize_response(draft, JSON.parse(raw))

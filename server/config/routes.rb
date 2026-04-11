@@ -2,6 +2,8 @@ Rails.application.routes.draw do
   get "/healthz", to: "health#show"
 
   namespace :v1 do
+    post "slack/events", to: "slack/events#create"
+
     post :chat_wake, to: "chat_wakes#create"
 
     resource :bootstrap, only: :show
@@ -21,10 +23,17 @@ Rails.application.routes.draw do
     end
     resources :agent_logs, only: [:index]
     resources :objectives, only: [:index, :create, :show, :update, :destroy] do
+      post :feedback, on: :member
+      post :approve_plan, on: :member
+      post :regenerate_plan, on: :member
       post :run_now, on: :member
       post :reset_stuck_tasks_and_run, on: :member
       post :rerun, on: :member
       get :presentation, on: :member
+      resources :objective_feedbacks, only: [:update] do
+        post :approve_plan, on: :member
+        post :regenerate_plan, on: :member
+      end
     end
 
     namespace :agent do

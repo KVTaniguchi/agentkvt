@@ -11,6 +11,11 @@ class Workspace < ApplicationRecord
   has_many :objectives, dependent: :destroy
   has_many :objective_drafts, dependent: :destroy
   has_many :agent_registrations, dependent: :destroy
+  has_many :slack_workspace_links, dependent: :destroy
+  has_one :agent_identity, dependent: :destroy
+  has_many :agent_personas, dependent: :destroy
+  has_many :workspace_provider_credentials, dependent: :destroy
+  has_many :slack_messages, dependent: :destroy
 
   validates :name, presence: true
   validates :slug, presence: true, uniqueness: true

@@ -1,6 +1,7 @@
 class ResearchSnapshot < ApplicationRecord
   belongs_to :objective
   belongs_to :task, optional: true
+  has_many :anchored_objective_feedbacks, class_name: "ObjectiveFeedback", dependent: :nullify
 
   validates :key, presence: true
   validates :value, presence: true

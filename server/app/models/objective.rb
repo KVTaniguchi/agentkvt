@@ -4,10 +4,12 @@ class Objective < ApplicationRecord
   belongs_to :workspace
   has_many :tasks, dependent: :destroy
   has_many :research_snapshots, dependent: :destroy
+  has_many :objective_feedbacks, dependent: :destroy
 
   STATUSES = %w[pending active completed archived].freeze
 
   before_validation :normalize_guided_fields
+  before_validation :normalize_hands_config
 
   validates :goal, presence: true
   validates :status, inclusion: { in: STATUSES }
@@ -22,5 +24,9 @@ class Objective < ApplicationRecord
     self.creation_source = creation_source.to_s.strip.presence || "manual"
     self.objective_kind = objective_kind.to_s.strip.presence
     self.brief_json = ObjectivePlanningInputBuilder.normalize_brief(brief_json)
+  end
+
+  def normalize_hands_config
+    self.hands_config = {} unless hands_config.is_a?(Hash)
   end
 end

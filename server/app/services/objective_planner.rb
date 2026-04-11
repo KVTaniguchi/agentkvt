@@ -15,9 +15,9 @@ class ObjectivePlanner
     @client = client
   end
 
-  # Prompts the LLM to decompose +objective.goal+ into Tasks and persists them.
-  # When Ollama is unavailable or returns nothing usable, creates heuristic tasks so the
-  # UI and Mac agent pipeline still have work items.
+  # Prompts the LLM to decompose +objective.goal+ into reviewable Tasks and persists them.
+  # Generated tasks start as `proposed`; the user must approve the plan before the
+  # Mac agent begins executing them.
   def call(objective)
     goal = objective.goal.to_s.strip
     planning_input = ObjectivePlanningInputBuilder.for_objective(objective)
@@ -28,7 +28,8 @@ class ObjectivePlanner
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: planning_input.presence || objective.goal }
       ],
-      format: "json"
+      format: "json",
+      task: "objective-planner"
     )
 
     task_defs = normalize_task_defs(JSON.parse(raw))
@@ -73,18 +74,14 @@ class ObjectivePlanner
 
     heuristic_descriptions(goal, min_task_count: min_task_count).filter_map do |description|
       next if description.blank?
-      task = objective.tasks.create!(description: description)
-      TaskExecutorJob.perform_later(task.id.to_s)
-      task
+      objective.tasks.create!(description: description, status: "proposed")
     end
   end
 
   def persist_tasks(objective, descriptions)
     descriptions.filter_map do |description|
       next if description.blank?
-      task = objective.tasks.create!(description: description.truncate(500))
-      TaskExecutorJob.perform_later(task.id.to_s)
-      task
+      objective.tasks.create!(description: description.truncate(500), status: "proposed")
     end
   end
 

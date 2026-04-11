@@ -27,7 +27,7 @@ class ObjectivePlannerTest < ActiveSupport::TestCase
 
     assert_equal 12, tasks.length
     assert_equal "Search for flights from SFO to SAN", tasks.first.description
-    assert tasks.all? { |t| t.status == "pending" }
+    assert tasks.all? { |t| t.status == "proposed" }
     assert_equal 12, @objective.reload.tasks.count
   end
 

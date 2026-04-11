@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_04_09_070000) do
+ActiveRecord::Schema[8.0].define(version: 2026_04_10_213000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -153,6 +153,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_04_09_070000) do
     t.text "presentation_json"
     t.datetime "presentation_generated_at"
     t.datetime "presentation_enqueued_at"
+    t.jsonb "hands_config", default: {}, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["workspace_id", "objective_kind"], name: "index_objectives_on_workspace_id_and_objective_kind"
@@ -191,6 +192,24 @@ ActiveRecord::Schema[8.0].define(version: 2026_04_09_070000) do
     t.index ["workspace_id"], name: "index_objective_drafts_on_workspace_id"
   end
 
+  create_table "objective_feedbacks", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "objective_id", null: false
+    t.uuid "task_id"
+    t.uuid "research_snapshot_id"
+    t.string "role", default: "user", null: false
+    t.string "feedback_kind", default: "follow_up", null: false
+    t.string "status", default: "received", null: false
+    t.text "content", null: false
+    t.text "completion_summary"
+    t.datetime "completed_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["objective_id", "created_at"], name: "index_objective_feedbacks_on_objective_id_and_created_at"
+    t.index ["objective_id"], name: "index_objective_feedbacks_on_objective_id"
+    t.index ["research_snapshot_id"], name: "index_objective_feedbacks_on_research_snapshot_id"
+    t.index ["task_id"], name: "index_objective_feedbacks_on_task_id"
+  end
+
   create_table "research_snapshots", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.uuid "objective_id", null: false
     t.uuid "task_id"
@@ -213,12 +232,14 @@ ActiveRecord::Schema[8.0].define(version: 2026_04_09_070000) do
     t.text "result_summary"
     t.datetime "claimed_at"
     t.string "claimed_by_agent_id"
+    t.uuid "source_feedback_id"
     t.jsonb "required_capabilities", default: [], null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["objective_id", "status"], name: "index_tasks_on_objective_id_and_status"
     t.index ["objective_id"], name: "index_tasks_on_objective_id"
     t.index ["required_capabilities"], name: "index_tasks_on_required_capabilities", using: :gin
+    t.index ["source_feedback_id"], name: "index_tasks_on_source_feedback_id"
   end
 
   create_table "users", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -252,6 +273,67 @@ ActiveRecord::Schema[8.0].define(version: 2026_04_09_070000) do
     t.index ["slug"], name: "index_workspaces_on_slug", unique: true
   end
 
+  create_table "slack_workspace_links", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.string "slack_team_id", null: false
+    t.uuid "workspace_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["slack_team_id"], name: "index_slack_workspace_links_on_slack_team_id", unique: true
+    t.index ["workspace_id"], name: "index_slack_workspace_links_on_workspace_id"
+  end
+
+  create_table "agent_identities", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "workspace_id", null: false
+    t.string "display_name", null: false
+    t.string "from_email"
+    t.string "from_name"
+    t.string "slack_bot_user_id"
+    t.string "avatar_url"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["workspace_id"], name: "index_agent_identities_on_workspace_id", unique: true
+  end
+
+  create_table "agent_personas", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "workspace_id", null: false
+    t.string "channel_type", null: false
+    t.text "signature"
+    t.string "tone"
+    t.text "intro_bio"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["workspace_id", "channel_type"], name: "index_agent_personas_on_workspace_id_and_channel_type", unique: true
+  end
+
+  create_table "workspace_provider_credentials", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "workspace_id", null: false
+    t.string "provider", null: false
+    t.string "credential_type", default: "api_credential", null: false
+    t.text "secret_value"
+    t.jsonb "metadata_json", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["workspace_id", "provider"], name: "index_workspace_provider_credentials_on_workspace_id_and_provider", unique: true
+    t.index ["workspace_id"], name: "index_workspace_provider_credentials_on_workspace_id"
+  end
+
+  create_table "slack_messages", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "workspace_id", null: false
+    t.string "slack_team_id", null: false
+    t.string "channel_id", null: false
+    t.string "message_ts", null: false
+    t.string "slack_user_id"
+    t.text "text"
+    t.jsonb "raw_payload_json", default: {}, null: false
+    t.string "intake_kind", default: "unknown", null: false
+    t.string "trust_tier", default: "low", null: false
+    t.jsonb "provenance_json", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["workspace_id", "slack_team_id", "channel_id", "message_ts"], name: "index_slack_messages_on_workspace_team_channel_ts", unique: true
+    t.index ["workspace_id"], name: "index_slack_messages_on_workspace_id"
+  end
+
   add_foreign_key "action_items", "family_members", column: "owner_profile_id"
   add_foreign_key "action_items", "workspaces"
   add_foreign_key "agent_logs", "workspaces"
@@ -271,10 +353,19 @@ ActiveRecord::Schema[8.0].define(version: 2026_04_09_070000) do
   add_foreign_key "objective_drafts", "family_members", column: "created_by_profile_id"
   add_foreign_key "objective_drafts", "objectives", column: "finalized_objective_id"
   add_foreign_key "objective_drafts", "workspaces"
+  add_foreign_key "objective_feedbacks", "objectives"
+  add_foreign_key "objective_feedbacks", "research_snapshots"
+  add_foreign_key "objective_feedbacks", "tasks"
   add_foreign_key "objectives", "workspaces"
   add_foreign_key "research_snapshots", "objectives"
   add_foreign_key "research_snapshots", "tasks"
   add_foreign_key "tasks", "objectives"
+  add_foreign_key "tasks", "objective_feedbacks", column: "source_feedback_id"
   add_foreign_key "workspace_memberships", "users"
   add_foreign_key "workspace_memberships", "workspaces"
+  add_foreign_key "slack_workspace_links", "workspaces"
+  add_foreign_key "agent_identities", "workspaces"
+  add_foreign_key "agent_personas", "workspaces"
+  add_foreign_key "workspace_provider_credentials", "workspaces"
+  add_foreign_key "slack_messages", "workspaces"
 end

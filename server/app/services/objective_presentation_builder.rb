@@ -40,7 +40,8 @@ class ObjectivePresentationBuilder
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: input }
       ],
-      format: "json"
+      format: "json",
+      task: "objective-presentation"
     )
 
     parsed = JSON.parse(raw)
