@@ -25,7 +25,8 @@ module Slack
       raw = OllamaClient.new.chat(
         messages: build_messages,
         format: "json",
-        task: "slack_message_classify"
+        task: "slack_message_classify",
+        options: { num_ctx: 4096, think: false }
       )
       parse(raw)
     rescue => e
@@ -65,7 +66,7 @@ module Slack
 
       [
         { role: "system", content: system_prompt },
-        { role: "user",   content: "Classify this Slack message:\n\n#{@message.text}" }
+        { role: "user",   content: "/no_think\n\nClassify this Slack message:\n\n#{@message.text}" }
       ]
     end
 
