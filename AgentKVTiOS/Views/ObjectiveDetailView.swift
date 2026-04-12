@@ -158,7 +158,7 @@ struct ObjectiveDetailView: View {
         targets.append(contentsOf: snapshots.prefix(6).map {
             ObjectiveFeedbackTarget(
                 id: "snapshot-\($0.id.uuidString)",
-                label: ObjectiveFeedbackPresentation.targetLabel(for: $0),
+                label: ObjectiveFeedbackPresentation.targetLabel(for: $0, tasks: tasks),
                 preview: ObjectiveFeedbackPresentation.previewText($0.value),
                 researchSnapshotId: $0.id
             )
@@ -166,7 +166,7 @@ struct ObjectiveDetailView: View {
         targets.append(contentsOf: tasks.prefix(8).map {
             ObjectiveFeedbackTarget(
                 id: "task-\($0.id.uuidString)",
-                label: "Task: \($0.description)",
+                label: ObjectiveFeedbackPresentation.taskLabel(for: $0),
                 preview: ObjectiveFeedbackPresentation.previewText($0.description),
                 taskId: $0.id
             )
@@ -1147,11 +1147,11 @@ struct ObjectiveDetailView: View {
     private func feedbackTargetLabel(for feedback: IOSBackendObjectiveFeedback) -> String {
         if let snapshotId = feedback.researchSnapshotId,
            let snapshot = snapshots.first(where: { $0.id == snapshotId }) {
-            return ObjectiveFeedbackPresentation.targetLabel(for: snapshot)
+            return ObjectiveFeedbackPresentation.targetLabel(for: snapshot, tasks: tasks)
         }
         if let taskId = feedback.taskId,
            let task = tasks.first(where: { $0.id == taskId }) {
-            return "Task: \(task.description)"
+            return ObjectiveFeedbackPresentation.taskLabel(for: task)
         }
         return "Entire objective"
     }

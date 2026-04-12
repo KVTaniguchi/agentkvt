@@ -18,6 +18,7 @@ Verify: `curl -sS http://127.0.0.1:3000/healthz`
 ### Models
 - **Objective** — User-defined goals that the system decomposes into tasks.
 - **ObjectiveDraft / ObjectiveDraftMessage** — Ephemeral guided-authoring sessions for objective composition before final creation.
+- **ObjectiveFeedback** — Follow-up feedback anchored to an objective, task, or research finding; drives reviewable next-pass batches.
 - **Task** — Concrete research/synthesis steps within an objective. Dispatched to Mac agents via webhooks.
 - **ResearchSnapshot** — Persisted findings from agent research, linked to objectives.
 - **ActionItem** — Dynamic buttons for the iOS dashboard (agent writes, user acts).
@@ -31,6 +32,8 @@ Verify: `curl -sS http://127.0.0.1:3000/healthz`
 ### Services
 - **ObjectiveComposer** — Direct Rails-to-Ollama drafting loop for interactive objective composition and follow-up questions.
 - **ObjectivePlanner** — LLM-assisted task decomposition. Builds planner input from the objective goal plus any structured brief metadata before persisting tasks.
+- **ObjectiveFeedbackPlanner** — Turns user follow-up feedback into 1-3 linked follow-up tasks.
+- **ObjectiveFeedbackLifecycle** — Maps follow-up task state into feedback state (`review_required`, `planned`, `queued`, `completed`, `failed`) and completion summaries.
 - **ObjectivePlanningInputBuilder** — Normalizes `goal`, `objective_kind`, and `brief_json` into the planner-facing prompt payload.
 - **ObjectiveKickoff** — Shared activation path that enqueues planning when an objective becomes active.
 - **ObjectivePresentationBuilder** — Generates structured UI layouts from research snapshots for iOS generative results views.
@@ -49,9 +52,13 @@ Verify: `curl -sS http://127.0.0.1:3000/healthz`
 | GET | `/v1/bootstrap` | Bootstrap snapshot (family, context, logs, actions) |
 | GET/POST | `/v1/objectives` | List / create objectives |
 | GET/PUT/DELETE | `/v1/objectives/:id` | Show / update / destroy objective |
+| POST | `/v1/objectives/:id/feedback` | Create a follow-up feedback entry and generate the next pass |
 | POST | `/v1/objectives/:id/run_now` | Trigger immediate execution |
 | POST | `/v1/objectives/:id/rerun` | Reset and re-execute |
 | POST | `/v1/objectives/:id/reset_stuck_tasks_and_run` | Reset stuck tasks |
+| PATCH | `/v1/objectives/:objective_id/objective_feedbacks/:id` | Update a reviewable follow-up and rebuild its task batch |
+| POST | `/v1/objectives/:objective_id/objective_feedbacks/:id/approve_plan` | Approve a reviewable follow-up batch |
+| POST | `/v1/objectives/:objective_id/objective_feedbacks/:id/regenerate_plan` | Regenerate a reviewable follow-up batch |
 | POST | `/v1/objective_drafts` | Start a guided objective draft session |
 | GET | `/v1/objective_drafts/:id` | Resume a guided objective draft |
 | POST | `/v1/objective_drafts/:id/messages` | Submit a drafting turn and receive the next assistant response |

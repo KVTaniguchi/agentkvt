@@ -1,6 +1,6 @@
 # AgentKVT Data Flow: iOS → Server → Mac Agent → Back to iOS
 
-This document describes how data moves from the moment a user creates an objective in the iOS app through the Rails backend, Mac agent execution, and back to the iOS app as research results, actions, and logs.
+This document describes how data moves from the moment a user creates an objective in the iOS app through the Rails backend, Mac agent execution, and back to the iOS app as research results, follow-up plans, actions, and logs.
 
 ## Architecture
 
@@ -99,14 +99,32 @@ This document describes how data moves from the moment a user creates an objecti
 
 ### Step 5: Results flow back to iOS
 
-**Where:** iOS app — Objectives detail view, Actions tab, Log tab.
+**Where:** iOS app — Objective Detail, Research, Actions, and Log tabs/views.
 
 **What happens:**
 
-- **Objectives tab:** User taps an objective to see its tasks, research snapshots, and a generative results view (server-rendered UI layout).
+- **Objective Detail:** User taps an objective to see its tasks, research snapshots, follow-up history, and the current execution state. The top `Activity` section answers what the user should do next. If work is active, it can show `No action needed right now`, `Working On Now`, `Recently Finished`, and a `Likely next check-in` estimate derived from recent task pace.
+- **Research screen:** User can open the generative results view (server-rendered UI layout) and see `Latest Follow-up`, `Agent Activity`, `Follow-up Loop`, and finding-specific follow-up entry points.
 - **Actions tab:** Lists `ActionItem` entries created by the agent. Each is a tappable button (e.g. "Review hotel comparison", intent `url.open`).
 - **Log tab:** Shows `AgentLog` entries grouped by phase, so the user can audit what the agent did.
 - **Chat tab:** User can have conversational follow-ups with the agent via the chat interface.
+
+### Step 5b: Follow-up feedback becomes the next pass
+
+**Where:** iOS app → Rails API → ObjectiveFeedback planner/lifecycle → Mac Brain.
+
+**What happens:**
+
+1. User submits follow-up feedback from the inline `Continue Research` section in Objective Detail or from the `Continue Research` sheet in the Research screen.
+2. Rails persists an `ObjectiveFeedback` record anchored to the whole objective, a task, or a specific finding.
+3. `ObjectiveFeedbackPlanner` creates 1-3 linked follow-up tasks with `source_feedback_id`.
+4. `ObjectiveFeedbackLifecycle` updates the feedback state to:
+   - `review_required` if the next pass is still proposed
+   - `planned` if the objective is pending and the batch is approved/saved for later
+   - `queued` if the objective is active and the batch is ready for the Mac agent
+   - `completed` or `failed` after the linked tasks finish
+5. If the objective is active and the next pass is approved, `ObjectiveKickoff` dispatches the new work.
+6. iOS keeps the feedback visible as `Latest Follow-up` and in the `Follow-up Loop`, so the user can see what their input changed.
 
 ---
 
@@ -140,7 +158,7 @@ This document describes how data moves from the moment a user creates an objecti
 1. **iOS:** User creates objective "Plan San Diego trip logistics" → Rails persists it and decomposes into tasks like "Research hotel options", "Find flight prices", "Plan activities".
 2. **Rails:** `TaskExecutorJob` POSTs webhooks to the Mac agent for each task.
 3. **Mac:** `ObjectiveExecutionPool` picks up tasks. Workers call `multi_step_search` to compare hotels across sites, then `write_objective_snapshot` to persist findings.
-4. **iOS:** User opens the objective detail → sees research results rendered as a structured layout. Actions tab shows "Review: Hotel comparison" with a link.
+4. **iOS:** User opens Objective Detail → sees whether action is required, the tasks currently being worked on, and a likely next check-in window. Opening Research shows the structured results layout plus the latest follow-up and its linked next-pass tasks.
 5. **Log tab:** Shows the agent's research steps, tool calls, and outcomes.
 
 ---

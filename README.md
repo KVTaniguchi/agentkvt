@@ -18,13 +18,13 @@ AgentKVT is a sovereign, self-hosted personal agent ecosystem. It operates entir
 
 By utilizing a central **Rails + PostgreSQL** backend on a Mac server instead of iCloud, multiple family members with different Apple IDs can seamlessly share a unified workspace.
 
-The latest objective flow now includes a guided **Objective Composer** on iOS. Instead of copy-pasting a prompt from a separate LLM, the app can open a draft session that talks directly to the Rails server, lets the server-side model ask a few high-value follow-up questions, and finalizes a structured planner brief before creating the real objective.
+The latest objective flow now includes a guided **Objective Composer** on iOS, a reviewable **Follow-up Loop** after research lands, and a clearer live-work monitor in Objective Detail. Instead of copy-pasting a prompt from a separate LLM, the app can open a draft session that talks directly to the Rails server, lets the server-side model ask a few high-value follow-up questions, finalizes a structured planner brief, then keeps the user oriented with explicit states like **Next step: Review follow-up**, **No action needed right now**, **Working On Now**, and **Likely next check-in**.
 
 ## Core Architecture
 
 AgentKVT consists of three cooperating layers:
 
-1. **The Remote (iOS):** A SwiftUI dashboard running on your iPhone. It's backend-first—you create **Objectives**, draft guided objective briefs, and review **ActionItems**, context, and logs by connecting to the Rails API (often over Tailscale). Real-time status chips show when the Mac agent is actively working.
+1. **The Remote (iOS):** A SwiftUI dashboard running on your iPhone. It's backend-first—you create **Objectives**, draft guided objective briefs, review **ActionItems**, and monitor live objective execution by connecting to the Rails API (often over Tailscale). Objective Detail now tells the user whether action is required, shows the latest tasks being worked on, and estimates when to come back, while the Research screen acts as the home for the latest follow-up and its resulting work.
 2. **The API & Store (Server):** A Mac-hosted **Ruby on Rails** application exposing versioned HTTP endpoints. Postgres serves as the definitive, multi-device source of truth for workspaces, objective drafts, tasks, research snapshots, action items, and agent logs. 
 3. **The Brain (macOS):** An event-driven macOS background application `ObjectiveExecutionPool` that pulls tasks from the Rails server. It runs an autonomous loop using local LLMs (via Ollama) and a registry of sandboxed MCP (Model Context Protocol) tools to conduct research and synthesis.
 
@@ -37,7 +37,7 @@ AgentKVT consists of three cooperating layers:
 3. **Task Planning:** Once finalized, the Rails backend breaks down the objective into actionable **Tasks** using LLM-assisted planning informed by both the goal and the structured brief.
 4. **Execution Delivery:** The Mac Brain continuously polls or receives webhooks from the server. It picks up pending tasks and dispatches them to worker threads.
 5. **Agentic Loop:** The local LLM research engine runs multi-step tasks using over 20+ allowed system tools (secure browsing, file reading, semantic search, etc.).
-6. **Results & Action Items:** Research findings are synced back to the Postgres database as **ResearchSnapshots** and presented natively in the iOS app. If the agent discovers a concrete next step (e.g., "Review Acme Corp Job Description" or "Approve Trip Budget"), an **ActionItem** is created.
+6. **Results, Follow-up, & Action Items:** Research findings are synced back to the Postgres database as **ResearchSnapshots** and presented natively in the iOS app. Users can submit follow-up feedback from the Research screen or Objective Detail, review the resulting next pass, and track linked work through **Latest Follow-up**, **Follow-up Loop**, and live activity cards. If the agent discovers a concrete next step (e.g., "Review Acme Corp Job Description" or "Approve Trip Budget"), an **ActionItem** is created.
 7. **Transparency:** Every single step, tool call, and token metric is preserved as an **AgentLog** for a complete audit trail.
 
 ## Repository Structure

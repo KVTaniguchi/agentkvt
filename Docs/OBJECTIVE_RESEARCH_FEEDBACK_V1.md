@@ -1,136 +1,90 @@
 # Objective Research Feedback Loop V1
 
-## Summary
-
-This V1 makes objectives feel continuous instead of one-shot.
-
-After an objective produces research results, the user can give follow-up feedback from iPhone and ask AgentKVT to keep going. That feedback is stored, linked to the exact task or finding it refers to, and turned into 1-3 follow-up tasks. If the objective is already active, the new tasks are queued immediately. If the objective is still pending, the new tasks stay proposed until the user starts work.
-
-This is the first objective-scoped collaboration loop after initial planning.
-
-## Problem
-
-Today, the system can:
-
-- create an objective
-- generate a plan
-- run research tasks
-- show results back on iPhone
-
-But once results come back, the loop stops. Users cannot naturally say:
-
-- "Go deeper on this result."
-- "Compare these two options more carefully."
-- "I do not trust this conclusion."
-- "Turn this into a recommendation."
-
-Without this loop, objectives feel like a batch job instead of a collaborative working session.
-
-## V1 Goals
-
-- Let the user continue research from the objective detail screen.
-- Let feedback target the whole objective, a specific task, or a specific finding.
-- Persist feedback as a first-class record.
-- Convert each feedback submission into 1-3 linked follow-up tasks.
-- Auto-queue follow-up tasks when the objective is active.
-- Show the feedback history and resulting work in the same objective timeline.
-
-## Non-Goals
-
-- Full chat threads between the user and an individual task worker
-- Editing or deleting feedback after submission
-- Inline approve/reject controls on each individual follow-up task
-- Agent-authored replies inside the feedback thread
-
-## Primary User Story
-
-1. User opens an objective that already has completed tasks or research findings.
-2. User sees a `Continue Research` composer on the objective detail screen or the research results screen.
-3. User chooses an intent like `Compare options`.
-4. User optionally anchors the feedback to a finding or task.
-5. User writes: `Compare these two hotels by resort fee, beach access, and kid-friendliness.`
-6. AgentKVT creates follow-up tasks linked to that feedback.
-7. If the objective is active, the tasks begin running.
-8. The user sees the new feedback entry and resulting follow-up tasks in the objective detail flow.
-
-## Exact UI
-
-### Screen placement
-
-V1 lives in:
+This document now serves as the current-design reference for the shipped V1 follow-up loop in:
 
 - [ObjectiveDetailView.swift](../AgentKVTiOS/Views/ObjectiveDetailView.swift)
 - [GenerativeResultsView.swift](../AgentKVTiOS/Views/GenerativeResultsView.swift)
+- [IOSBackendAPIClient.swift](../AgentKVTiOS/Services/IOSBackendAPIClient.swift)
 
-On objective detail, it appears below the `Research` section and above `Recent Agent Logs`.
+## Summary
 
-On the research results screen, it appears as a bottom action area anchored above the safe area.
+AgentKVT now treats research as an ongoing loop instead of a one-shot batch.
 
-### Visibility rules
+After research results appear, the user can submit follow-up feedback from iPhone, anchor it to the whole objective, a task, or a specific finding, and create a reviewable next pass. The Research screen is the primary home for this loop. It shows the latest follow-up, the agent activity tied to that follow-up, and the historical follow-up loop in one place. Objective Detail is the secondary management surface: it tells the user whether they need to act now, can come back later, or should review a queued next pass before the Mac continues.
 
-Show the `Continue Research` composer when:
+## Current UX Principles
 
-- the objective has at least one completed task, or
-- the objective has at least one research snapshot, or
-- the objective already has at least one feedback entry
+- Use one narrative: `user feedback -> next-pass plan -> queued/running work -> completed outcome`.
+- Keep the Research screen as the canonical answer to "what happened to my feedback?"
+- Make Objective Detail answer two questions immediately:
+  - What should I do next?
+  - What is the Mac doing right now?
+- Never show competing primary actions when a follow-up batch is waiting for review.
+- When work is already active, tell the user that no action is needed and show concrete live progress instead of raw telemetry only.
 
-And only when objective status is:
+## Goals
 
-- `pending`
-- `active`
+- Let the user continue research from either Objective Detail or the Research screen.
+- Persist follow-up feedback as a first-class record anchored to the objective, task, or finding it refers to.
+- Convert each feedback submission into a linked next-pass task batch.
+- Keep review, approval, regeneration, and completion visible in the same history model.
+- Give the user a clear top-of-screen state in Objective Detail for review-required, queued, and active-work moments.
 
-Hide it for:
+## Non-Goals
 
-- `completed`
-- `archived`
+- Full conversational threads between the user and one task worker
+- Per-task approve/reject controls inside a follow-up batch
+- Deleting follow-up feedback after submission
+- Exact completion ETAs or guaranteed countdown timers
+- Agent-authored replies inside the follow-up loop
 
-### Continue Research section
+## Primary User Stories
 
-Header:
+### 1. Continue research from the Research screen
 
-- `Continue Research`
+1. User opens a research result.
+2. User taps `Continue Research` or a quick intent such as `Challenge result`.
+3. The composer shows the intended target and a compact context summary.
+4. User submits feedback.
+5. The sheet first shows `Sending your feedback`, then `Feedback received`.
+6. The system creates a next pass and returns a follow-up card with a status such as `Ready for review`, `Queued for agent`, or `Saved for later`.
+7. After dismissal, the Research screen pins the entry as `Latest Follow-up` and keeps it visible in the `Follow-up Loop`.
 
-Controls:
+### 2. Review a follow-up batch before more work continues
 
-1. `Intent` menu
-   - `Go deeper` -> `follow_up`
-   - `Compare options` -> `compare_options`
-   - `Challenge result` -> `challenge_result`
-   - `Clarify gaps` -> `clarify_gaps`
-   - `Recommend next move` -> `final_recommendation`
+1. User opens Objective Detail.
+2. The top `Activity` section says `Next step: Review follow-up`.
+3. The review-required follow-up card is promoted directly under the activity summary.
+4. The user can `Approve`, `Regenerate`, or `Edit`.
+5. If approved and the objective is active, the Mac queues/runs the new work.
 
-2. `Focus` menu
-   - always includes `Entire objective`
-   - then up to 6 recent findings
-     - label format: `Finding: <snapshot.key>`
-   - then up to 8 recent tasks
-     - label format: `Task: <task.description>`
-   - only shown when there is more than one possible target
+### 3. Monitor active work without guessing what to press
 
-3. Multiline text field
-   - placeholder: `Tell AgentKVT what to research next...`
-   - 3-6 visible lines
+1. User opens Objective Detail while tasks are already running.
+2. The top `Activity` section says `No action needed right now`.
+3. The screen shows:
+   - `Likely next check-in`
+   - `Working On Now`
+   - `Recently Finished`
+4. Recovery controls remain available, but `Run now` does not compete with active work.
 
-4. Primary CTA
-   - label: `Create follow-up tasks`
-   - icon: branch/continuation affordance
-   - disabled when:
-     - text is empty
-     - submission is already in progress
-     - another objective action is in progress
-     - delete flow is in progress
+## Current UI
 
-Footer copy:
+### Research Screen
 
-- `Submitting feedback creates 1-3 new follow-up tasks. Active objectives queue them automatically so the agent can keep going.`
+The Research screen is the primary home for follow-up feedback after submission.
 
-### Research results screen entry point
+Current structure:
 
-The research results screen adds a lighter-weight entry point for the same workflow.
+- server-rendered research layout
+- `Latest Follow-up`
+- `Agent Activity`
+- `Follow-up Loop`
+- `Continue from a finding`
+- bottom safe-area action area: `Guide the next pass`
 
-Bottom action area contents:
+The bottom action area contains:
 
-- section label: `Guide the next pass`
 - quick intent buttons:
   - `Go deeper`
   - `Compare options`
@@ -140,70 +94,162 @@ Bottom action area contents:
 
 Behavior:
 
-- tapping a quick intent opens the same composer sheet with that intent preselected
-- tapping `Continue Research` opens the composer with `Go deeper` preselected
-- composer is presented as a sheet with medium and large detents
-- on success, the screen shows a confirmation message:
-  - active objective: `Follow-up tasks were queued for the agent.`
-  - pending objective: `Follow-up tasks were added to this objective for later review.`
+- quick intents open the same composer sheet with that intent preselected
+- `Continue Research` opens the composer with `Go deeper` preselected
+- when a follow-up submission times out, the Research screen keeps polling and shows a visible `Still working` state instead of silently dropping the request
+- the agent activity copy references the latest follow-up whenever possible
 
-### Submission behavior
+### Follow-up Composer Sheet
 
-On submit:
+The Research screen uses a dedicated sheet. Objective Detail still uses an inline `Continue Research` section for new submissions when no review-required follow-up is currently promoted.
 
-- button shows loading state
-- composer posts feedback to backend
-- detail refreshes
-- input clears on success
-- intent resets to `Go deeper`
-- focus resets to `Entire objective`
+Current composer structure:
 
-If objective is `active`:
+- title:
+  - `Continue Research`
+  - `Edit Follow-up Plan` when editing a reviewable batch
+- `Context` section with:
+  - intent chip
+  - target label
+  - target preview
+- `Next Pass` section with:
+  - `Intent` menu
+  - `Focus` menu
+  - multiline text field
+  - primary CTA:
+    - `Create Next Pass`
+    - `Update Follow-up` while editing
 
-- view performs a short refresh burst so newly queued work appears quickly
+Footer copy:
 
-### Feedback Loop section
+- active objectives: approved follow-up work can queue automatically
+- pending objectives: larger next passes stay saved for later review
 
-If at least one feedback entry exists, show a `Feedback Loop` section.
+Submission states:
 
-Each row shows:
+- `editing`
+- `submitting`
+- `received_building_plan`
+- `success`
+- `timedOut`
+
+Important UX behavior:
+
+- the sheet is non-dismissible during `submitting` and `received_building_plan`
+- the sheet stays visible long enough to acknowledge receipt
+- success shows the resulting follow-up card and a `Back to Research` / `Done` button
+- timeout shows the pending follow-up card and explains that the Research screen will keep refreshing
+
+### Objective Detail
+
+Objective Detail is the secondary management surface.
+
+Current top-of-screen states:
+
+- `Plan ready for review`
+- `Approved plan ready`
+- `Next step: Review follow-up`
+- `No action needed right now`
+- `Tasks are queued`
+- `Research available`
+
+When a follow-up batch is waiting for review:
+
+- the top card says `Next step: Review follow-up`
+- the follow-up card is promoted directly under Activity
+- the promoted card shows `Approve`, `Regenerate`, and `Edit`
+- the inline `Continue Research` composer is hidden to avoid competing actions
+
+When work is active:
+
+- the top card says `No action needed right now`
+- the card includes `Likely next check-in`
+- `Working On Now` shows up to three active tasks
+- `Recently Finished` shows the latest completed tasks
+- each live row uses Mac log metadata to show:
+  - task title
+  - worker/phase
+  - latest tool or supervisor update
+  - relative timestamp
+- if more queued work still exists, the only forward action is `Dispatch queued tasks now`
+- otherwise the remaining lower controls are recovery-only
+
+### Shared Follow-up Card
+
+The same follow-up card model is used across Research and Objective Detail.
+
+Each card shows:
 
 - intent chip
-- feedback status
-  - `Received`
-  - `Planned`
-  - `Queued`
-  - `Failed`
+- normalized status label
 - relative timestamp
 - target label
-  - `Entire objective`
-  - `Finding: <snapshot.key>`
-  - `Task: <task.description>`
+- target preview when available
 - feedback content
-- count of follow-up tasks created from that feedback
+- optional status message
+- linked task disclosure
+- completion summary when present
 
-### Task list affordance
+When the status is `review_required`, the card can show:
 
-Tasks created from feedback should display as follow-up work by checking `source_feedback_id != nil`.
+- `Approve` or `Approve & queue`
+- `Regenerate`
+- `Edit`
 
-## API Endpoints
+## Status Model
+
+### Backend statuses
+
+- `received`
+- `review_required`
+- `planned`
+- `queued`
+- `completed`
+- `failed`
+
+`received` is generally short-lived and quickly transitions once the planner/lifecycle pass finishes.
+
+### Client-only presentation states
+
+- `submitting`
+- `received_building_plan`
+- `timed_out_but_refreshing`
+
+### User-facing status labels
+
+- `review_required` -> `Ready for review`
+- `queued` -> `Queued for agent`
+- `planned` -> `Saved for later`
+- `completed` -> `Completed`
+- `failed` -> `Needs attention`
+- `submitting` -> `Sending feedback`
+- `received_building_plan` -> `Creating next pass`
+- `timed_out_but_refreshing` -> `Still working`
+
+## API Surface
 
 ### 1. Objective detail
 
 `GET /v1/objectives/:id`
 
-Purpose:
+This is the canonical payload for Objective Detail and the Research activity overlay.
 
-- return the objective detail screen payload
-- now includes feedback history
-- now returns task-to-feedback linkage
+It returns:
 
-New response fields:
+- `objective`
+- `tasks`
+- `research_snapshots`
+- `objective_feedbacks`
+- `agent_logs`
+- `online_agent_registrations_count`
 
-- `objective_feedbacks`: array
+Important payload additions for the follow-up loop:
+
 - `tasks[].source_feedback_id`
+- `objective_feedbacks[].completion_summary`
+- `objective_feedbacks[].completed_at`
 
-Response shape additions:
+Example shape:
 
 ```json
 {
@@ -225,8 +271,10 @@ Response shape additions:
       "research_snapshot_id": "optional-snapshot-id",
       "role": "user",
       "feedback_kind": "compare_options",
-      "status": "queued",
+      "status": "review_required",
       "content": "Go deeper on resort fees and beach access.",
+      "completion_summary": null,
+      "completed_at": null,
       "created_at": "2026-04-10T10:00:00Z",
       "updated_at": "2026-04-10T10:01:00Z"
     }
@@ -234,15 +282,11 @@ Response shape additions:
 }
 ```
 
-### 2. Submit follow-up feedback
+### 2. Create follow-up feedback
 
 `POST /v1/objectives/:id/feedback`
 
-Purpose:
-
-- create a new objective feedback record
-- generate follow-up tasks from that feedback
-- auto-queue them if the objective is active
+Creates a new feedback entry, generates the next-pass task batch, refreshes lifecycle state, and kicks off work immediately when the objective is active and the batch is queueable.
 
 Request body:
 
@@ -257,16 +301,6 @@ Request body:
 }
 ```
 
-Rules:
-
-- `content` is required
-- `feedback_kind` defaults to `follow_up` if omitted server-side only if model default is used, but clients should always send it
-- `task_id` is optional
-- `research_snapshot_id` is optional
-- if both anchors are present, the snapshot must belong to the same task
-- anchors must belong to the same objective
-- objective must be `pending` or `active`
-
 Success response:
 
 ```json
@@ -274,73 +308,86 @@ Success response:
   "objective": { "...": "updated objective payload" },
   "objective_feedback": {
     "id": "feedback-id",
-    "objective_id": "objective-id",
-    "task_id": "optional-task-id",
-    "research_snapshot_id": "optional-snapshot-id",
-    "role": "user",
-    "feedback_kind": "compare_options",
     "status": "queued",
-    "content": "Compare these two options by resort fee and beach access.",
-    "created_at": "2026-04-10T10:00:00Z",
-    "updated_at": "2026-04-10T10:00:00Z"
-  }
+    "content": "Compare these two options by resort fee and beach access."
+  },
+  "follow_up_tasks": [
+    {
+      "id": "task-id",
+      "source_feedback_id": "feedback-id",
+      "description": "Compare resort fees"
+    }
+  ]
 }
 ```
 
-Status codes:
+### 3. Update a reviewable follow-up
 
-- `201 Created` on success
-- `422 Unprocessable Entity` when:
-  - objective status does not allow feedback
-  - task/snapshot anchor belongs to another objective
-  - task/snapshot anchor pair is inconsistent
+`PATCH /v1/objectives/:objective_id/objective_feedbacks/:id`
+
+Used by the `Edit` action on a reviewable next pass. The server updates the feedback record, deletes still-proposed linked tasks, rebuilds the next pass, refreshes lifecycle state, and re-kicks work if the result is queueable.
+
+### 4. Approve a reviewable follow-up batch
+
+`POST /v1/objectives/:objective_id/objective_feedbacks/:id/approve_plan`
+
+Moves the linked proposed tasks to `pending`, refreshes lifecycle state, and dispatches them immediately if the objective is active.
+
+### 5. Regenerate a reviewable follow-up batch
+
+`POST /v1/objectives/:objective_id/objective_feedbacks/:id/regenerate_plan`
+
+Deletes the existing proposed follow-up tasks, rebuilds the batch, refreshes lifecycle state, and dispatches if the objective is active and the new batch is queueable.
 
 ## Server Behavior
 
-### Happy path
+### Create flow
 
-1. Find objective by workspace and id
-2. Reject unless objective status is `pending` or `active`
+1. Find objective by workspace and id.
+2. Reject unless objective status is `pending` or `active`.
 3. Create `ObjectiveFeedback` with:
    - `role = "user"`
    - `status = "received"`
-4. Run follow-up planner
-5. Persist 1-3 tasks linked with `source_feedback_id`
-6. Update feedback status:
-   - `queued` if objective is `active`
-   - `planned` if objective is `pending`
-7. If objective is `active`, call `ObjectiveKickoff` so pending follow-up tasks dispatch immediately
-8. Return updated objective + created feedback
+4. Run `ObjectiveFeedbackPlanner`.
+5. Persist 1-3 linked tasks with `source_feedback_id`.
+6. Run `ObjectiveFeedbackLifecycle.refresh!` to derive the real feedback state.
+7. If the refreshed state is `queued`, call `ObjectiveKickoff`.
+8. Return the updated objective, feedback, and linked tasks.
 
-### Planner behavior
+### Lifecycle rules
 
-Planner input should include:
+`ObjectiveFeedbackLifecycle` maps linked task state to feedback state:
+
+- any linked `proposed` task -> `review_required`
+- active/pending linked work on an active objective -> `queued`
+- active/pending linked work on a pending objective -> `planned`
+- all linked tasks completed -> `completed`
+- any linked task failed -> `failed`
+
+On completion, the lifecycle also stores:
+
+- `completed_at`
+- `completion_summary`
+
+### Planner inputs
+
+The planner should consider:
 
 - objective goal
-- structured objective summary
+- structured planner summary / brief
 - user feedback content
-- referenced task, if present
-- referenced finding, if present
+- selected task anchor, if present
+- selected finding anchor, if present
 - recent completed tasks
 - recent research snapshots
 
-Planner output:
-
-- JSON array of 1-3 task objects
-- each task object has `description`
-
 Fallback behavior:
 
-- if LLM output is invalid or the model call fails, generate heuristic follow-up task descriptions
-
-### Task status rules
-
-- Objective `active` -> created follow-up tasks start as `pending`
-- Objective `pending` -> created follow-up tasks start as `proposed`
+- if LLM output is invalid or unavailable, generate heuristic follow-up task descriptions
 
 ## Data Model
 
-### New table: `objective_feedbacks`
+### `objective_feedbacks`
 
 Columns:
 
@@ -352,6 +399,8 @@ Columns:
 - `feedback_kind`
 - `status`
 - `content`
+- `completion_summary` nullable
+- `completed_at` nullable
 - `created_at`
 - `updated_at`
 
@@ -368,8 +417,10 @@ Enums:
   - `final_recommendation`
 - `status`
   - `received`
+  - `review_required`
   - `planned`
   - `queued`
+  - `completed`
   - `failed`
 
 Associations:
@@ -380,90 +431,44 @@ Associations:
 - `ObjectiveFeedback belongs_to :research_snapshot, optional: true`
 - `ObjectiveFeedback has_many :follow_up_tasks, foreign_key: :source_feedback_id`
 
-### Existing table change: `tasks`
+### `tasks`
 
-New column:
+Current follow-up linkage:
 
 - `source_feedback_id` nullable
 
 Purpose:
 
 - link any generated follow-up task back to the feedback that created it
-
-## V1 Constraints
-
-- V1 feedback entry points are objective detail and research results only
-- V1 does not support user comments on individual task rows inline
-- V1 does not support agent-written conversational replies
-- V1 uses one-shot follow-up planning, not a long-lived feedback thread runner
-- V1 does not expose partial approval per follow-up task
+- support Research `Latest Follow-up` / `Follow-up Loop`
+- support Objective Detail live task monitoring for the latest follow-up
 
 ## Success Criteria
 
-- User can submit follow-up research feedback from iPhone without leaving the objective flow
-- User can start follow-up research directly from the research results screen
-- Feedback is persisted and visible in objective history
-- Each feedback entry creates 1-3 linked tasks
-- Active objectives queue follow-up tasks automatically
-- Pending objectives keep follow-up tasks reviewable
-- User can tell which tasks came from which feedback
+- User can submit follow-up research feedback from iPhone without leaving the objective flow.
+- The Research screen shows receipt, success, or timeout clearly instead of silently dismissing.
+- The Research screen pins the latest follow-up and keeps a readable follow-up history.
+- Objective Detail tells the user whether they should review, wait, or recover from a stalled run.
+- Active work shows concrete `Working On Now` and `Recently Finished` rows instead of only metric chips.
+- The app can suggest a reasonable `Likely next check-in` when enough task timing data exists.
+- Reviewable follow-up batches can be approved, regenerated, or edited at the batch level.
+- Active objectives queue approved follow-up tasks automatically.
+- Pending objectives keep follow-up work reviewable/saved for later.
+- Users can tell which tasks came from which feedback entry.
 
-## Change Amount
+## Constraints
 
-The current scoped V1 implementation footprint is:
-
-- 19 scoped files
-- 1 new API endpoint
-- 2 existing response payloads extended
-- 1 new persisted table
-- 1 new foreign key on `tasks`
-- about 1,795 added lines
-- 3 removed lines
-
-Scoped breakdown:
-
-- iOS product code: 4 files
-  - [IOSBackendAPIClient.swift](../AgentKVTiOS/Services/IOSBackendAPIClient.swift)
-  - [ObjectivesStore.swift](../AgentKVTiOS/Stores/ObjectivesStore.swift)
-  - [ObjectiveDetailView.swift](../AgentKVTiOS/Views/ObjectiveDetailView.swift)
-  - [GenerativeResultsView.swift](../AgentKVTiOS/Views/GenerativeResultsView.swift)
-- iOS tests: 3 files
-  - [IOSBackendAPIClientTests.swift](../AgentKVTiOS/AgentKVTiOSTests/IOSBackendAPIClientTests.swift)
-  - [ObjectivesStoreTests.swift](../AgentKVTiOS/AgentKVTiOSTests/ObjectivesStoreTests.swift)
-  - [RemoteModelsDecodingTests.swift](../AgentKVTiOS/AgentKVTiOSTests/RemoteModelsDecodingTests.swift)
-- server application code: 9 files
-  - controller
-  - serialization concern
-  - model updates
-  - new feedback model
-  - new planner service
-  - routes
-  - migration
-  - schema
-- server tests: 3 files
-  - integration coverage
-  - new planner service test
-  - related objective coverage
-
-Note:
-
-- these numbers are scoped to the feedback-loop V1 work only
-- they exclude unrelated worktree changes already in progress elsewhere in the repo
-
-## Rollout Notes
-
-1. Run migration to create `objective_feedbacks` and `tasks.source_feedback_id`
-2. Deploy server first
-3. Verify `GET /v1/objectives/:id` still works for older clients
-4. Ship iOS build with the new composer
-5. Verify one active-objective flow and one pending-objective flow end to end
+- Entry points remain Objective Detail and Research only.
+- This is still a batch-level next-pass model, not a long-lived follow-up conversation runner.
+- Partial approval inside one follow-up batch is not supported.
+- Objective Detail is a secondary management surface; Research remains the primary follow-up home.
 
 ## Future V2
 
-Likely next improvements after V1:
+Likely next improvements:
 
-- anchor follow-up feedback directly to tapped cards inside the generative presentation
-- let users regenerate only follow-up tasks from one feedback entry
-- add agent-authored status text or reply summaries
-- support feedback editing or cancellation
-- allow approve/reject at the follow-up task batch level
+- local/push notifications when review is needed or the run completes
+- stronger confidence scoring for `Likely next check-in`
+- richer agent-authored completion summaries and rationale
+- follow-up analytics across multiple batches
+- finer-grained controls for large next-pass batches

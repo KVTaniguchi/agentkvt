@@ -18,6 +18,7 @@ The following entities are owned by the backend and synced to clients via the AP
 - `ActionItem`
 - `AgentLog`
 - `Objective`
+- `ObjectiveFeedback`
 - `Task`
 - `ResearchSnapshot`
 - `ChatThread` / `ChatMessage`

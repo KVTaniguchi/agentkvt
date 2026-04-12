@@ -13,7 +13,7 @@ Use alongside [SOVEREIGN_PLANNER_VISION.md](SOVEREIGN_PLANNER_VISION.md), [FOUND
 Build a private, local-first planning system where:
 
 - the macOS Brain decomposes objectives into tasks, researches them, and generates structured outputs
-- the iOS Remote presents research results and deterministic user actions, with chat for follow-up
+- the iOS Remote presents research results, reviewable follow-up loops, deterministic user actions, and clear live-work monitoring
 - the Rails backend on Mac acts as the system of record for objectives, tasks, research snapshots, action items, and logs
 - model usage remains local, constrained, and inspectable
 
@@ -33,7 +33,7 @@ A user can:
 ### MVP scope
 
 - shared data schema for Objectives, Tasks, ResearchSnapshots, ActionItems, AgentLogs, LifeContext
-- iOS UI for creating objectives, viewing research results, and managing actions
+- iOS UI for creating objectives, reviewing plans and follow-ups, monitoring live work, viewing research results, and managing actions
 - Rails backend with objective planning, task dispatch, and result persistence
 - macOS runner that executes tasks via ObjectiveExecutionPool with bounded concurrency
 - local LLM integration through Ollama
@@ -55,7 +55,7 @@ All major components are implemented with real business logic. The system runs i
 
 - **Rails API backend** — full CRUD for objectives with task decomposition via `ObjectivePlanner`; `TaskExecutorJob` dispatches work to Mac agents; workspace isolation via `X-Workspace-Slug`; bearer token auth for agent endpoints; `ObjectivePresentationBuilder` for generative results UI
 - **Mac runner** — event-driven `AgentExecutionQueue`; `ObjectiveExecutionPool` with configurable concurrent workers; `AgentTaskRunner` with retry logic for refusals and missing tool calls; tool registry with 20+ tools; `BackendAPIClient` for API integration
-- **iOS app** — objective CRUD with run/rerun/reset controls; generative results view via `ObjectivePresentationBuilder`; action items with intent routing; agent log view; chat interface; inbound file uploads; family member profiles; backend bootstrap on launch
+- **iOS app** — objective CRUD with plan approval and run/rerun/reset controls; generative results view via `ObjectivePresentationBuilder`; `Latest Follow-up` / `Follow-up Loop`; Objective Detail live monitoring with `Working On Now` and `Likely next check-in`; action items with intent routing; agent log view; chat interface; inbound file uploads; family member profiles; backend bootstrap on launch
 - **ManagerCore** — shared Swift package with SwiftData models (ActionItem, AgentLog, FamilyMember, LifeContext, ChatThread, ChatMessage, WorkUnit, EphemeralPin, ResourceHealth, ResearchSnapshot, InboundFile, IncomingEmailSummary)
 - **Structured logging** — AgentLog phases include start, tool_call, tool_result, assistant, assistant_final, outcome, error, warning
 - **Email ingestion** — IMAP poller + EmailIngestor + sanitization pipeline

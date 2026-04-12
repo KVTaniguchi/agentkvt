@@ -5,7 +5,7 @@ This document defines the verification path for AgentKVT's core loop:
 1. Create an objective on iOS
 2. Let the Rails backend decompose it into tasks
 3. Let the Mac Brain research each task
-4. Inspect research results and action items on iOS
+4. Inspect research results, live work state, and action items on iOS
 
 ## Success Criteria
 
@@ -16,7 +16,7 @@ An E2E pass is successful when all of the following are true:
 - the Mac Brain receives task webhooks and begins research
 - the agent produces at least one `ResearchSnapshot`
 - `AgentLog` contains start, tool_call, tool_result, and outcome entries for the run
-- the iOS app shows research results in the objective detail view
+- the iOS app shows research results in the Research screen and a clear next-step state in Objective Detail
 - any created `ActionItem`s are visible in the Actions tab
 
 ## Recommended First Scenario
@@ -132,17 +132,56 @@ Expected Mac-side evidence:
 In the iOS app:
 
 - Tap the objective to open the detail view
+- The top `Activity` section should make the current state obvious:
+  - `Plan ready for review` when the initial plan has not been approved yet
+  - `Next step: Review follow-up` when a reviewable next pass is waiting
+  - `No action needed right now` when the Mac is already working
+- If work is active, verify that Objective Detail shows:
+  - `Working On Now`
+  - `Recently Finished` after at least one task completes
+  - `Likely next check-in`
+- Open the Research screen from Objective Detail when snapshots are available
 - Research results should appear as structured content
+- If follow-up feedback has been submitted, the Research screen should show:
+  - `Latest Follow-up`
+  - `Agent Activity`
+  - `Follow-up Loop`
 - The Log tab should show execution entries
 - Any created ActionItems should appear in the Actions tab
 
-### 7. Run controls
+### 7. Verify run and recovery controls
 
 Test the objective run controls:
 
-- **Run Now** — re-triggers task execution for pending tasks
-- **Reset Stuck & Run** — resets tasks stuck in `in_progress` and re-runs
-- **Rerun** — creates fresh tasks and runs the objective again
+- **Generate plan** — appears before the initial task batch exists
+- **Start approved plan** — appears when a pending objective already has approved tasks
+- **Run now (queue pending)** — appears when an active objective has queued work and no tasks are currently running
+- **Dispatch queued tasks now** — appears only when tasks are already running and more queued work still exists
+- **Reset stuck tasks & run** — resets tasks stuck in `in_progress` and re-runs
+- **Rerun all tasks** — resets every task to `pending`, clears snapshots, and runs the objective again
+
+### 8. Verify follow-up UX
+
+Use this after the first research snapshots are available.
+
+In the iOS app:
+
+1. Open the Research screen.
+2. Tap `Continue Research` or one of the quick-intent buttons.
+3. Submit a follow-up request such as `Challenge this result and verify the source.`
+
+Verify:
+- the sheet first shows `Sending your feedback`
+- then shows `Feedback received`
+- the sheet cannot be dismissed during the blocking submit/build states
+- on success, the sheet shows the resulting follow-up card with the correct status:
+  - `Ready for review` when the next pass is still proposed
+  - `Queued for agent` when work is active and ready to run
+  - `Saved for later` when the objective is pending and the batch is stored
+- after dismissing, the Research screen pins the new entry under `Latest Follow-up`
+- Objective Detail reflects the same state:
+  - `Next step: Review follow-up` when approval is needed
+  - `No action needed right now` when the approved batch is already running
 
 ## Failure Checklist
 
@@ -168,6 +207,7 @@ Test the objective run controls:
 
 - iOS may not be connected to the same backend
 - Refresh the objective detail view
+- Refresh the Research screen if the follow-up sheet timed out and returned you to a polling state
 - Check that `IOSBackendSyncService` is configured with the correct API URL
 
 ## Fast Local Runner Check
