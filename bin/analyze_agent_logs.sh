@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-HOST="${AGENTKVT_PROD_HOST:-familyagent@192.168.4.144}"
+HOST="${AGENTKVT_PROD_HOST:-familyagent@192.168.4.29}"
 APP_LINES="${AGENTKVT_ANALYZE_APP_LINES:-2500}"
 API_LINES="${AGENTKVT_ANALYZE_API_LINES:-12000}"
 JOBS_LINES="${AGENTKVT_ANALYZE_JOBS_LINES:-3000}"
@@ -18,7 +18,7 @@ Usage:
   ./bin/analyze_agent_logs.sh [options]
 
 Options:
-  --host HOST              SSH target. Default: familyagent@192.168.4.144 (override with AGENTKVT_PROD_HOST)
+  --host HOST              SSH target. Default: familyagent@192.168.4.29 (override with AGENTKVT_PROD_HOST)
   --app-lines N            Tail length for app logs. Default: 2500
   --api-lines N            Tail length for Rails API logs. Default: 12000
   --jobs-lines N           Tail length for Solid Queue job logs. Default: 3000
