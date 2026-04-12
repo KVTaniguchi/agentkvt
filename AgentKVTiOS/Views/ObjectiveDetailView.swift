@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 
 struct ObjectiveDetailView: View {
@@ -84,6 +85,38 @@ struct ObjectiveDetailView: View {
 
     private var onlineAgentRegistrationsCount: Int {
         detail?.onlineAgentRegistrationsCount ?? 0
+    }
+
+    private var activeTasks: [IOSBackendTask] {
+        tasks
+            .filter { $0.status == "in_progress" }
+            .sorted { latestActivityDate(for: $0) > latestActivityDate(for: $1) }
+    }
+
+    private var recentlyCompletedTasks: [IOSBackendTask] {
+        tasks
+            .filter { $0.status == "completed" }
+            .sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    private var isActivelyRunningWork: Bool {
+        displayedObjective.status == "active" && taskCounts.inProgress > 0
+    }
+
+    private var canDispatchQueuedTasksWhileActive: Bool {
+        displayedObjective.status == "active" && taskCounts.inProgress > 0 && taskCounts.pending > 0
+    }
+
+    private var actionsSectionTitle: String {
+        if isActivelyRunningWork {
+            return canDispatchQueuedTasksWhileActive ? "Manage Work" : "Recovery"
+        }
+        return "Actions"
+    }
+
+    private var nextCheckInEstimate: ObjectiveNextCheckInEstimate? {
+        guard isActivelyRunningWork else { return nil }
+        return estimateNextCheckIn()
     }
 
     private var guidanceLastFinding: String? { guidance?.lastFinding }
@@ -203,6 +236,61 @@ struct ObjectiveDetailView: View {
                 )
 
                 feedbackCard(for: promotedReviewFeedback, isPromoted: true)
+            }
+        } else if isActivelyRunningWork {
+            VStack(alignment: .leading, spacing: 12) {
+                ObjectiveActivityCard(
+                    summary: activitySummary,
+                    taskCounts: taskCounts,
+                    onlineAgentRegistrationsCount: onlineAgentRegistrationsCount,
+                    snapshotCount: snapshots.count,
+                    logCount: agentLogs.count,
+                    lastLoadedAt: lastLoadedAt,
+                    lastFinding: nil,
+                    showsOperationalMetrics: false,
+                    nextCheckIn: nextCheckInEstimate,
+                    statusPillLabel: "No action needed",
+                    statusPillTint: .blue
+                )
+
+                if !activeTasks.isEmpty {
+                    ObjectiveLiveTaskGroup(
+                        title: "Working On Now",
+                        tasks: Array(activeTasks.prefix(3)),
+                        rowBuilder: liveTaskRow
+                    )
+                }
+
+                if !recentlyCompletedTasks.isEmpty {
+                    ObjectiveLiveTaskGroup(
+                        title: "Recently Finished",
+                        tasks: Array(recentlyCompletedTasks.prefix(2)),
+                        rowBuilder: completedTaskRow
+                    )
+                }
+
+                if !snapshots.isEmpty {
+                    NavigationLink {
+                        GenerativeResultsView(
+                            objectiveId: displayedObjective.id,
+                            objectiveGoal: displayedObjective.goal,
+                            objectiveStatus: displayedObjective.status,
+                            tasks: tasks,
+                            snapshots: snapshots,
+                            onlineAgentRegistrationsCount: onlineAgentRegistrationsCount,
+                            onFeedbackMutated: {
+                                Task { await loadDetail(showSpinner: false) }
+                            }
+                        )
+                    } label: {
+                        Label("View Latest Research Details", systemImage: "doc.text.magnifyingglass")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.blue)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 4)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
         } else if !snapshots.isEmpty {
             NavigationLink {
@@ -374,20 +462,53 @@ struct ObjectiveDetailView: View {
             }
             .disabled(isStartingWork || isDeleting)
         } else {
-            Button {
-                actionInProgress = "runNow"
-                Task { await runObjectiveNow() }
-            } label: {
-                HStack {
-                    Label(runNowLabel, systemImage: "play.circle.fill")
-                    if actionInProgress == "runNow" {
-                        ProgressView().padding(.leading, 4)
+            if isActivelyRunningWork {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("No action needed right now", systemImage: "checkmark.circle.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.green)
+
+                    Text(
+                        canDispatchQueuedTasksWhileActive
+                        ? "\(taskCounts.inProgress) task(s) are already running. Use the button below only if you want to nudge the remaining queued task(s) onto the Mac."
+                        : "\(taskCounts.inProgress) task(s) are already running on the Mac. Use the controls below only if progress looks stuck."
+                    )
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if canDispatchQueuedTasksWhileActive {
+                    Button {
+                        actionInProgress = "runNow"
+                        Task { await runObjectiveNow() }
+                    } label: {
+                        HStack {
+                            Label("Dispatch queued tasks now", systemImage: "paperplane.circle.fill")
+                            if actionInProgress == "runNow" {
+                                ProgressView().padding(.leading, 4)
+                            }
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isStartingWork || isDeleting)
+                }
+            } else {
+                Button {
+                    actionInProgress = "runNow"
+                    Task { await runObjectiveNow() }
+                } label: {
+                    HStack {
+                        Label(runNowLabel, systemImage: "play.circle.fill")
+                        if actionInProgress == "runNow" {
+                            ProgressView().padding(.leading, 4)
+                        }
                     }
                 }
+                .buttonStyle(.borderedProminent)
+                .tint(runNowProminentTint)
+                .disabled(isStartingWork || isDeleting)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(runNowProminentTint)
-            .disabled(isStartingWork || isDeleting)
 
             if displayedObjective.status == "active", taskCounts.inProgress > 0 {
                 Button {
@@ -440,6 +561,13 @@ struct ObjectiveDetailView: View {
 
         if hasApprovedPlanWaitingToStart {
             return "This objective already has an approved plan. Start work when you're ready, or edit the prompt and regenerate the plan if you want a different breakdown."
+        }
+
+        if isActivelyRunningWork {
+            if canDispatchQueuedTasksWhileActive {
+                return "AgentKVT is already working. You do not need to press anything unless you want to dispatch the remaining queued tasks or recover from stalled work."
+            }
+            return "AgentKVT is already working. You do not need to press anything. Use these controls only if progress looks stuck."
         }
 
         switch displayedObjective.status {
@@ -522,9 +650,15 @@ struct ObjectiveDetailView: View {
                 )
             }
             if taskCounts.inProgress > 0 {
+                let completedMessage = taskCounts.completed > 0
+                    ? " \(taskCounts.completed) task(s) are already done."
+                    : ""
+                let queuedMessage = taskCounts.pending > 0
+                    ? " \(taskCounts.pending) more queued."
+                    : ""
                 return ObjectiveActivitySummary(
-                    title: "Agent is working",
-                    message: "\(taskCounts.inProgress) task(s) are currently in progress. This screen refreshes automatically while work is active.",
+                    title: "No action needed right now",
+                    message: "AgentKVT is working on \(taskCounts.inProgress) task(s) right now.\(completedMessage)\(queuedMessage) Live task updates and your likely next check-in appear below.",
                     systemImage: "bolt.circle.fill",
                     tint: .blue,
                     showsProgress: true
@@ -630,7 +764,7 @@ struct ObjectiveDetailView: View {
                 Section {
                     actionsSectionContent
                 } header: {
-                    Text("Actions")
+                    Text(actionsSectionTitle)
                 } footer: {
                     Text(actionsFooter)
                 }
@@ -1034,6 +1168,203 @@ struct ObjectiveDetailView: View {
         return ObjectiveFeedbackPresentation.previewText(displayedObjective.goal)
     }
 
+    private func latestActivityDate(for task: IOSBackendTask) -> Date {
+        latestLog(for: task)?.timestamp ?? task.updatedAt
+    }
+
+    private func taskLogs(for task: IOSBackendTask) -> [IOSBackendAgentLog] {
+        agentLogs
+            .filter { log in logTaskID(for: log) == task.id }
+            .sorted { $0.timestamp < $1.timestamp }
+    }
+
+    private func latestLog(for task: IOSBackendTask) -> IOSBackendAgentLog? {
+        taskLogs(for: task).last
+    }
+
+    private func logTaskID(for log: IOSBackendAgentLog) -> UUID? {
+        log.metadataJson["task_id"]?.stringValue.flatMap(UUID.init(uuidString:))
+    }
+
+    private func logWorkerLabel(for log: IOSBackendAgentLog) -> String? {
+        log.metadataJson["worker_label"]?.stringValue
+    }
+
+    private func taskStartDate(for task: IOSBackendTask) -> Date? {
+        let logs = taskLogs(for: task)
+        if let claimDate = logs.first(where: { $0.phase == "worker_claim" })?.timestamp {
+            return claimDate
+        }
+        return logs.first?.timestamp ?? task.createdAt
+    }
+
+    private func recentCompletedTaskDurations(limit: Int = 5) -> [TimeInterval] {
+        Array(recentlyCompletedTasks.prefix(limit)).compactMap { task in
+            guard let startDate = taskStartDate(for: task) else { return nil }
+            let duration = task.updatedAt.timeIntervalSince(startDate)
+            guard duration >= 30, duration <= 60 * 90 else { return nil }
+            return duration
+        }
+    }
+
+    private func activeElapsedTimes(referenceDate: Date = Date()) -> [TimeInterval] {
+        activeTasks.compactMap { task in
+            guard let startDate = taskStartDate(for: task) else { return nil }
+            return max(0, referenceDate.timeIntervalSince(startDate))
+        }
+    }
+
+    private func estimateNextCheckIn(referenceDate: Date = Date()) -> ObjectiveNextCheckInEstimate {
+        let completedDurations = recentCompletedTaskDurations()
+        let activeElapsed = activeElapsedTimes(referenceDate: referenceDate)
+        let mostProgressedActive = activeElapsed.max() ?? 0
+
+        guard !completedDurations.isEmpty else {
+            return ObjectiveNextCheckInEstimate(
+                title: "Likely next check-in",
+                message: activeElapsed.isEmpty ? "Check back in a few minutes." : "Check back in a few minutes.",
+                detail: "Timing will sharpen once a few more tasks finish.",
+                tint: .blue
+            )
+        }
+
+        let baseline = median(completedDurations)
+        let spread: TimeInterval
+        if completedDurations.count >= 3 {
+            let sorted = completedDurations.sorted()
+            let lowerIndex = max(0, Int(Double(sorted.count - 1) * 0.25))
+            let upperIndex = min(sorted.count - 1, Int(Double(sorted.count - 1) * 0.75))
+            spread = max(60, (sorted[upperIndex] - sorted[lowerIndex]) / 2)
+        } else {
+            spread = max(90, baseline * 0.35)
+        }
+
+        let center = max(60, baseline - mostProgressedActive)
+        let lowerBound = max(60, center - spread)
+        let upperBound = max(lowerBound + 60, center + spread)
+        let detail = completedDurations.count >= 3
+            ? "Based on the pace of the most recent completed tasks."
+            : "Early estimate based on the latest finished work."
+
+        return ObjectiveNextCheckInEstimate(
+            title: "Likely next check-in",
+            message: "Come back in about \(formattedCheckInRange(lowerBound, upperBound)).",
+            detail: detail,
+            tint: .blue
+        )
+    }
+
+    private func median(_ values: [TimeInterval]) -> TimeInterval {
+        let sorted = values.sorted()
+        let middle = sorted.count / 2
+        if sorted.count.isMultiple(of: 2) {
+            return (sorted[middle - 1] + sorted[middle]) / 2
+        }
+        return sorted[middle]
+    }
+
+    private func formattedCheckInRange(_ lowerBound: TimeInterval, _ upperBound: TimeInterval) -> String {
+        let lowerMinutes = max(1, Int((lowerBound / 60).rounded()))
+        let upperMinutes = max(lowerMinutes, Int((upperBound / 60).rounded()))
+
+        if upperMinutes <= 2 {
+            return "1-2 min"
+        }
+        if upperMinutes < 60 {
+            if upperMinutes - lowerMinutes <= 1 {
+                return "\(upperMinutes) min"
+            }
+            return "\(lowerMinutes)-\(upperMinutes) min"
+        }
+
+        let lowerHours = Double(lowerMinutes) / 60
+        let upperHours = Double(upperMinutes) / 60
+        let lowerText = String(format: "%.1f", lowerHours)
+        let upperText = String(format: "%.1f", upperHours)
+        if lowerText == upperText {
+            return "\(upperText) hr"
+        }
+        return "\(lowerText)-\(upperText) hr"
+    }
+
+    private func liveTaskMeta(for task: IOSBackendTask) -> String {
+        guard let log = latestLog(for: task) else { return "Working now" }
+
+        var parts: [String] = []
+        if let workerLabel = logWorkerLabel(for: log) {
+            parts.append(workerLabel)
+        }
+        parts.append(log.phase.replacingOccurrences(of: "_", with: " ").capitalized)
+        return parts.joined(separator: " • ")
+    }
+
+    private func liveTaskSummary(for task: IOSBackendTask) -> String {
+        guard let log = latestLog(for: task) else {
+            return "AgentKVT is currently working on this task."
+        }
+
+        switch log.phase {
+        case "worker_claim":
+            return "Picked up by the Mac worker and actively running."
+        case "tool_call":
+            if let toolName = log.toolName, !toolName.isEmpty {
+                return "Using \(humanizeToolName(toolName)) to move this task forward."
+            }
+            return "Running a tool for this task."
+        case "tool_result":
+            if let toolName = log.toolName, !toolName.isEmpty {
+                return "Received results from \(humanizeToolName(toolName))."
+            }
+            return "Received fresh tool output for this task."
+        case "assistant_final":
+            return "Prepared a result summary and is wrapping this task up."
+        case "objective_supervisor":
+            return ObjectiveFeedbackPresentation.previewText(log.content, limit: 110)
+                ?? "Supervisor updated this task."
+        case "error":
+            return ObjectiveFeedbackPresentation.previewText(log.content, limit: 110)
+                ?? "This task hit an error."
+        default:
+            return ObjectiveFeedbackPresentation.previewText(log.content, limit: 110)
+                ?? "Latest task update available."
+        }
+    }
+
+    private func completedTaskSummary(for task: IOSBackendTask) -> String {
+        if let resultSummary = ObjectiveFeedbackPresentation.previewText(task.resultSummary, limit: 110) {
+            return resultSummary
+        }
+        return "Completed successfully."
+    }
+
+    private func humanizeToolName(_ toolName: String) -> String {
+        toolName
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: "-", with: " ")
+    }
+
+    @ViewBuilder
+    private func liveTaskRow(_ task: IOSBackendTask) -> some View {
+        ObjectiveLiveTaskRow(
+            title: task.description,
+            meta: liveTaskMeta(for: task),
+            detail: liveTaskSummary(for: task),
+            timestamp: latestActivityDate(for: task),
+            tint: .blue
+        )
+    }
+
+    @ViewBuilder
+    private func completedTaskRow(_ task: IOSBackendTask) -> some View {
+        ObjectiveLiveTaskRow(
+            title: task.description,
+            meta: "Completed",
+            detail: completedTaskSummary(for: task),
+            timestamp: task.updatedAt,
+            tint: .green
+        )
+    }
+
     private func composerContext(for feedback: IOSBackendObjectiveFeedback) -> ObjectiveFeedbackComposerContext {
         ObjectiveFeedbackComposerContext(
             existingFeedback: feedback,
@@ -1144,6 +1475,13 @@ private struct ObjectiveActivitySummary {
     var showsProgress = false
 }
 
+private struct ObjectiveNextCheckInEstimate {
+    let title: String
+    let message: String
+    let detail: String?
+    let tint: Color
+}
+
 private struct ObjectiveActivityCard: View {
     let summary: ObjectiveActivitySummary
     let taskCounts: ObjectiveTaskCounts
@@ -1154,6 +1492,7 @@ private struct ObjectiveActivityCard: View {
     var lastFinding: String? = nil
     var showsDisclosure = false
     var showsOperationalMetrics = true
+    var nextCheckIn: ObjectiveNextCheckInEstimate? = nil
     var statusPillLabel: String? = nil
     var statusPillTint: Color = .secondary
 
@@ -1196,6 +1535,35 @@ private struct ObjectiveActivityCard: View {
                     .padding(.vertical, 4)
                     .background(statusPillTint.opacity(0.14))
                     .clipShape(Capsule())
+            }
+
+            if let nextCheckIn {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "clock.badge")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(nextCheckIn.tint)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(nextCheckIn.title)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(nextCheckIn.tint)
+
+                        Text(nextCheckIn.message)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        if let detail = nextCheckIn.detail {
+                            Text(detail)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+                .padding(12)
+                .background(Color(uiColor: .secondarySystemGroupedBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 14))
             }
 
             if showsOperationalMetrics {
@@ -1249,6 +1617,63 @@ private struct ObjectiveActivityCard: View {
             }
         }
         .padding(.vertical, 4)
+    }
+}
+
+private struct ObjectiveLiveTaskGroup<Content: View>: View {
+    let title: String
+    let tasks: [IOSBackendTask]
+    @ViewBuilder let rowBuilder: (IOSBackendTask) -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            VStack(spacing: 10) {
+                ForEach(tasks) { task in
+                    rowBuilder(task)
+                }
+            }
+        }
+    }
+}
+
+private struct ObjectiveLiveTaskRow: View {
+    let title: String
+    let meta: String
+    let detail: String
+    let timestamp: Date
+    let tint: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+
+                Spacer(minLength: 8)
+
+                Text(timestamp, style: .relative)
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+
+            Text(meta)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(tint)
+
+            Text(detail)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(12)
+        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
     }
 }
 
