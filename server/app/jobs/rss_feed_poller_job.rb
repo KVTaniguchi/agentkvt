@@ -88,8 +88,8 @@ class RssFeedPollerJob < ApplicationJob
   end
 
   def format_item(item)
-    title = item.respond_to?(:title) ? item.title&.content || item.title : nil
-    title = title.to_s.strip
+    raw   = item.respond_to?(:title) ? item.title : nil
+    title = (raw.respond_to?(:content) ? raw.content : raw).to_s.strip
     link  = extract_link(item).to_s.strip
 
     return nil if title.blank?
