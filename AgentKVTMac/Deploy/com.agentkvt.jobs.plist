@@ -36,6 +36,12 @@
         <string>mkdir -p "$HOME/.agentkvt/logs" &amp;&amp; cd "$HOME/AgentKVTMac" &amp;&amp; exec ./bin/run_agentkvt_jobs.sh</string>
     </array>
 
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>RUBY_YJIT_ENABLE</key>
+        <string>0</string>
+    </dict>
+
     <key>RunAtLoad</key>
     <true/>
 

@@ -51,11 +51,12 @@ class RssFeedPollerJob < ApplicationJob
     to_post.each do |item|
       text = format_item(item)
       next if text.blank?
-      Slack::Notifier.call(channel: channel_id, text: text)
       mark_seen(item)
+      Slack::Notifier.call(channel: channel_id, text: text)
       sleep(POST_DELAY)
     rescue => e
       Rails.logger.warn("[RssFeedPollerJob] Failed to post item from #{url}: #{e.message}")
+      sleep(POST_DELAY)
     end
   end
 

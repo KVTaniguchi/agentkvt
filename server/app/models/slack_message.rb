@@ -1,5 +1,5 @@
 class SlackMessage < ApplicationRecord
-  INTAKE_KINDS = %w[unknown vendor_app webhook_worker scheduled_feed email_forward user_typed url_unfurl].freeze
+  INTAKE_KINDS = %w[unknown vendor_app webhook_worker scheduled_feed email_forward user_typed url_unfurl feed_bot].freeze
   TRUST_TIERS = %w[high medium low].freeze
 
   belongs_to :workspace

@@ -4,6 +4,8 @@ set -euo pipefail
 HOST="${AGENTKVT_PROD_HOST:-familyagent@192.168.4.144}"
 APP_LINES="${AGENTKVT_ANALYZE_APP_LINES:-2500}"
 API_LINES="${AGENTKVT_ANALYZE_API_LINES:-12000}"
+JOBS_LINES="${AGENTKVT_ANALYZE_JOBS_LINES:-3000}"
+JOBS_ERR_LINES="${AGENTKVT_ANALYZE_JOBS_ERR_LINES:-500}"
 POSTGRES_LINES="${AGENTKVT_ANALYZE_POSTGRES_LINES:-500}"
 LAUNCHD_LINES="${AGENTKVT_ANALYZE_LAUNCHD_LINES:-200}"
 SHOW_RAW=0
@@ -16,9 +18,11 @@ Usage:
   ./bin/analyze_agent_logs.sh [options]
 
 Options:
-  --host HOST              SSH target. Default: familyagent@192.168.4.144
+  --host HOST              SSH target. Default: familyagent@192.168.4.144 (override with AGENTKVT_PROD_HOST)
   --app-lines N            Tail length for app logs. Default: 2500
   --api-lines N            Tail length for Rails API logs. Default: 12000
+  --jobs-lines N           Tail length for Solid Queue job logs. Default: 3000
+  --jobs-err-lines N       Tail length for Solid Queue launchd stderr. Default: 500
   --postgres-lines N       Tail length for Postgres logs. Default: 500
   --launchd-lines N        Tail length for launchd stderr. Default: 200
   --raw                    Print raw log excerpts after the summary
@@ -41,6 +45,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --api-lines)
       API_LINES="$2"
+      shift 2
+      ;;
+    --jobs-lines)
+      JOBS_LINES="$2"
+      shift 2
+      ;;
+    --jobs-err-lines)
+      JOBS_ERR_LINES="$2"
       shift 2
       ;;
     --postgres-lines)
@@ -67,7 +79,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-for value_name in APP_LINES API_LINES POSTGRES_LINES LAUNCHD_LINES; do
+for value_name in APP_LINES API_LINES JOBS_LINES JOBS_ERR_LINES POSTGRES_LINES LAUNCHD_LINES; do
   value="${!value_name}"
   if ! [[ "${value}" =~ ^[0-9]+$ ]] || [ "${value}" -le 0 ]; then
     echo "${value_name} must be a positive integer." >&2
@@ -138,7 +150,9 @@ echo "Connecting to ${HOST} and collecting production log slices..." >&2
 REMOTE_HOME="$(ssh_capture 'printf "%s" "$HOME"')"
 APP_GROUP_LOG="${REMOTE_HOME}/Library/Group Containers/group.com.agentkvt.shared/Library/Logs/agentkvt-mac.log"
 HOME_APP_LOG="${REMOTE_HOME}/.agentkvt/logs/agentkvt-macapp.log"
-API_LOG="${REMOTE_HOME}/.agentkvt/logs/api.log"
+API_LOG="${REMOTE_HOME}/.agentkvt/logs/agentkvt-api-launchd.log"
+JOBS_LOG="${REMOTE_HOME}/.agentkvt/logs/agentkvt-jobs-launchd.log"
+JOBS_ERR_LOG="${REMOTE_HOME}/.agentkvt/logs/agentkvt-jobs-launchd.err"
 POSTGRES_LOG="${REMOTE_HOME}/.agentkvt/logs/postgres.log"
 LAUNCHD_ERR="/tmp/agentkvt-macapp-launchd.err"
 
@@ -150,6 +164,8 @@ fetch_remote_text "pgrep -fl 'AgentKVTMacApp|AgentKVTMacRunner|ollama|puma|rails
 fetch_remote_tail "${APP_GROUP_LOG}" "${APP_LINES}" "${TMP_DIR}/app_group.log"
 fetch_remote_tail "${HOME_APP_LOG}" "${APP_LINES}" "${TMP_DIR}/home_app.log"
 fetch_remote_tail "${API_LOG}" "${API_LINES}" "${TMP_DIR}/api.log"
+fetch_remote_tail "${JOBS_LOG}" "${JOBS_LINES}" "${TMP_DIR}/jobs.log"
+fetch_remote_tail "${JOBS_ERR_LOG}" "${JOBS_ERR_LINES}" "${TMP_DIR}/jobs.err"
 fetch_remote_tail "${POSTGRES_LOG}" "${POSTGRES_LINES}" "${TMP_DIR}/postgres.log"
 fetch_remote_tail "${LAUNCHD_ERR}" "${LAUNCHD_LINES}" "${TMP_DIR}/launchd.err"
 
@@ -167,6 +183,9 @@ launchservices_open_fail_count="$(count_matches '_LSOpenURLsWithCompletionHandle
 postgres_cached_plan_count="$(count_matches 'cached plan must not change result type' "${TMP_DIR}/postgres.log")"
 app_group_sessions="$(count_matches '^===== AgentKVT session started' "${TMP_DIR}/app_group.log")"
 home_app_sessions="$(count_matches '^===== AgentKVT session started' "${TMP_DIR}/home_app.log")"
+slack_ratelimit_count="$(count_matches 'Slack API error: ratelimited' "${TMP_DIR}/jobs.log")"
+rss_fetch_failure_count="$(count_matches 'Fetch failed for |Failed to post item from' "${TMP_DIR}/jobs.log")"
+jobs_pg_ctl_fail_count="$(count_matches 'pg_ctl: could not start server' "${TMP_DIR}/jobs.err")"
 
 echo
 echo "Production Log Analysis"
@@ -231,6 +250,24 @@ if [ "${postgres_cached_plan_count}" -gt 0 ]; then
   print_matches "Evidence:" 'cached plan must not change result type|STATEMENT:' "${TMP_DIR}/postgres.log" 6
 fi
 
+if [ "${slack_ratelimit_count}" -gt 0 ]; then
+  finding_count=$((finding_count + 1))
+  echo "${finding_count}. Slack rate limiting: ${slack_ratelimit_count} RSS post(s) rejected by Slack API."
+  print_matches "Evidence:" 'Slack API error: ratelimited' "${TMP_DIR}/jobs.log" 5
+fi
+
+if [ "${rss_fetch_failure_count}" -gt 0 ]; then
+  finding_count=$((finding_count + 1))
+  echo "${finding_count}. RSS feed failures: ${rss_fetch_failure_count} fetch or post error(s) in job logs."
+  print_matches "Evidence:" 'Fetch failed for |Failed to post item from' "${TMP_DIR}/jobs.log" 8
+fi
+
+if [ "${jobs_pg_ctl_fail_count}" -gt 0 ]; then
+  finding_count=$((finding_count + 1))
+  echo "${finding_count}. Solid Queue Postgres start failures: ${jobs_pg_ctl_fail_count} pg_ctl error(s) in jobs stderr."
+  print_matches "Evidence:" 'pg_ctl: could not start server' "${TMP_DIR}/jobs.err" 5
+fi
+
 if [ "${finding_count}" -eq 0 ]; then
   echo "1. No known failure signatures were found in the sampled log window."
 fi
@@ -243,11 +280,14 @@ echo "  Webhook port conflicts: ${webhook_port_conflict_count}"
 echo "  Failed backend log writes: ${backend_log_failure_count}"
 echo "  App session markers in sample: ${session_restart_count}"
 echo "  Postgres cached-plan errors: ${postgres_cached_plan_count}"
+echo "  Slack rate-limit errors: ${slack_ratelimit_count}"
+echo "  RSS fetch/post failures: ${rss_fetch_failure_count}"
+echo "  Jobs pg_ctl start failures: ${jobs_pg_ctl_fail_count}"
 
 if [ "${SHOW_RAW}" -eq 1 ]; then
   echo
   echo "Raw Excerpts"
-  for file in host.txt health.txt launchctl.txt processes.txt app_group.log home_app.log api.log postgres.log launchd.err; do
+  for file in host.txt health.txt launchctl.txt processes.txt app_group.log home_app.log api.log jobs.log jobs.err postgres.log launchd.err; do
     echo "-- ${file} --"
     if [ -s "${TMP_DIR}/${file}" ]; then
       cat "${TMP_DIR}/${file}"
