@@ -1,15 +1,14 @@
 require "rss"
 require "open-uri"
 
-# Fetches configured RSS feeds and posts new items to the Slack feed channel.
-# Runs on a schedule; uses a publish-time window to avoid duplicates without
-# requiring persistent state. Set RSS_FEED_URLS (comma-separated) and
-# SLACK_FEED_CHANNEL_IDS (the target channel) in the server .env.
+# Fetches configured RSS feeds and posts unseen items to the Slack feed channel.
+# Deduplicates using Rails.cache keyed on each article's GUID/link (24h TTL).
+# Set RSS_FEED_URLS (comma-separated) and SLACK_FEED_CHANNEL_IDS in server .env.
 class RssFeedPollerJob < ApplicationJob
   queue_as :background
 
-  LOOKBACK_SECONDS = 20 * 60  # post items published in the last 20 minutes
-  FETCH_TIMEOUT    = 15        # seconds per feed
+  FETCH_TIMEOUT = 15  # seconds per feed
+  SEEN_TTL      = 24.hours
 
   def perform
     channel_id = feed_channel_id
@@ -36,16 +35,16 @@ class RssFeedPollerJob < ApplicationJob
   end
 
   def poll(url, channel_id)
-    cutoff = Time.now - LOOKBACK_SECONDS
-    items  = fetch_items(url)
-    fresh  = items.select { |item| item_time(item)&.>=(cutoff) }
+    items = fetch_items(url)
+    unseen = items.reject { |item| seen?(item) }
 
-    Rails.logger.info("[RssFeedPollerJob] #{url} — #{items.size} items, #{fresh.size} fresh")
+    Rails.logger.info("[RssFeedPollerJob] #{url} — #{items.size} items, #{unseen.size} unseen")
 
-    fresh.each do |item|
+    unseen.each do |item|
       text = format_item(item)
       next if text.blank?
       Slack::Notifier.call(channel: channel_id, text: text)
+      mark_seen(item)
     rescue => e
       Rails.logger.warn("[RssFeedPollerJob] Failed to post item from #{url}: #{e.message}")
     end
@@ -62,13 +61,22 @@ class RssFeedPollerJob < ApplicationJob
     []
   end
 
-  def item_time(item)
-    t = item.respond_to?(:pubDate) ? item.pubDate : nil
-    t ||= item.respond_to?(:published) ? item.published : nil
-    t ||= item.respond_to?(:updated) ? item.updated : nil
-    t&.to_time
-  rescue
-    nil
+  def item_guid(item)
+    guid = item.respond_to?(:guid) ? item.guid&.content || item.guid.to_s : nil
+    guid = item.respond_to?(:id) ? item.id.to_s : nil if guid.blank?
+    link = item.respond_to?(:link) ? item.link&.href || item.link.to_s : nil
+    key  = guid.presence || link.presence
+    key.presence && "rss_seen:#{Digest::SHA1.hexdigest(key)}"
+  end
+
+  def seen?(item)
+    key = item_guid(item)
+    key ? Rails.cache.exist?(key) : false
+  end
+
+  def mark_seen(item)
+    key = item_guid(item)
+    Rails.cache.write(key, 1, expires_in: SEEN_TTL) if key
   end
 
   def format_item(item)
