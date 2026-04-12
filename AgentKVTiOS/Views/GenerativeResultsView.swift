@@ -563,33 +563,67 @@ struct ObjectiveFeedbackPlanCard: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                HStack(spacing: 8) {
-                    if let onApprove {
-                        Button {
-                            onApprove()
-                        } label: {
-                            Label(approvalLabel, systemImage: "checkmark.circle.fill")
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) {
+                        if let onApprove {
+                            actionButton(
+                                title: approvalLabel,
+                                systemImage: "checkmark.circle.fill",
+                                prominent: true,
+                                tint: .blue,
+                                fullWidth: false,
+                                action: onApprove
+                            )
                         }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.blue)
+
+                        if let onRegenerate {
+                            actionButton(
+                                title: "Regenerate",
+                                systemImage: "arrow.trianglehead.clockwise",
+                                fullWidth: false,
+                                action: onRegenerate
+                            )
+                        }
+
+                        if let onEdit {
+                            actionButton(
+                                title: "Edit",
+                                systemImage: "pencil",
+                                fullWidth: false,
+                                action: onEdit
+                            )
+                        }
                     }
 
-                    if let onRegenerate {
-                        Button {
-                            onRegenerate()
-                        } label: {
-                            Label("Regenerate", systemImage: "arrow.trianglehead.clockwise")
+                    VStack(alignment: .leading, spacing: 8) {
+                        if let onApprove {
+                            actionButton(
+                                title: approvalLabel,
+                                systemImage: "checkmark.circle.fill",
+                                prominent: true,
+                                tint: .blue,
+                                fullWidth: true,
+                                action: onApprove
+                            )
                         }
-                        .buttonStyle(.bordered)
-                    }
 
-                    if let onEdit {
-                        Button {
-                            onEdit()
-                        } label: {
-                            Label("Edit", systemImage: "pencil")
+                        if let onRegenerate {
+                            actionButton(
+                                title: "Regenerate",
+                                systemImage: "arrow.trianglehead.clockwise",
+                                fullWidth: true,
+                                action: onRegenerate
+                            )
                         }
-                        .buttonStyle(.bordered)
+
+                        if let onEdit {
+                            actionButton(
+                                title: "Edit",
+                                systemImage: "pencil",
+                                fullWidth: true,
+                                action: onEdit
+                            )
+                        }
                     }
                 }
                 .disabled(isWorking)
@@ -603,6 +637,41 @@ struct ObjectiveFeedbackPlanCard: View {
         .padding()
         .background(Color(uiColor: .secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+
+    @ViewBuilder
+    private func actionButton(
+        title: String,
+        systemImage: String,
+        prominent: Bool = false,
+        tint: Color? = nil,
+        fullWidth: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        let button = Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .labelStyle(.titleAndIcon)
+                .lineLimit(1)
+                .minimumScaleFactor(0.9)
+                .fixedSize(horizontal: !fullWidth, vertical: false)
+                .frame(maxWidth: fullWidth ? .infinity : nil)
+        }
+
+        if prominent {
+            let styledButton = button.buttonStyle(.borderedProminent)
+            if let tint {
+                styledButton.tint(tint)
+            } else {
+                styledButton
+            }
+        } else {
+            let styledButton = button.buttonStyle(.bordered)
+            if let tint {
+                styledButton.tint(tint)
+            } else {
+                styledButton
+            }
+        }
     }
 }
 
