@@ -123,8 +123,16 @@ enum ObjectiveFeedbackPresentation {
         return collapsed.prefix(1).capitalized + collapsed.dropFirst()
     }
 
-    static func targetLabel(for snapshot: IOSBackendResearchSnapshot) -> String {
-        "Finding: \(findingTitle(for: snapshot.key))"
+    static func taskLabel(for task: IOSBackendTask) -> String {
+        "Task: \(task.description)"
+    }
+
+    static func targetLabel(for snapshot: IOSBackendResearchSnapshot, tasks: [IOSBackendTask] = []) -> String {
+        if shouldPreferTaskLabel(for: snapshot),
+           let task = linkedTask(for: snapshot, in: tasks) {
+            return "Finding: \(task.description)"
+        }
+        return "Finding: \(findingTitle(for: snapshot.key))"
     }
 
     static func previewText(_ text: String?, limit: Int = 140) -> String? {
@@ -188,6 +196,25 @@ enum ObjectiveFeedbackPresentation {
         default:
             return nil
         }
+    }
+
+    private static func linkedTask(for snapshot: IOSBackendResearchSnapshot, in tasks: [IOSBackendTask]) -> IOSBackendTask? {
+        guard let taskId = snapshot.taskId else { return nil }
+        return tasks.first(where: { $0.id == taskId })
+    }
+
+    private static func shouldPreferTaskLabel(for snapshot: IOSBackendResearchSnapshot) -> Bool {
+        let normalizedKey = snapshot.key
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+
+        guard !normalizedKey.isEmpty else { return false }
+
+        return normalizedKey.hasPrefix("task_summary_") ||
+            normalizedKey.range(
+                of: #"^task[\s_-]*summary[\s_-]*[0-9a-f]{4,}$"#,
+                options: .regularExpression
+            ) != nil
     }
 }
 
@@ -498,7 +525,7 @@ struct ObjectiveFeedbackComposerSheet: View {
         targets.append(contentsOf: snapshots.prefix(8).map {
             ObjectiveFeedbackTarget(
                 id: "snapshot-\($0.id.uuidString)",
-                label: ObjectiveFeedbackPresentation.targetLabel(for: $0),
+                label: ObjectiveFeedbackPresentation.targetLabel(for: $0, tasks: tasks),
                 preview: ObjectiveFeedbackPresentation.previewText($0.value),
                 researchSnapshotId: $0.id
             )
@@ -506,7 +533,7 @@ struct ObjectiveFeedbackComposerSheet: View {
         targets.append(contentsOf: tasks.prefix(8).map {
             ObjectiveFeedbackTarget(
                 id: "task-\($0.id.uuidString)",
-                label: "Task: \($0.description)",
+                label: ObjectiveFeedbackPresentation.taskLabel(for: $0),
                 preview: ObjectiveFeedbackPresentation.previewText($0.description),
                 taskId: $0.id
             )
@@ -1574,11 +1601,11 @@ struct GenerativeResultsView: View {
     private func feedbackTargetLabel(for feedback: IOSBackendObjectiveFeedback) -> String {
         if let snapshotId = feedback.researchSnapshotId,
            let snapshot = snapshots.first(where: { $0.id == snapshotId }) {
-            return ObjectiveFeedbackPresentation.targetLabel(for: snapshot)
+            return ObjectiveFeedbackPresentation.targetLabel(for: snapshot, tasks: activityTasks + tasks)
         }
         if let taskId = feedback.taskId,
            let task = activityTasks.first(where: { $0.id == taskId }) ?? tasks.first(where: { $0.id == taskId }) {
-            return "Task: \(task.description)"
+            return ObjectiveFeedbackPresentation.taskLabel(for: task)
         }
         return "Entire objective"
     }

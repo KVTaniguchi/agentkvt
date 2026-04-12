@@ -487,7 +487,6 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                             markTaskCompleted: true
                         )
                     } catch {
-                        try blockWorkUnit(claimed.workUnitId, error: String(describing: error))
                         await logEvent(
                             phase: "error",
                             content: "Synthesis snapshot write failed: \(error)",
@@ -515,7 +514,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             )
         } catch {
             heartbeatTask.cancel()
-            let isTransientTimeout = (error as? URLError)?.code == .timedOut
+            let isTransientTimeout = isRetryableTimeout(error)
             if isTransientTimeout {
                 let currentRetries = claimed.payload.retryCount ?? 0
                 if currentRetries < 2 {
@@ -589,6 +588,15 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             - Your final plain-text reply must summarize concrete findings for the traveler (logistics, dates, safety, options) — not meta-commentary about your role.
             - Your final system response MUST be plain English prose sentences. Do NOT begin your message with `{` or `[`.
 
+            CRITIC PASS (mandatory before writing the final snapshot):
+            Before synthesizing, scan all findings for these failure modes and note them explicitly in the final snapshot if found:
+            - Time estimates that seem too short for the group size (e.g. less than 3 hours for a major theme park land)
+            - Costs that exceed any stated budget constraint
+            - Logistical gaps: missing travel time between locations, reservations required but not mentioned, capacity limits
+            - Findings marked "Confidence: low" that are being presented as facts — downgrade those in the synthesis
+            - Any finding with no source or specific data point — mark as unverified
+            If all findings pass the critic check, write "Critic check: passed" in the summary. Otherwise list the flags.
+
             Instructions:
             1. Prefer reconciling and summarizing the server findings above; use read_objective_snapshot if you need a fresher list mid-run.
             1a. Call list_dropzone_files first — if any user-uploaded files are relevant to this objective, read them with read_dropzone_file and incorporate that context before searching the web.
@@ -597,7 +605,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                - objective_id: \(claimed.objectiveId.uuidString)
                - task_id: \(claimed.taskId.uuidString)
                - key: \(finalSummaryKey(taskId: claimed.taskId))
-               - value: concise plain-language synthesis (not JSON) of the best guidance
+               - value: concise plain-language synthesis (not JSON) of the best guidance, including any critic flags
                - mark_task_completed: true
             4. You may write additional supporting snapshots before the final one.
             5. Finish with a short, plain-language summary of what the team found (must be substantive, not a refusal).
@@ -629,6 +637,13 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             \(serverSnapshotsContext)
 
             Do not claim you lack missions or goals — this work unit is your assigned task.
+
+            SPECIFICITY REQUIREMENT:
+            - Every snapshot value must contain at least one specific data point: a number, price, duration, date, name, or URL.
+            - Do NOT write generic advice like "it is recommended to arrive early" without a specific time, source, or attribution.
+            - If you cannot find a specific fact, write: "Confidence: low — [what you found and why it is uncertain]" rather than asserting it as fact.
+            - Include where you found each key fact (site name or URL) in the snapshot value.
+            - If a finding contradicts a threshold stated in the work unit (e.g. an estimate is shorter than the stated minimum), explicitly flag it: "FLAG: [finding] appears to violate the [threshold] constraint."
 
             Instructions:
             1. Call read_objective_snapshot with objective_id \(claimed.objectiveId.uuidString) (and task_id \(claimed.taskId.uuidString) if you need an updated list) before spending tokens on overlapping searches.
@@ -682,6 +697,15 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         let t = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !t.isEmpty else { return nil }
         return t
+    }
+
+    private func isRetryableTimeout(_ error: any Error) -> Bool {
+        if let urlError = error as? URLError {
+            return urlError.code == .timedOut
+        }
+
+        let nsError = error as NSError
+        return nsError.domain == NSURLErrorDomain && nsError.code == URLError.timedOut.rawValue
     }
 
     /// Repeats the mission in the **user** turn — local models (e.g. Llama with tools) often under-weight `system` alone.
@@ -800,9 +824,17 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
 
         Rules:
         - Return 0 to 4 work units.
-        - Each work unit must be a concrete research subproblem.
+        - Each work unit must be a concrete research subproblem — not a generic mandate.
         - Do not repeat completed work.
         - Keep each string under 120 characters.
+
+        SEARCH GROUNDING: Each work unit must embed a specific search directive or comparison target.
+        BAD: "Research wait times at Epic Universe"
+        GOOD: "Search 'Epic Universe Ministry of Magic wait times 2026' — extract specific average minutes for each ride"
+
+        SPECIFICITY REQUIREMENT: Work units that would produce vague or boilerplate answers are useless. If the root task is already narrow enough to execute directly, return 0 work units (empty array) rather than splitting into generic sub-tasks.
+
+        REJECTION CRITERIA: If the root task includes minimum thresholds (e.g. "minimum 3 hours per land", "under $500"), echo those thresholds in the relevant work unit descriptions so the worker knows to reject estimates that don't meet them.
         """
         let goalBlock: String = {
             let g = parentObjectiveGoal?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""

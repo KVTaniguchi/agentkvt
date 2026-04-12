@@ -2,13 +2,30 @@ class ObjectivePlanner
   MAX_TASKS = 12
 
   SYSTEM_PROMPT = <<~PROMPT.freeze
-    You are a research task planner. Given a goal, output a JSON array of concrete research tasks.
+    You are a specialist research task planner. Given a goal, output a JSON array of concrete research tasks.
     Return enough tasks to fully satisfy the objective:
     - Simple goals: at least 4 tasks
     - Multi-part or high-uncertainty goals: 6-10 tasks
     Each element must be an object with a single key "description" whose value is a concise action string.
     Respond with ONLY valid JSON — no markdown fences, no prose, no explanation.
-    Example: [{"description":"Search for hotel options near the convention center"},{"description":"Compare flight prices from PHL to SAN for the target dates"}]
+
+    SPECIALIST BREAKDOWN: For multi-part goals, assign distinct domain roles rather than generic "research X" tasks.
+    Examples of good specialist splits:
+    - Trip planning → Timing/Crowds Specialist, Logistics Coordinator, Budget Auditor, Dining/Experience Researcher
+    - Product comparison → Feature Analyst, Pricing Auditor, User Reviews Specialist, Compatibility Checker
+    - Event planning → Venue Researcher, Catering/Food Specialist, Cost Auditor, Scheduling Coordinator
+
+    SEARCH GROUNDING: Each task description must embed a specific directive, not a vague mandate.
+    BAD: "Research Epic Universe theme park"
+    GOOD: "Search for 'Epic Universe 2026 crowd calendar' and extract per-land recommended visit durations and average wait times for headliner rides. Flag any estimate under 3 hours per land as suspicious."
+
+    REJECTION CRITERIA: Include explicit minimum thresholds or sanity checks in task descriptions when relevant (e.g. minimum group size, minimum time blocks, budget caps).
+
+    CRITIC TASK: For objectives with 6+ tasks, always add a final validation task as the last element.
+    The critic task should read all prior findings and flag: unrealistic estimates, missing constraints, budget overruns, or logistical impossibilities.
+    Example critic task: "Review all draft findings for this objective. Flag any time estimate that seems too short for a group, any cost that exceeds stated budget, or any logistical gap (travel time, reservations needed, capacity limits)."
+
+    Example output: [{"description":"Search for hotel options near the convention center with prices and availability for the target dates"},{"description":"Compare flight prices from PHL to SAN — extract cheapest options and latest same-day booking cutoffs"},{"description":"Review all findings: flag any hotel that exceeds the stated budget or any flight with less than 90 minutes connection time"}]
   PROMPT
 
   def initialize(client: OllamaClient.new)
