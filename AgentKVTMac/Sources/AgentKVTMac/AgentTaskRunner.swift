@@ -144,45 +144,47 @@ public final class AgentTaskRunner: @unchecked Sendable {
             workUnitId: request.executionMetadata?.workUnitId,
             workerLabel: request.executionMetadata?.workerLabel
         )
-        return try await AgentTaskExecutionContext.$current.withValue(context) {
-            await logWriter.writeLog(
-                taskName: request.taskName,
-                phase: "start",
-                content: "Starting mission with \(allowedTools.count) allowed tool(s): \(allowedTools.joined(separator: ", "))",
-                toolName: nil
-            )
-            let toolTranscript = ToolTranscriptRecorder()
-            let result: String
-            do {
-                var first = try await runLoop(
-                    request: request,
-                    allowedToolIds: allowedTools,
-                    systemPrompt: systemPrompt,
-                    userMessage: userMessage,
-                    toolTranscript: toolTranscript
+        return try await TokenUsageLogger.$currentTask.withValue(request.taskName) {
+            try await AgentTaskExecutionContext.$current.withValue(context) {
+                await logWriter.writeLog(
+                    taskName: request.taskName,
+                    phase: "start",
+                    content: "Starting mission with \(allowedTools.count) allowed tool(s): \(allowedTools.joined(separator: ", "))",
+                    toolName: nil
                 )
-                if let retryNudge = objectiveBoardRetryNudge(request: request, firstOutcome: first, transcript: toolTranscript.entries) {
-                    let nudge = userMessage + "\n\n" + retryNudge
-                    first = try await runLoop(
+                let toolTranscript = ToolTranscriptRecorder()
+                let result: String
+                do {
+                    var first = try await runLoop(
                         request: request,
                         allowedToolIds: allowedTools,
                         systemPrompt: systemPrompt,
-                        userMessage: nudge,
-                        maxRounds: 12,
+                        userMessage: userMessage,
                         toolTranscript: toolTranscript
                     )
+                    if let retryNudge = objectiveBoardRetryNudge(request: request, firstOutcome: first, transcript: toolTranscript.entries) {
+                        let nudge = userMessage + "\n\n" + retryNudge
+                        first = try await runLoop(
+                            request: request,
+                            allowedToolIds: allowedTools,
+                            systemPrompt: systemPrompt,
+                            userMessage: nudge,
+                            maxRounds: 12,
+                            toolTranscript: toolTranscript
+                        )
+                    }
+                    result = first
+                } catch {
+                    await logWriter.writeLog(
+                        taskName: request.taskName,
+                        phase: "error",
+                        content: "Error: \(error)",
+                        toolName: nil
+                    )
+                    throw error
                 }
-                result = first
-            } catch {
-                await logWriter.writeLog(
-                    taskName: request.taskName,
-                    phase: "error",
-                    content: "Error: \(error)",
-                    toolName: nil
-                )
-                throw error
+                return result
             }
-return result
         }
     }
 

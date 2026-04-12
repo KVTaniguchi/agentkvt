@@ -73,10 +73,12 @@ public final class ChatRunner: @unchecked Sendable {
             let allowedToolIds = thread.allowedToolIds.isEmpty ? ChatThread.defaultAllowedToolIds : thread.allowedToolIds
             let loop = AgentLoop(client: client, registry: registry, allowedToolIds: allowedToolIds)
             let messages = buildConversation(systemPrompt: thread.systemPrompt, history: history)
-            let result = try await loop.run(messages: messages) { [modelContext] event in
-                guard let log = ChatRunner.makeLog(for: event) else { return }
-                modelContext.insert(log)
-                try? modelContext.save()
+            let result = try await TokenUsageLogger.$currentTask.withValue("chat") {
+                try await loop.run(messages: messages) { [modelContext] event in
+                    guard let log = ChatRunner.makeLog(for: event) else { return }
+                    modelContext.insert(log)
+                    try? modelContext.save()
+                }
             }
 
             pending.status = ChatMessageStatus.completed.rawValue
@@ -127,17 +129,19 @@ public final class ChatRunner: @unchecked Sendable {
                 "chat_thread_id": claimed.chatThread.id.uuidString,
                 "chat_message_id": claimed.chatMessage.id.uuidString
             ]
-            let result = try await loop.run(messages: messages) { [backendClient] event in
-                guard let payload = ChatRunner.logPayload(for: event) else { return }
-                var eventMetadata = metadata
-                if let toolName = payload.toolName {
-                    eventMetadata["tool_name"] = toolName
+            let result = try await TokenUsageLogger.$currentTask.withValue("chat") {
+                try await loop.run(messages: messages) { [backendClient] event in
+                    guard let payload = ChatRunner.logPayload(for: event) else { return }
+                    var eventMetadata = metadata
+                    if let toolName = payload.toolName {
+                        eventMetadata["tool_name"] = toolName
+                    }
+                    _ = try? await backendClient.createAgentLog(
+                        phase: payload.phase,
+                        content: payload.content,
+                        metadata: eventMetadata
+                    )
                 }
-                _ = try? await backendClient.createAgentLog(
-                    phase: payload.phase,
-                    content: payload.content,
-                    metadata: eventMetadata
-                )
             }
 
             _ = try await backendClient.completeChatMessage(

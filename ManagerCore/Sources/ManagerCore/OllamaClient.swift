@@ -242,7 +242,9 @@ public final class OllamaClient: @unchecked Sendable {
             )
         )
 
+        let requestStart = Date()
         let (data, response) = try await session.data(for: request)
+        let latencyMs = Int(Date().timeIntervalSince(requestStart) * 1000)
         guard let http = response as? HTTPURLResponse else { throw OllamaError.invalidResponse }
         guard http.statusCode == 200 else {
             if let err = try? JSONDecoder().decode(ChatResponse.self, from: data).error { throw OllamaError.apiError(err) }
@@ -251,7 +253,7 @@ public final class OllamaClient: @unchecked Sendable {
         let parsed = try JSONDecoder().decode(ChatResponse.self, from: data)
         guard let msg = parsed.message else { throw OllamaError.noMessage }
         if let input = parsed.promptEvalCount, let output = parsed.evalCount {
-            Task { await TokenUsageLogger.shared.record(model: model, promptTokens: input, completionTokens: output) }
+            Task { await TokenUsageLogger.shared.record(model: model, promptTokens: input, completionTokens: output, latencyMs: latencyMs) }
         }
         return coerceAssistantMessageIfNeeded(msg, tools: tools)
     }

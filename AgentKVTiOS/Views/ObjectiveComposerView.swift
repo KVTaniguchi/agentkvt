@@ -88,7 +88,7 @@ struct ObjectiveComposerView: View {
     @State private var showingLegacyFallback = false
     @State private var localErrorMessage: String?
     @State private var pendingTurn: PendingObjectiveComposerTurn?
-    @State private var isSummaryExpanded = false
+    @State private var isSummarySheetPresented = false
     @FocusState private var isDraftMessageFieldFocused: Bool
 
     private var draft: IOSBackendObjectiveDraft? {
@@ -149,18 +149,15 @@ struct ObjectiveComposerView: View {
                         handleLeadingAction()
                     }
                 }
-                if stage == .drafting && !showingLegacyFallback {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button("Review") {
-                            prepareReview()
-                        }
-                        .disabled(!canReview)
-                    }
-                }
             }
         }
         .task {
             await resumeIfNeeded()
+        }
+        .sheet(isPresented: $isSummarySheetPresented) {
+            if let draft {
+                ObjectiveDraftSummarySheet(draft: draft)
+            }
         }
         .alert("Objective Composer", isPresented: Binding(
             get: { localErrorMessage != nil },
@@ -230,13 +227,10 @@ struct ObjectiveComposerView: View {
     private var draftingView: some View {
         VStack(spacing: 0) {
             if let draft {
-                ObjectiveDraftSummaryCard(
+                ObjectiveDraftStatusBar(
                     draft: draft,
-                    isExpanded: isSummaryExpanded,
-                    onToggle: {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            isSummaryExpanded.toggle()
-                        }
+                    onShowDetails: {
+                        isSummarySheetPresented = true
                     }
                 )
                     .padding([.horizontal, .top])
@@ -270,9 +264,11 @@ struct ObjectiveComposerView: View {
             }
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("Reply in plain language. After each turn, AgentKVT updates the summary card so you can see what the planner understands.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if !isDraftMessageFieldFocused {
+                    Text("Reply in plain language. AgentKVT keeps the brief updated as you go, and you can inspect the full summary anytime.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
 
                 if draftStore.isSending {
                     Label("Planner is thinking. This can take a bit when the server model is busy.", systemImage: "hourglass")
@@ -281,9 +277,30 @@ struct ObjectiveComposerView: View {
                 }
 
                 if canReview {
-                    Label("This draft is ready to review.", systemImage: "checkmark.seal")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Button {
+                        isDraftMessageFieldFocused = false
+                        prepareReview()
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "checkmark.seal.fill")
+                                .font(.body)
+
+                            Text("Review Objective")
+                                .font(.headline)
+
+                            Spacer()
+
+                            Image(systemName: "arrow.right")
+                                .font(.subheadline.weight(.semibold))
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 14)
+                        .frame(maxWidth: .infinity)
+                        .background(Color.accentColor)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
                 }
 
                 HStack(alignment: .bottom, spacing: 12) {
@@ -312,13 +329,6 @@ struct ObjectiveComposerView: View {
             }
             .padding()
             .background(.thinMaterial)
-        }
-        .onChange(of: isDraftMessageFieldFocused) { _, isFocused in
-            if isFocused && isSummaryExpanded {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    isSummaryExpanded = false
-                }
-            }
         }
     }
 
@@ -353,7 +363,7 @@ struct ObjectiveComposerView: View {
             if let draft, !draft.missingFields.isEmpty {
                 Section("Still Missing") {
                     ForEach(draft.missingFields, id: \.self) { field in
-                        Text(ObjectiveDraftSummaryCard.humanizedField(field))
+                        Text(ObjectiveComposerFieldPresentation.humanizedField(field))
                     }
                 }
             }
@@ -391,7 +401,7 @@ struct ObjectiveComposerView: View {
     @MainActor
     private func beginDraft(for template: ObjectiveComposerTemplate) async {
         pendingTurn = nil
-        isSummaryExpanded = false
+        isSummarySheetPresented = false
         do {
             _ = try await draftStore.startDraft(
                 templateKey: template.rawValue,
@@ -454,7 +464,7 @@ struct ObjectiveComposerView: View {
     private func handleLeadingAction() {
         if showingLegacyFallback || stage == .archetypes {
             pendingTurn = nil
-            isSummaryExpanded = false
+            isSummarySheetPresented = false
             draftStore.reset()
             dismiss()
             return
@@ -466,7 +476,7 @@ struct ObjectiveComposerView: View {
         case .drafting:
             stage = .archetypes
             pendingTurn = nil
-            isSummaryExpanded = false
+            isSummarySheetPresented = false
             draftStore.reset()
             selectedTemplate = nil
         case .archetypes:
@@ -480,7 +490,7 @@ struct ObjectiveComposerView: View {
         guard !showingLegacyFallback else { return }
         guard let draft = draftStore.activeDraft, draft.status == "drafting" else { return }
         pendingTurn = nil
-        isSummaryExpanded = false
+        isSummarySheetPresented = false
         selectedTemplate = ObjectiveComposerTemplate(rawValue: draft.templateKey)
         stage = .drafting
     }
@@ -495,83 +505,230 @@ struct ObjectiveComposerView: View {
     }
 }
 
-private struct ObjectiveDraftSummaryCard: View {
+private struct ObjectiveDraftStatusBar: View {
     let draft: IOSBackendObjectiveDraft
-    let isExpanded: Bool
-    let onToggle: () -> Void
+    let onShowDetails: () -> Void
 
+    private var capturedFieldsLabel: String {
+        let count = draft.briefJson.filledFieldCount
+        return "\(count) section\(count == 1 ? "" : "s") captured"
+    }
+
+    private var statusSummary: String {
+        if draft.readyToFinalize {
+            return "Brief looks ready. Review the goal and create the objective when it feels right."
+        }
+
+        guard !draft.missingFields.isEmpty else {
+            return capturedFieldsLabel
+        }
+
+        let preview = draft.missingFields
+            .prefix(2)
+            .map(ObjectiveComposerFieldPresentation.humanizedField)
+            .joined(separator: ", ")
+        let extraCount = max(0, draft.missingFields.count - 2)
+        let suffix = extraCount > 0 ? " + \(extraCount) more" : ""
+        return "\(capturedFieldsLabel) • Missing \(preview)\(suffix)"
+    }
+
+    var body: some View {
+        Button(action: onShowDetails) {
+            HStack(alignment: .center, spacing: 12) {
+                Image(systemName: draft.readyToFinalize ? "checkmark.seal.fill" : "list.bullet.clipboard")
+                    .font(.headline)
+                    .foregroundStyle(draft.readyToFinalize ? .green : .accentColor)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        Text("Objective Brief")
+                            .font(.subheadline.weight(.semibold))
+
+                        if draft.readyToFinalize {
+                            Text("Ready")
+                                .font(.caption2.weight(.semibold))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.green.opacity(0.14))
+                                .foregroundStyle(.green)
+                                .clipShape(Capsule())
+                        }
+                    }
+
+                    Text(statusSummary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.leading)
+                        .lineLimit(2)
+                }
+
+                Spacer(minLength: 12)
+
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text("View")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.accentColor)
+
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .padding(16)
+        .background(Color(.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+}
+
+private struct ObjectiveDraftSummarySheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let draft: IOSBackendObjectiveDraft
+
+    private var readinessCopy: String {
+        if draft.readyToFinalize {
+            return "This brief already has enough detail to review and create the objective."
+        }
+
+        let missingCount = draft.missingFields.count
+        return "\(draft.briefJson.filledFieldCount) section\(draft.briefJson.filledFieldCount == 1 ? "" : "s") captured so far, with \(missingCount) still missing."
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 10) {
+                            Image(systemName: draft.readyToFinalize ? "checkmark.seal.fill" : "square.text.square")
+                                .foregroundStyle(draft.readyToFinalize ? .green : .accentColor)
+
+                            Text(draft.readyToFinalize ? "Ready to review" : "Planner brief in progress")
+                                .font(.headline)
+                        }
+
+                        Text(readinessCopy)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(.secondarySystemBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+
+                    if let suggestedGoal = draft.suggestedGoal, !suggestedGoal.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Suggested Goal")
+                                .font(.headline)
+                            Text(suggestedGoal)
+                                .font(.body)
+                                .foregroundStyle(.primary)
+                        }
+                        .padding(16)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color(.secondarySystemBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    }
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("What AgentKVT Understands")
+                            .font(.headline)
+
+                        if draft.briefJson.hasContent {
+                            ObjectiveBriefSection(title: "Context", items: draft.briefJson.context)
+                            ObjectiveBriefSection(title: "Success Criteria", items: draft.briefJson.successCriteria)
+                            ObjectiveBriefSection(title: "Constraints", items: draft.briefJson.constraints)
+                            ObjectiveBriefSection(title: "Preferences", items: draft.briefJson.preferences)
+
+                            if let deliverable = draft.briefJson.deliverable, !deliverable.isEmpty {
+                                ObjectiveBriefSection(title: "Deliverable", items: [deliverable])
+                            }
+
+                            ObjectiveBriefSection(title: "Open Questions", items: draft.briefJson.openQuestions)
+                        } else {
+                            Text("No structured details captured yet. Keep replying in plain language and the planner will fill this in.")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(.secondarySystemBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+
+                    if !draft.missingFields.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Still Missing")
+                                .font(.headline)
+
+                            ForEach(draft.missingFields, id: \.self) { field in
+                                Text(ObjectiveComposerFieldPresentation.humanizedField(field))
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(16)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color(.secondarySystemBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    }
+
+                    if !draft.plannerSummary.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Planner Summary")
+                                .font(.headline)
+
+                            Text(draft.plannerSummary)
+                                .font(.footnote.monospaced())
+                                .foregroundStyle(.primary)
+                                .textSelection(.enabled)
+                        }
+                        .padding(16)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color(.secondarySystemBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    }
+                }
+                .padding()
+            }
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle("Objective Brief")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+    }
+}
+
+private enum ObjectiveComposerFieldPresentation {
     static func humanizedField(_ field: String) -> String {
         field
             .replacingOccurrences(of: "_", with: " ")
             .capitalized
     }
+}
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .center, spacing: 12) {
-                Text("What AgentKVT Understands")
-                    .font(.headline)
-
-                Spacer()
-
-                Button(isExpanded ? "Hide" : "Show") {
-                    onToggle()
-                }
-                .font(.caption.weight(.semibold))
-            }
-
-            if let suggestedGoal = draft.suggestedGoal, !suggestedGoal.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Suggested Goal")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    Text(suggestedGoal)
-                        .font(.subheadline)
-                }
-            }
-
-            if isExpanded {
-                ObjectiveBriefSection(title: "Context", items: draft.briefJson.context)
-                ObjectiveBriefSection(title: "Success Criteria", items: draft.briefJson.successCriteria)
-                ObjectiveBriefSection(title: "Constraints", items: draft.briefJson.constraints)
-                ObjectiveBriefSection(title: "Preferences", items: draft.briefJson.preferences)
-
-                if let deliverable = draft.briefJson.deliverable, !deliverable.isEmpty {
-                    ObjectiveBriefSection(title: "Deliverable", items: [deliverable])
-                }
-            }
-
-            if !draft.missingFields.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Still Missing")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    Text(missingFieldsSummary)
-                        .font(isExpanded ? .footnote : .caption)
-                        .foregroundStyle(.secondary)
-                }
-            } else if draft.readyToFinalize {
-                Label("Ready to review", systemImage: "checkmark.seal")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(16)
-        .background(Color(.secondarySystemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-    }
-
-    private var missingFieldsSummary: String {
-        if isExpanded {
-            return draft.missingFields.map(Self.humanizedField).joined(separator: ", ")
-        }
-
-        let preview = draft.missingFields.prefix(2).map(Self.humanizedField).joined(separator: ", ")
-        let extraCount = max(0, draft.missingFields.count - 2)
-        if extraCount > 0 {
-            return "\(preview) + \(extraCount) more"
-        }
-        return preview
+private extension IOSBackendObjectiveBrief {
+    var filledFieldCount: Int {
+        [
+            !context.isEmpty,
+            !successCriteria.isEmpty,
+            !constraints.isEmpty,
+            !preferences.isEmpty,
+            deliverable != nil,
+            !openQuestions.isEmpty
+        ]
+        .filter { $0 }
+        .count
     }
 }
 
