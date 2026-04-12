@@ -106,6 +106,31 @@ enum ObjectiveFeedbackKindOption: String, CaseIterable, Identifiable {
 }
 
 enum ObjectiveFeedbackPresentation {
+    static func displayText(_ text: String?) -> String? {
+        let body = splitConfidenceSection(text).body
+        guard !body.isEmpty else { return nil }
+        return body
+    }
+
+    static func hasLowConfidence(_ text: String?) -> Bool {
+        let split = splitConfidenceSection(text)
+        if !split.options.isEmpty {
+            return true
+        }
+
+        let normalized = split.body.lowercased()
+        guard !normalized.isEmpty else { return false }
+
+        return normalized.range(
+            of: #"\bconfidence\s*:\s*low\b|\blow confidence\b|\buncertain\b|\bunverified\b|\bneeds verification\b"#,
+            options: .regularExpression
+        ) != nil
+    }
+
+    static func confidenceOptionLabels(in text: String?) -> [String] {
+        splitConfidenceSection(text).options
+    }
+
     static func findingTitle(for key: String) -> String {
         let cleaned = key
             .replacingOccurrences(of: "_", with: " ")
@@ -136,7 +161,7 @@ enum ObjectiveFeedbackPresentation {
     }
 
     static func previewText(_ text: String?, limit: Int = 140) -> String? {
-        guard let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else {
+        guard let trimmed = displayText(text) else {
             return nil
         }
         guard trimmed.count > limit else { return trimmed }
@@ -215,6 +240,129 @@ enum ObjectiveFeedbackPresentation {
                 of: #"^task[\s_-]*summary[\s_-]*[0-9a-f]{4,}$"#,
                 options: .regularExpression
             ) != nil
+    }
+
+    private static func splitConfidenceSection(_ text: String?) -> (body: String, options: [String]) {
+        guard let normalized = normalizedText(text) else {
+            return ("", [])
+        }
+
+        guard let markerRange = normalized.range(of: "confidence options:", options: [.caseInsensitive]) else {
+            return (normalized, [])
+        }
+
+        let body = String(normalized[..<markerRange.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+        let tail = String(normalized[markerRange.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        let options = parseConfidenceOptions(from: tail)
+        return (body.isEmpty ? normalized : body, options)
+    }
+
+    private static func normalizedText(_ text: String?) -> String? {
+        guard let raw = text else { return nil }
+
+        let normalized = raw
+            .replacingOccurrences(of: "\\r\\n", with: "\n")
+            .replacingOccurrences(of: "\\n", with: "\n")
+            .replacingOccurrences(of: "\\t", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !normalized.isEmpty else { return nil }
+        return normalized
+    }
+
+    private static func parseConfidenceOptions(from text: String) -> [String] {
+        var options: [String] = []
+
+        for rawLine in text.components(separatedBy: .newlines) {
+            let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !line.isEmpty else { continue }
+
+            if let option = extractConfidenceOption(from: line) {
+                options.append(option)
+            } else if !options.isEmpty {
+                break
+            }
+        }
+
+        return options
+    }
+
+    private static func extractConfidenceOption(from line: String) -> String? {
+        let patterns = [
+            #"^[-*•]\s+(.+)$"#,
+            #"^\d+[\.\)]\s+(.+)$"#
+        ]
+
+        for pattern in patterns {
+            guard let range = line.range(of: pattern, options: .regularExpression) else { continue }
+            let match = String(line[range])
+            if let captureRange = match.range(of: #"^[-*•]\s+|^\d+[\.\)]\s+"#, options: .regularExpression) {
+                let cleaned = match.replacingCharacters(in: captureRange, with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if !cleaned.isEmpty {
+                    return cleaned
+                }
+            }
+        }
+
+        return nil
+    }
+}
+
+enum ObjectiveConfidenceOptionBuilder {
+    static func options(for snapshot: IOSBackendResearchSnapshot) -> [ObjectiveConfidenceOption] {
+        let rawOptions = ObjectiveFeedbackPresentation.confidenceOptionLabels(in: snapshot.value)
+        let labels = rawOptions.isEmpty && ObjectiveFeedbackPresentation.hasLowConfidence(snapshot.value)
+            ? fallbackLabels(for: snapshot)
+            : rawOptions
+
+        var seen: Set<String> = []
+        return labels
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .filter { seen.insert($0.lowercased()).inserted }
+            .map { label in
+                ObjectiveConfidenceOption(
+                    id: optionID(snapshotID: snapshot.id, label: label),
+                    label: label,
+                    feedbackKind: feedbackKind(for: label),
+                    draft: label
+                )
+            }
+    }
+
+    private static func fallbackLabels(for snapshot: IOSBackendResearchSnapshot) -> [String] {
+        let title = ObjectiveFeedbackPresentation.findingTitle(for: snapshot.key)
+        return [
+            "Verify the key facts behind \(title) with an official or current source.",
+            "Compare \(title) against the strongest realistic alternative and explain which option wins.",
+            "Challenge the weakest assumption behind \(title) and tell me what could change the answer."
+        ]
+    }
+
+    private static func feedbackKind(for label: String) -> ObjectiveFeedbackKindOption {
+        let normalized = label.lowercased()
+
+        if normalized.contains("compare") || normalized.contains("alternative") || normalized.contains("option") {
+            return .compareOptions
+        }
+        if normalized.contains("verify") || normalized.contains("check") || normalized.contains("confirm") || normalized.contains("challenge") {
+            return .challengeResult
+        }
+        if normalized.contains("clarify") || normalized.contains("gap") || normalized.contains("missing") {
+            return .clarifyGaps
+        }
+        if normalized.contains("recommend") || normalized.contains("decision") || normalized.contains("next move") {
+            return .finalRecommendation
+        }
+        return .followUp
+    }
+
+    private static func optionID(snapshotID: UUID, label: String) -> String {
+        let slug = label
+            .lowercased()
+            .replacingOccurrences(of: #"[^a-z0-9]+"#, with: "-", options: .regularExpression)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        return "\(snapshotID.uuidString)-\(slug)"
     }
 }
 
@@ -300,6 +448,13 @@ struct ObjectiveFeedbackPendingSubmission: Identifiable, Sendable {
     let submittedAt: Date
 }
 
+struct ObjectiveConfidenceOption: Identifiable, Hashable, Sendable {
+    let id: String
+    let label: String
+    let feedbackKind: ObjectiveFeedbackKindOption
+    let draft: String
+}
+
 // MARK: - Node renderer
 
 struct NodeView: View {
@@ -360,7 +515,7 @@ private struct TextNodeView: View {
     let node: UINode
 
     var body: some View {
-        if let content = node.content {
+        if let content = ObjectiveFeedbackPresentation.displayText(node.content) {
             Text(content)
                 .font(textFont)
                 .foregroundStyle(textColor)
@@ -394,13 +549,13 @@ private struct StatNodeView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            if let value = node.value {
+            if let value = ObjectiveFeedbackPresentation.displayText(node.value) {
                 Text(value)
                     .font(.title2.bold())
                     .foregroundStyle(.primary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            if let delta = node.delta {
+            if let delta = ObjectiveFeedbackPresentation.displayText(node.delta) {
                 Label(delta, systemImage: "arrow.triangle.2.circlepath")
                     .font(.caption)
                     .foregroundStyle(.orange)
@@ -1156,14 +1311,32 @@ private struct FeedbackComposerStatusHeader: View {
 
 private struct ResultsFindingFollowUpCard: View {
     let snapshot: IOSBackendResearchSnapshot
+    var submittingOptionID: String? = nil
     var onSelectAction: (ObjectiveFeedbackComposerContext) -> Void
+    var onSelectConfidenceOption: ((IOSBackendResearchSnapshot, ObjectiveConfidenceOption) -> Void)? = nil
+
+    private var confidenceOptions: [ObjectiveConfidenceOption] {
+        ObjectiveConfidenceOptionBuilder.options(for: snapshot)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             SnapshotRow(snapshot: snapshot)
 
+            if !confidenceOptions.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Improve confidence")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+
+                    ForEach(confidenceOptions) { option in
+                        confidenceOptionButton(option)
+                    }
+                }
+            }
+
             VStack(alignment: .leading, spacing: 8) {
-                Text("Next action")
+                Text(confidenceOptions.isEmpty ? "Next action" : "Other actions")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
 
@@ -1201,6 +1374,36 @@ private struct ResultsFindingFollowUpCard: View {
     }
 
     @ViewBuilder
+    private func confidenceOptionButton(_ option: ObjectiveConfidenceOption) -> some View {
+        Button {
+            onSelectConfidenceOption?(snapshot, option)
+        } label: {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: option.feedbackKind.systemImage)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(option.feedbackKind.tint)
+                    .padding(.top, 2)
+
+                Text(option.label)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .multilineTextAlignment(.leading)
+
+                if submittingOptionID == option.id {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+            }
+            .padding(12)
+            .background(option.feedbackKind.tint.opacity(0.12))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(.plain)
+        .disabled(submittingOptionID != nil)
+    }
+
+    @ViewBuilder
     private func quickActionButton(label: String, tint: Color, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(label)
@@ -1209,6 +1412,7 @@ private struct ResultsFindingFollowUpCard: View {
         }
         .buttonStyle(.bordered)
         .tint(tint)
+        .disabled(submittingOptionID != nil)
     }
 }
 
@@ -1232,6 +1436,7 @@ struct GenerativeResultsView: View {
     @State private var pendingFeedbackSubmission: ObjectiveFeedbackPendingSubmission?
     @State private var feedbackErrorMessage: String?
     @State private var activeFeedbackActionID: UUID?
+    @State private var activeConfidenceOptionID: String?
     @State private var activityDetail: IOSBackendObjectiveDetail?
     @State private var activityPollTask: Task<Void, Never>?
     @State private var activityPollToken = UUID()
@@ -1424,8 +1629,13 @@ struct GenerativeResultsView: View {
                                 Text("Continue from a finding")
                                     .font(.headline)
                                 ForEach(snapshots) { snapshot in
-                                    ResultsFindingFollowUpCard(snapshot: snapshot) { context in
+                                    ResultsFindingFollowUpCard(
+                                        snapshot: snapshot,
+                                        submittingOptionID: activeConfidenceOptionID
+                                    ) { context in
                                         composerContext = context
+                                    } onSelectConfidenceOption: { snapshot, option in
+                                        Task { await submitConfidenceOption(for: snapshot, option: option) }
                                     }
                                 }
                             }
@@ -1476,8 +1686,13 @@ struct GenerativeResultsView: View {
                         } else {
                             ForEach(snapshots) { snapshot in
                                 if canContinueResearch {
-                                    ResultsFindingFollowUpCard(snapshot: snapshot) { context in
+                                    ResultsFindingFollowUpCard(
+                                        snapshot: snapshot,
+                                        submittingOptionID: activeConfidenceOptionID
+                                    ) { context in
                                         composerContext = context
+                                    } onSelectConfidenceOption: { snapshot, option in
+                                        Task { await submitConfidenceOption(for: snapshot, option: option) }
                                     }
                                 } else {
                                     SnapshotRow(snapshot: snapshot)
@@ -1684,6 +1899,67 @@ struct GenerativeResultsView: View {
             targetID: ObjectiveFeedbackTarget.id(taskId: feedback.taskId, researchSnapshotId: feedback.researchSnapshotId),
             draft: feedback.content
         )
+    }
+
+    private func confidenceOptionRequest(
+        for snapshot: IOSBackendResearchSnapshot,
+        option: ObjectiveConfidenceOption
+    ) -> ObjectiveFeedbackSubmissionRequest {
+        ObjectiveFeedbackSubmissionRequest(
+            content: option.draft,
+            feedbackKind: option.feedbackKind.rawValue,
+            taskId: snapshot.taskId,
+            researchSnapshotId: snapshot.id,
+            targetLabel: ObjectiveFeedbackPresentation.targetLabel(for: snapshot, tasks: activityTasks + tasks),
+            targetPreview: ObjectiveFeedbackPresentation.previewText(snapshot.value)
+        )
+    }
+
+    @MainActor
+    private func submitConfidenceOption(
+        for snapshot: IOSBackendResearchSnapshot,
+        option: ObjectiveConfidenceOption
+    ) async {
+        feedbackErrorMessage = nil
+        activeConfidenceOptionID = option.id
+        defer { activeConfidenceOptionID = nil }
+
+        let request = confidenceOptionRequest(for: snapshot, option: option)
+        let submittedAt = Date()
+
+        do {
+            let result = try await store.submitObjectiveFeedback(
+                id: objectiveId,
+                content: request.content,
+                feedbackKind: request.feedbackKind,
+                taskId: request.taskId,
+                researchSnapshotId: request.researchSnapshotId
+            )
+            handleFeedbackSubmitted(result)
+        } catch {
+            if isTimeoutError(error) {
+                let pendingSubmission = ObjectiveFeedbackPendingSubmission(
+                    request: request,
+                    card: ObjectiveFeedbackCardModel.pending(
+                        from: request,
+                        status: "timed_out_but_refreshing",
+                        createdAt: submittedAt
+                    ),
+                    submittedAt: submittedAt
+                )
+                handleFeedbackTimedOut(pendingSubmission)
+            } else {
+                feedbackErrorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func isTimeoutError(_ error: Error) -> Bool {
+        if let urlError = error as? URLError {
+            return urlError.code == .timedOut
+        }
+        let nsError = error as NSError
+        return nsError.domain == NSURLErrorDomain && nsError.code == URLError.timedOut.rawValue
     }
 
     @MainActor

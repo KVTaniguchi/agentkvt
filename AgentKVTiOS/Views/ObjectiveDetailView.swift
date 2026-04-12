@@ -1916,7 +1916,17 @@ struct SnapshotRow: View {
                     .foregroundStyle(.tertiary)
             }
 
-            Text(snapshot.value)
+            if ObjectiveFeedbackPresentation.hasLowConfidence(snapshot.value) {
+                Text("Low confidence")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.orange)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.orange.opacity(0.14))
+                    .clipShape(Capsule())
+            }
+
+            Text(ObjectiveFeedbackPresentation.displayText(snapshot.value) ?? snapshot.value)
                 .font(.subheadline)
                 .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)

@@ -11,6 +11,8 @@ class ObjectiveFeedbackPlanner
     - Focus on what the user wants to happen next.
     - Avoid repeating already completed work unless the user is explicitly challenging or revisiting it.
     - Prefer specific comparison, verification, synthesis, or gap-closing tasks.
+    - If the user wants a final recommendation or next move, prefer exactly 1 synthesis task that turns the current findings into a decision.
+    - Only add a second task for a recommendation-style request if one specific missing fact clearly blocks the decision.
     - Keep each description concise and actionable.
     - Respond with ONLY valid JSON and no explanation.
   PROMPT
@@ -37,7 +39,8 @@ class ObjectiveFeedbackPlanner
       description = task_def["description"].to_s.strip
       next if description.empty?
       description
-    end.uniq.first(MAX_TASKS)
+    end.uniq
+    descriptions = normalize_descriptions(feedback, descriptions).first(MAX_TASKS)
 
     return persist_tasks(feedback, descriptions) if descriptions.any?
 
@@ -104,7 +107,31 @@ class ObjectiveFeedbackPlanner
         "Extend the task '#{anchored_task}' with a focused follow-up that addresses the user's feedback"
       end
 
+    return [primary] if recommendation_feedback?(feedback)
+
     [primary, secondary].compact
+  end
+
+  def normalize_descriptions(feedback, descriptions)
+    cleaned = descriptions.map(&:strip).reject(&:blank?)
+    return cleaned if cleaned.empty?
+    return cleaned unless recommendation_feedback?(feedback)
+
+    preferred = cleaned.find { |description| synthesis_description?(description) } || cleaned.first
+    [preferred]
+  end
+
+  def recommendation_feedback?(feedback)
+    feedback.feedback_kind == "final_recommendation"
+  end
+
+  def synthesis_description?(description)
+    normalized = description.to_s.downcase
+    normalized.include?("recommend") ||
+      normalized.include?("summary") ||
+      normalized.include?("synthes") ||
+      normalized.include?("next move") ||
+      normalized.include?("turn the current research into")
   end
 
   def build_input(feedback)

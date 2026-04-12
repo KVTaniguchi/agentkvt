@@ -1,5 +1,16 @@
+require "set"
+
 class ObjectivePlanner
   MAX_TASKS = 12
+  GENERIC_DESCRIPTION_PATTERNS = [
+    /\Aclarify objective scope, assumptions, and success criteria/i,
+    /\Aresearch and compare the top options relevant to this objective/i,
+    /\Aidentify constraints, risks, costs, and dependencies/i,
+    /\Apropose a recommended approach with rationale/i,
+    /\Acreate an execution checklist with milestones and deadlines/i,
+    /\Alist open questions and the next information to gather/i,
+    /\Acontinue the research for this objective/i
+  ].freeze
 
   SYSTEM_PROMPT = <<~PROMPT.freeze
     You are a specialist research task planner. Given a goal, output a JSON array of concrete research tasks.
@@ -56,10 +67,11 @@ class ObjectivePlanner
       next if description.empty?
       description
     end.uniq
+    llm_descriptions = replace_generic_descriptions(objective, llm_descriptions)
 
     if llm_descriptions.length < min_task_count
       llm_descriptions += supplemental_descriptions(
-        goal: planning_input.presence || goal,
+        objective: objective,
         existing: llm_descriptions,
         needed: (min_task_count - llm_descriptions.length)
       )
@@ -86,10 +98,9 @@ class ObjectivePlanner
   end
 
   def fallback_tasks(objective, min_task_count:)
-    goal = objective.goal.to_s.strip
-    return [] if goal.empty?
+    return [] if objective.goal.to_s.strip.empty?
 
-    heuristic_descriptions(goal, min_task_count: min_task_count).filter_map do |description|
+    heuristic_descriptions(objective, min_task_count: min_task_count).filter_map do |description|
       next if description.blank?
       objective.tasks.create!(description: description, status: "proposed")
     end
@@ -103,31 +114,85 @@ class ObjectivePlanner
   end
 
   # Splits multi-sentence goals into separate tasks, then tops up with a structured checklist.
-  def heuristic_descriptions(goal, min_task_count:)
-    parts = goal.split(/(?<=[.!?])\s+|\n+/).map(&:strip).reject(&:empty?)
-    seed = if parts.length >= 2 && parts.all? { |p| p.length >= 8 }
-      parts.first(MAX_TASKS)
-    else
-      []
-    end
+  def heuristic_descriptions(objective, min_task_count:)
+    goal = objective.goal.to_s.strip
+    brief = ObjectivePlanningInputBuilder.normalize_brief(objective.brief_json)
+    context_entries = brief["context"].presence || [goal]
+    success_criteria = brief["success_criteria"].first(2)
+    constraints = brief["constraints"].first(2)
+    preferences = brief["preferences"].first(2)
+    open_questions = brief["open_questions"].first(2)
+    deliverable = brief["deliverable"].to_s.strip
+    anchor = context_entries.join(" ").truncate(220)
 
-    fallback = [
-      "Clarify objective scope, assumptions, and success criteria for: #{goal.truncate(260)}",
-      "Research and compare the top options relevant to this objective",
-      "Identify constraints, risks, costs, and dependencies",
-      "Propose a recommended approach with rationale",
-      "Create an execution checklist with milestones and deadlines",
-      "List open questions and the next information to gather"
+    tasks = [
+      "Identify the strongest viable options or facts for: #{anchor}. Capture concrete prices, dates, limits, or availability."
     ]
 
-    (seed + fallback).map(&:strip).reject(&:blank?).uniq.first([min_task_count, MAX_TASKS].max)
+    if constraints.any?
+      tasks << "Validate the leading options against these hard constraints: #{constraints.join('; ')}. Flag anything that fails."
+    end
+
+    if success_criteria.any?
+      tasks << "Score the strongest options against these success criteria: #{success_criteria.join('; ')}."
+    end
+
+    if preferences.any?
+      tasks << "Compare the tradeoffs that matter most for this objective: #{preferences.join('; ')}."
+    end
+
+    if deliverable.present?
+      tasks << "Draft the requested deliverable: #{deliverable.truncate(220)}. Include a recommended next move and backup option."
+    else
+      tasks << "Draft a concrete recommendation for this objective, including the best option, why it wins, and what to do next."
+    end
+
+    if open_questions.any?
+      tasks << "Answer these open questions if they would materially change the recommendation: #{open_questions.join('; ')}."
+    end
+
+    tasks << "Stress-test the best recommendation for hidden costs, timing issues, reservations, or missing dependencies."
+    tasks << "List the one unanswered question that would most change the recommendation, if any still remain."
+
+    tasks.map(&:strip).reject(&:blank?).uniq.first([min_task_count, MAX_TASKS].max)
   end
 
-  def supplemental_descriptions(goal:, existing:, needed:)
+  def supplemental_descriptions(objective:, existing:, needed:)
     return [] if needed <= 0
-    heuristic_descriptions(goal, min_task_count: needed + existing.length)
+    heuristic_descriptions(objective, min_task_count: needed + existing.length)
       .reject { |desc| existing.include?(desc) }
       .first(needed)
+  end
+
+  def replace_generic_descriptions(objective, descriptions)
+    return descriptions if descriptions.empty?
+
+    replacements = heuristic_descriptions(
+      objective,
+      min_task_count: [descriptions.length, minimum_task_count(objective.goal)].max
+    )
+    replacement_index = 0
+    seen = descriptions.each_with_object(Set.new) { |description, acc| acc << description.downcase }
+
+    descriptions.filter_map do |description|
+      next description unless generic_description?(description)
+
+      replacement = nil
+      while replacement.nil? && replacement_index < replacements.length
+        candidate = replacements[replacement_index]
+        replacement_index += 1
+        next if seen.include?(candidate.downcase)
+
+        seen << candidate.downcase
+        replacement = candidate
+      end
+
+      replacement || description
+    end.uniq
+  end
+
+  def generic_description?(description)
+    GENERIC_DESCRIPTION_PATTERNS.any? { |pattern| pattern.match?(description.to_s.strip) }
   end
 
   def minimum_task_count(goal)

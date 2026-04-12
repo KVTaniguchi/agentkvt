@@ -104,6 +104,61 @@ class ObjectivePlannerTest < ActiveSupport::TestCase
     assert_equal tasks.length, @objective.reload.tasks.count
   end
 
+  test "rewrites generic llm tasks with objective-aware follow-through" do
+    objective = @workspace.objectives.create!(
+      goal: "Help me plan a realistic first day at Universal Orlando",
+      status: "active",
+      objective_kind: "trip_planning",
+      brief_json: {
+        context: ["July 11 arrival around 11 AM for a group of 8"],
+        success_criteria: ["Have a realistic first-day itinerary"],
+        constraints: ["Avoid impossible park-hopping timing"],
+        preferences: ["Prioritize Harry Potter and Super Mario attractions"],
+        deliverable: "Recommended first-day itinerary with backup plan",
+        open_questions: ["Whether early entry is available"]
+      }
+    )
+
+    raw_json = JSON.generate([
+      { "description" => "Clarify objective scope, assumptions, and success criteria for: #{objective.goal}" },
+      { "description" => "Research and compare the top options relevant to this objective" },
+      { "description" => "Compare official park hours and early-entry windows for July 11" }
+    ])
+
+    tasks = ObjectivePlanner.new(client: stub_client(raw_json)).call(objective)
+    descriptions = tasks.map(&:description)
+
+    assert_includes descriptions, "Compare official park hours and early-entry windows for July 11"
+    assert descriptions.none? { |description| description.start_with?("Clarify objective scope") }
+    assert descriptions.any? { |description| description.include?("Recommended first-day itinerary with backup plan") }
+  end
+
+  test "fallback tasks stay focused on deliverable and constraints" do
+    objective = @workspace.objectives.create!(
+      goal: "Help me plan a household purchasing decision",
+      status: "active",
+      objective_kind: "household_planning",
+      brief_json: {
+        context: ["Need to replace a washer and dryer this month"],
+        success_criteria: ["Pick a reliable option under budget"],
+        constraints: ["Stay under $1,500 installed"],
+        preferences: ["Prefer simple controls and low repair risk"],
+        deliverable: "Recommendation with next step and backup option",
+        open_questions: []
+      }
+    )
+
+    raising_client = Object.new
+    raising_client.define_singleton_method(:chat) { |**_| raise "connection refused" }
+
+    tasks = ObjectivePlanner.new(client: raising_client).call(objective)
+    descriptions = tasks.map(&:description)
+
+    assert descriptions.any? { |description| description.include?("Recommendation with next step and backup option") }
+    assert descriptions.any? { |description| description.include?("Stay under $1,500 installed") }
+    assert descriptions.none? { |description| description.start_with?("Clarify objective scope") }
+  end
+
   test "planner prompt includes objective brief metadata when present" do
     captured_messages = nil
     objective = @workspace.objectives.create!(

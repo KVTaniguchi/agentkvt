@@ -174,11 +174,21 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             // If research already timed out in a prior supervisor run, skip straight to synthesis
             // with whatever snapshots were gathered rather than re-queueing research work units.
             let alreadyTimedOut = root.activePhaseHint == "timed_out"
+            let shouldSkipResearch = prefersDirectSynthesis(rootTaskDescription: payload.description)
 
             if alreadyTimedOut {
                 await logEvent(
                     phase: "objective_supervisor",
                     content: "Supervisor resuming after research timeout — skipping to synthesis for task: \(payload.description)",
+                    objectiveId: objectiveId,
+                    taskId: taskId,
+                    taskName: "Objective Supervisor"
+                )
+            } else if shouldSkipResearch {
+                try updateRootState(rootId: root.id, state: WorkUnitState.inProgress.rawValue, phase: "synthesizing")
+                await logEvent(
+                    phase: "objective_supervisor",
+                    content: "Task already asks for synthesis or a concrete recommendation — skipping extra research decomposition for: \(payload.description)",
                     objectiveId: objectiveId,
                     taskId: taskId,
                     taskName: "Objective Supervisor"
@@ -588,6 +598,15 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             - Your final plain-text reply must summarize concrete findings for the traveler (logistics, dates, safety, options) — not meta-commentary about your role.
             - Your final system response MUST be plain English prose sentences. Do NOT begin your message with `{` or `[`.
 
+            ACTIONABILITY REQUIREMENTS:
+            - Lead with the recommendation, decision, or working brief — not background.
+            - If the task asks for a recommendation or next move, state the best option first, then why it wins, then the immediate next action.
+            - If the task asks to clarify scope, assumptions, or success criteria, convert the objective into a concrete working brief with assumptions, success criteria, risks, and open questions.
+            - If server findings are sparse, use the parent objective and any stated constraints to produce the most useful provisional answer you can instead of refusing.
+            - If important facts remain low-confidence or unverified, append a final section exactly titled `Confidence options:` followed by 2-4 bullet options.
+            - Each confidence option must be a concrete next pass the agent can run immediately if the user selects it. Prefer verification, comparison, or gap-closing work over generic "do more research."
+            - Avoid confidence options that only ask the user to type more context unless that missing detail is absolutely essential.
+
             CRITIC PASS (mandatory before writing the final snapshot):
             Before synthesizing, scan all findings for these failure modes and note them explicitly in the final snapshot if found:
             - Time estimates that seem too short for the group size (e.g. less than 3 hours for a major theme park land)
@@ -605,10 +624,10 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                - objective_id: \(claimed.objectiveId.uuidString)
                - task_id: \(claimed.taskId.uuidString)
                - key: \(finalSummaryKey(taskId: claimed.taskId))
-               - value: concise plain-language synthesis (not JSON) of the best guidance, including any critic flags
+               - value: concise plain-language synthesis (not JSON) of the best guidance, including any critic flags, the recommended next move, and any immediate action items
                - mark_task_completed: true
             4. You may write additional supporting snapshots before the final one.
-            5. Finish with a short, plain-language summary of what the team found (must be substantive, not a refusal).
+            5. Finish with a short, plain-language summary of the recommendation or working brief (must be substantive, not a refusal).
             """
         default:
             let context = objectiveContextBlock(
@@ -644,6 +663,9 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             - If you cannot find a specific fact, write: "Confidence: low — [what you found and why it is uncertain]" rather than asserting it as fact.
             - Include where you found each key fact (site name or URL) in the snapshot value.
             - If a finding contradicts a threshold stated in the work unit (e.g. an estimate is shorter than the stated minimum), explicitly flag it: "FLAG: [finding] appears to violate the [threshold] constraint."
+            - If your finding remains low-confidence, append a final section exactly titled `Confidence options:` followed by 2-4 bullet options.
+            - Each confidence option must be a concrete next pass the agent can run immediately if the user selects it. Prefer verification, comparison, or gap-closing work over generic "do more research."
+            - Avoid confidence options that only ask the user to type more context unless that missing detail is absolutely essential.
 
             Instructions:
             1. Call read_objective_snapshot with objective_id \(claimed.objectiveId.uuidString) (and task_id \(claimed.taskId.uuidString) if you need an updated list) before spending tokens on overlapping searches.
@@ -697,6 +719,77 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         let t = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !t.isEmpty else { return nil }
         return t
+    }
+
+    private func prefersDirectSynthesis(rootTaskDescription: String) -> Bool {
+        let normalized = normalizedObjectiveText(rootTaskDescription)
+        guard !normalized.isEmpty else { return false }
+
+        let directSynthesisMarkers = [
+            "turn the current research into",
+            "turn this research into",
+            "final recommendation",
+            "recommendation",
+            "concrete recommendation",
+            "clear recommendation",
+            "recommend next move",
+            "recommended next move",
+            "family-ready summary",
+            "decision memo",
+            "summarize",
+            "summarise",
+            "summary",
+            "synthesize",
+            "synthesise",
+            "clarify objective scope",
+            "success criteria",
+            "working brief",
+            "execution checklist"
+        ]
+
+        return directSynthesisMarkers.contains { normalized.contains($0) }
+    }
+
+    private func concreteResearchDirective(_ description: String) -> Bool {
+        let normalized = normalizedObjectiveText(description)
+        guard !normalized.isEmpty else { return false }
+
+        let leadingDirectives = [
+            "search",
+            "compare",
+            "verify",
+            "check",
+            "find",
+            "review",
+            "estimate",
+            "calculate",
+            "map",
+            "extract",
+            "score",
+            "rank",
+            "identify"
+        ]
+        let hasLeadingDirective = leadingDirectives.contains { normalized.hasPrefix($0) }
+        let hasSpecificSignal =
+            normalized.contains("'") ||
+            normalized.contains("\"") ||
+            normalized.contains(" under ") ||
+            normalized.contains(" over ") ||
+            normalized.contains(" between ") ||
+            normalized.contains(" with ") ||
+            normalized.contains(" by ") ||
+            normalized.contains(" versus ") ||
+            normalized.contains(" vs ") ||
+            normalized.range(of: #"\b\d"#, options: .regularExpression) != nil
+
+        return hasLeadingDirective && hasSpecificSignal && normalized.split(separator: " ").count >= 6
+    }
+
+    private func normalizedObjectiveText(_ text: String) -> String {
+        text
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
     }
 
     private func isRetryableTimeout(_ error: any Error) -> Bool {
@@ -812,6 +905,11 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         completedSummaries: [String],
         planningRound: Int
     ) async -> [String] {
+        if prefersDirectSynthesis(rootTaskDescription: rootTaskDescription) ||
+            concreteResearchDirective(rootTaskDescription) {
+            return []
+        }
+
         let summaries = completedSummaries.isEmpty
             ? "None yet."
             : completedSummaries.map { "- \($0)" }.joined(separator: "\n")
@@ -833,6 +931,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         GOOD: "Search 'Epic Universe Ministry of Magic wait times 2026' — extract specific average minutes for each ride"
 
         SPECIFICITY REQUIREMENT: Work units that would produce vague or boilerplate answers are useless. If the root task is already narrow enough to execute directly, return 0 work units (empty array) rather than splitting into generic sub-tasks.
+        If the task is asking for a recommendation, summary, decision, or clarified brief, return 0 work units so the supervisor can go straight to synthesis.
 
         REJECTION CRITERIA: If the root task includes minimum thresholds (e.g. "minimum 3 hours per land", "under $500"), echo those thresholds in the relevant work unit descriptions so the worker knows to reject estimates that don't meet them.
         """
@@ -896,6 +995,9 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
     ) -> [String] {
         let base = rootTaskDescription.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !base.isEmpty else { return [] }
+        if prefersDirectSynthesis(rootTaskDescription: base) || concreteResearchDirective(base) {
+            return []
+        }
 
         if planningRound == 1 {
             return sanitizePlannedTitles([

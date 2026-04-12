@@ -73,6 +73,25 @@ class ObjectiveFeedbackPlannerTest < ActiveSupport::TestCase
     assert_equal feedback.id, tasks.first.source_feedback_id
   end
 
+  test "final recommendation collapses multiple llm tasks into one pending synthesis step" do
+    feedback = @objective.objective_feedbacks.create!(
+      content: "Turn the findings into a recommendation with a backup option.",
+      feedback_kind: "final_recommendation",
+      status: "received"
+    )
+
+    raw_json = JSON.generate([
+      { "description" => "Turn the current research into a concrete recommendation with a backup option" },
+      { "description" => "Dig deeper into remaining price gaps before deciding" }
+    ])
+
+    tasks = ObjectiveFeedbackPlanner.new(client: stub_client(raw_json)).call(feedback)
+
+    assert_equal 1, tasks.length
+    assert_equal "pending", tasks.first.status
+    assert_match(/recommendation/i, tasks.first.description)
+  end
+
   test "planner prompt includes feedback anchor context and user feedback" do
     captured_messages = nil
     feedback = @objective.objective_feedbacks.create!(
@@ -110,7 +129,8 @@ class ObjectiveFeedbackPlannerTest < ActiveSupport::TestCase
 
     tasks = ObjectiveFeedbackPlanner.new(client: raising_client).call(feedback)
 
-    assert_operator tasks.length, :>=, 1
+    assert_equal 1, tasks.length
+    assert_equal "pending", tasks.first.status
     assert_equal feedback.id, tasks.first.source_feedback_id
   end
 
