@@ -64,7 +64,7 @@ class RssFeedPollerJob < ApplicationJob
   def item_guid(item)
     guid = item.respond_to?(:guid) ? item.guid&.content || item.guid.to_s : nil
     guid = item.respond_to?(:id) ? item.id.to_s : nil if guid.blank?
-    link = item.respond_to?(:link) ? item.link&.href || item.link.to_s : nil
+    link = extract_link(item)
     key  = guid.presence || link.presence
     key.presence && "rss_seen:#{Digest::SHA1.hexdigest(key)}"
   end
@@ -79,11 +79,18 @@ class RssFeedPollerJob < ApplicationJob
     Rails.cache.write(key, 1, expires_in: SEEN_TTL) if key
   end
 
+  def extract_link(item)
+    return nil unless item.respond_to?(:link)
+    l = item.link
+    l.respond_to?(:href) ? l.href.to_s : l.to_s
+  rescue
+    nil
+  end
+
   def format_item(item)
     title = item.respond_to?(:title) ? item.title&.content || item.title : nil
     title = title.to_s.strip
-    link  = item.respond_to?(:link) ? item.link&.href || item.link : nil
-    link  = link.to_s.strip
+    link  = extract_link(item).to_s.strip
 
     return nil if title.blank?
     link.present? ? "#{title}\n#{link}" : title
