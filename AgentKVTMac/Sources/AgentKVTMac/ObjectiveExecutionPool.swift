@@ -294,6 +294,41 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             taskName: "Objective Worker \(slot.label)"
         )
 
+        // Idempotency guard for synthesis: if the backend already has a task_summary snapshot
+        // for this task, a prior run completed successfully (assistant_final was already posted).
+        // Re-running the LLM would post a duplicate assistant_final that the backend rejects with 422.
+        // This covers the crash window between the backend log write and the local SwiftData update.
+        if claimed.workType == Constants.synthesisType, let backendClient {
+            let summaryKey = finalSummaryKey(taskId: claimed.taskId)
+            if let snaps = try? await backendClient.fetchResearchSnapshots(
+                objectiveId: claimed.objectiveId,
+                taskId: claimed.taskId
+            ), let existing = snaps.first(where: {
+                $0.key == summaryKey && !$0.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }) {
+                await logEvent(
+                    phase: "objective_supervisor",
+                    content: "Synthesis already completed on server (found \(summaryKey)) — skipping LLM re-run to avoid duplicate log.",
+                    objectiveId: claimed.objectiveId,
+                    taskId: claimed.taskId,
+                    workUnitId: claimed.workUnitId,
+                    workerLabel: slot.label,
+                    taskName: "Objective Worker \(slot.label)"
+                )
+                try completeWorkUnit(claimed.workUnitId, summary: existing.value)
+                await logEvent(
+                    phase: "worker_complete",
+                    content: "Completed \(claimed.workType) work unit (idempotent resume): \(claimed.title)",
+                    objectiveId: claimed.objectiveId,
+                    taskId: claimed.taskId,
+                    workUnitId: claimed.workUnitId,
+                    workerLabel: slot.label,
+                    taskName: "Objective Worker \(slot.label)"
+                )
+                return
+            }
+        }
+
         let heartbeatTask = Task.detached(priority: .utility) { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(10))
