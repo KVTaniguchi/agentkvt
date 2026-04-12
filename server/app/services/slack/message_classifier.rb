@@ -50,11 +50,18 @@ module Slack
         #{objectives_block}
 
         Rules:
-        - Choose "append_research" ONLY if the message contains concrete factual information (a price move, a news event, a data point) that directly relates to the goal of one of the listed objectives. Set objective_id to the matching objective's UUID.
+        - Choose "append_research" ONLY if the message contains concrete factual information (a price move, a news event, a data point, a product release, a policy change) that directly relates to the goal of one of the listed objectives. Set objective_id to the matching objective's UUID.
         - Choose "ignore" for everything else: casual conversation, questions, vague statements, or messages that don't clearly map to an objective.
         - Do NOT invent objectives or suggest creating new ones.
         - Return valid JSON only, matching this schema exactly:
           {"action": string, "summary": string, "objective_id": string|null}
+
+        Source-specific routing hints (apply these when the message looks like a feed headline):
+        - Philadelphia / local news (Billy Penn, Passyunk Post, Philly Biz Journal): if it mentions SEPTA, transit, Passyunk, South Philly, or local real estate → look for a Philly-related objective.
+        - Credit card / travel perks (Doctor of Credit, Frequent Miler, The Points Guy): if it mentions a transfer bonus, limited-time offer, or benefit change for Amex Platinum, Chase Sapphire Reserve, or Capital One Savor → look for a trip-planning or card-perks objective.
+        - iOS / Apple / Swift (9to5Mac, Swift by Sundell, Hacker News): if it mentions a Swift language change, Xcode release, iOS API, or Apple platform update → look for an iOS engineering or AgentKVT architecture objective.
+        - AI / agentic research (OpenAI, Anthropic, LangChain): if it describes a new model capability, multi-agent pattern, or memory architecture → look for an AgentKVT architecture or AI research objective.
+        - Market / finance (BBC Business, MarketWatch, Dow Jones): if it describes a significant market move, earnings result, or macro event → look for a finance or investment objective.
       PROMPT
 
       [
