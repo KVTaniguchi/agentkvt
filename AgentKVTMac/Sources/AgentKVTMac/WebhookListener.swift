@@ -41,13 +41,13 @@ final class WebhookListener: @unchecked Sendable {
                 print("WebhookListener: listening on port \(self.port)")
             case .failed(let err):
                 self.listener = nil
-                if attempt < 3 {
-                    print("WebhookListener: bind failed (\(err)), retrying in 2s (attempt \(attempt)/3)…")
-                    DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 2) {
+                if attempt < 5 {
+                    print("WebhookListener: bind failed (\(err)), retrying in 3s (attempt \(attempt)/5)…")
+                    DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 3) {
                         self.attemptBind(attempt: attempt + 1)
                     }
                 } else {
-                    print("WebhookListener: could not bind port \(self.port) after 3 attempts: \(err)")
+                    print("WebhookListener: could not bind port \(self.port) after 5 attempts: \(err)")
                 }
             default:
                 break

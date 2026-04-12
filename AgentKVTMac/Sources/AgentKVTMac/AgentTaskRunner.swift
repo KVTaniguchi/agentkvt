@@ -277,7 +277,7 @@ public final class AgentTaskRunner: @unchecked Sendable {
                 toolTranscript.append(self.toolTranscriptLine(prefix: "tool_result", name: name, content: toolResult))
             case .finalResponse(let responseContent):
                 phase = "assistant_final"
-                content = responseContent
+                content = self.assistantResponseContent(responseContent, toolCallCount: 0)
                 toolName = nil
             case .maxRoundsReached:
                 phase = "warning"
