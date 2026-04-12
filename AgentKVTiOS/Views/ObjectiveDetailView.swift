@@ -187,16 +187,23 @@ struct ObjectiveDetailView: View {
 
     @ViewBuilder
     private var activitySectionContent: some View {
-        if promotedReviewFeedback != nil {
-            ObjectiveActivityCard(
-                summary: activitySummary,
-                taskCounts: taskCounts,
-                onlineAgentRegistrationsCount: onlineAgentRegistrationsCount,
-                snapshotCount: snapshots.count,
-                logCount: agentLogs.count,
-                lastLoadedAt: lastLoadedAt,
-                lastFinding: guidanceLastFinding
-            )
+        if let promotedReviewFeedback {
+            VStack(alignment: .leading, spacing: 12) {
+                ObjectiveActivityCard(
+                    summary: activitySummary,
+                    taskCounts: taskCounts,
+                    onlineAgentRegistrationsCount: onlineAgentRegistrationsCount,
+                    snapshotCount: snapshots.count,
+                    logCount: agentLogs.count,
+                    lastLoadedAt: lastLoadedAt,
+                    lastFinding: nil,
+                    showsOperationalMetrics: false,
+                    statusPillLabel: "Review required",
+                    statusPillTint: .teal
+                )
+
+                feedbackCard(for: promotedReviewFeedback, isPromoted: true)
+            }
         } else if !snapshots.isEmpty {
             NavigationLink {
                 GenerativeResultsView(
@@ -281,21 +288,6 @@ struct ObjectiveDetailView: View {
             }
         } header: {
             Text("Research")
-        }
-
-        if let promotedReviewFeedback {
-            Section {
-                Text("AgentKVT is waiting on your decision before it can continue this next pass.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                feedbackCard(for: promotedReviewFeedback, isPromoted: true)
-            } header: {
-                Text("Review Follow-up")
-            } footer: {
-                Text("Approve this next pass to continue, or regenerate or edit it if the direction needs work.")
-            }
         }
 
         if canSubmitFeedback {
@@ -1161,6 +1153,9 @@ private struct ObjectiveActivityCard: View {
     let lastLoadedAt: Date?
     var lastFinding: String? = nil
     var showsDisclosure = false
+    var showsOperationalMetrics = true
+    var statusPillLabel: String? = nil
+    var statusPillTint: Color = .secondary
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -1193,37 +1188,49 @@ private struct ObjectiveActivityCard: View {
                 }
             }
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    if taskCounts.hasAnyTasks {
-                        if taskCounts.proposed > 0 {
-                            ObjectiveMetricChip(count: taskCounts.proposed, label: "proposed", tint: .teal)
+            if let statusPillLabel {
+                Text(statusPillLabel)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(statusPillTint)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(statusPillTint.opacity(0.14))
+                    .clipShape(Capsule())
+            }
+
+            if showsOperationalMetrics {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        if taskCounts.hasAnyTasks {
+                            if taskCounts.proposed > 0 {
+                                ObjectiveMetricChip(count: taskCounts.proposed, label: "proposed", tint: .teal)
+                            }
+                            if taskCounts.pending > 0 {
+                                ObjectiveMetricChip(count: taskCounts.pending, label: "pending", tint: .orange)
+                            }
+                            if taskCounts.inProgress > 0 {
+                                ObjectiveMetricChip(count: taskCounts.inProgress, label: "active", tint: .blue)
+                            }
+                            if taskCounts.completed > 0 {
+                                ObjectiveMetricChip(count: taskCounts.completed, label: "done", tint: .green)
+                            }
+                            if taskCounts.failed > 0 {
+                                ObjectiveMetricChip(count: taskCounts.failed, label: "failed", tint: .red)
+                            }
                         }
-                        if taskCounts.pending > 0 {
-                            ObjectiveMetricChip(count: taskCounts.pending, label: "pending", tint: .orange)
+                        if onlineAgentRegistrationsCount > 0 {
+                            ObjectiveMetricChip(
+                                count: onlineAgentRegistrationsCount,
+                                label: onlineAgentRegistrationsCount == 1 ? "agent online" : "agents online",
+                                tint: .teal
+                            )
                         }
-                        if taskCounts.inProgress > 0 {
-                            ObjectiveMetricChip(count: taskCounts.inProgress, label: "active", tint: .blue)
+                        if snapshotCount > 0 {
+                            ObjectiveMetricChip(count: snapshotCount, label: "snapshots", tint: .secondary)
                         }
-                        if taskCounts.completed > 0 {
-                            ObjectiveMetricChip(count: taskCounts.completed, label: "done", tint: .green)
+                        if logCount > 0 {
+                            ObjectiveMetricChip(count: logCount, label: "logs", tint: .secondary)
                         }
-                        if taskCounts.failed > 0 {
-                            ObjectiveMetricChip(count: taskCounts.failed, label: "failed", tint: .red)
-                        }
-                    }
-                    if onlineAgentRegistrationsCount > 0 {
-                        ObjectiveMetricChip(
-                            count: onlineAgentRegistrationsCount,
-                            label: onlineAgentRegistrationsCount == 1 ? "agent online" : "agents online",
-                            tint: .teal
-                        )
-                    }
-                    if snapshotCount > 0 {
-                        ObjectiveMetricChip(count: snapshotCount, label: "snapshots", tint: .secondary)
-                    }
-                    if logCount > 0 {
-                        ObjectiveMetricChip(count: logCount, label: "logs", tint: .secondary)
                     }
                 }
             }
