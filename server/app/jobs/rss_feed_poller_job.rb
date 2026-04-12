@@ -7,8 +7,11 @@ require "open-uri"
 class RssFeedPollerJob < ApplicationJob
   queue_as :background
 
-  FETCH_TIMEOUT = 15  # seconds per feed
-  SEEN_TTL      = 24.hours
+  FETCH_TIMEOUT  = 15      # seconds per feed
+  SEEN_TTL       = 24.hours
+  MAX_PER_RUN    = 5       # max new items posted per feed per run
+  POST_DELAY     = 1.1     # seconds between Slack posts (rate limit: ~1/sec)
+  MAX_ITEM_AGE   = 7.days  # skip items older than this (mark seen, don't post)
 
   def perform
     channel_id = feed_channel_id
@@ -38,13 +41,19 @@ class RssFeedPollerJob < ApplicationJob
     items = fetch_items(url)
     unseen = items.reject { |item| seen?(item) }
 
-    Rails.logger.info("[RssFeedPollerJob] #{url} — #{items.size} items, #{unseen.size} unseen")
+    # Silently mark and skip items that are too old to be useful
+    old, fresh = unseen.partition { |item| item_age(item) > MAX_ITEM_AGE }
+    old.each { |item| mark_seen(item) }
 
-    unseen.each do |item|
+    to_post = fresh.first(MAX_PER_RUN)
+    Rails.logger.info("[RssFeedPollerJob] #{url} — #{items.size} items, #{unseen.size} unseen, #{old.size} aged out, #{to_post.size} posting")
+
+    to_post.each do |item|
       text = format_item(item)
       next if text.blank?
       Slack::Notifier.call(channel: channel_id, text: text)
       mark_seen(item)
+      sleep(POST_DELAY)
     rescue => e
       Rails.logger.warn("[RssFeedPollerJob] Failed to post item from #{url}: #{e.message}")
     end
@@ -59,6 +68,18 @@ class RssFeedPollerJob < ApplicationJob
   rescue => e
     Rails.logger.warn("[RssFeedPollerJob] Fetch failed for #{url}: #{e.message}")
     []
+  end
+
+  def item_age(item)
+    pub = nil
+    pub ||= item.pubDate   if item.respond_to?(:pubDate)
+    pub ||= item.published if item.respond_to?(:published)
+    pub ||= item.updated   if item.respond_to?(:updated)
+    return 0.seconds unless pub
+    time = pub.respond_to?(:to_time) ? pub.to_time : Time.parse(pub.to_s)
+    Time.current - time
+  rescue
+    0.seconds
   end
 
   def item_guid(item)
