@@ -83,6 +83,14 @@ struct ObjectiveDetailView: View {
         return !g.buttonLabel.isEmpty && g.actionKind != .allDone && g.actionKind != .monitor
     }
 
+    /// Inline "Next step" section — avoids `safeAreaInset` floating over short `List` content (Actions).
+    private var shouldShowOrchestratorSection: Bool {
+        guard showGuidanceButton, let g = guidance else { return false }
+        if g.actionKind == .approvePlan && needsPlanReview { return false }
+        if g.actionKind == .resume { return false }
+        return true
+    }
+
     private var trimmedFeedbackDraft: String {
         feedbackDraft.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -382,15 +390,16 @@ struct ObjectiveDetailView: View {
         }
     }
 
-    @ViewBuilder
-    private var guidanceToolbarButton: some View {
-        if showGuidanceButton, let g = guidance {
-            Button { handleGuidanceAction(g.actionKind) } label: {
-                Label(g.buttonLabel, systemImage: g.buttonIcon)
-                    .font(.body.weight(.semibold))
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(isStartingWork || isDeleting || actionInProgress != nil)
+    private func orchestratorSectionFooter(for g: ObjectiveGuidance) -> String {
+        switch g.actionKind {
+        case .reviewFeedback:
+            return "Review and approve or regenerate this follow-up plan before running more tasks."
+        case .approvePlan:
+            return "Approve or regenerate this task batch when it looks right."
+        case .planNextSteps:
+            return "Continue with a new research pass when you are ready."
+        case .resume, .monitor, .allDone:
+            return ""
         }
     }
 
@@ -566,6 +575,27 @@ struct ObjectiveDetailView: View {
                 activitySectionContent
             }
 
+            if shouldShowOrchestratorSection, let g = guidance {
+                Section {
+                    Button {
+                        handleGuidanceAction(g.actionKind)
+                    } label: {
+                        Label(g.buttonLabel, systemImage: g.buttonIcon)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(runNowProminentTint)
+                    .disabled(isStartingWork || isDeleting || actionInProgress != nil)
+                } header: {
+                    Text("Next step")
+                } footer: {
+                    let footerText = orchestratorSectionFooter(for: g)
+                    if !footerText.isEmpty {
+                        Text(footerText)
+                    }
+                }
+            }
+
             if displayedObjective.status == "pending" || displayedObjective.status == "active" {
                 Section {
                     actionsSectionContent
@@ -589,19 +619,6 @@ struct ObjectiveDetailView: View {
                 Button("Delete", role: .destructive) {
                     showDeleteConfirmation = true
                 }
-            }
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if showGuidanceButton, let g = guidance {
-                Button { handleGuidanceAction(g.actionKind) } label: {
-                    Label(g.buttonLabel, systemImage: g.buttonIcon)
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(isStartingWork || isDeleting || actionInProgress != nil)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .background(.bar)
             }
         }
         .refreshable { await loadDetail(showSpinner: false) }
