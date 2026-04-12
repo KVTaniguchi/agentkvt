@@ -1441,6 +1441,8 @@ struct GenerativeResultsView: View {
     @State private var activityPollTask: Task<Void, Never>?
     @State private var activityPollToken = UUID()
     @State private var activityPollUntil: Date?
+    @State private var isDispatchingNow = false
+    @State private var dispatchError: String?
 
     private var canContinueResearch: Bool {
         objectiveStatus == "pending" || objectiveStatus == "active"
@@ -1610,7 +1612,9 @@ struct GenerativeResultsView: View {
                                 queuedTaskCount: queuedTaskCount,
                                 onlineAgentsCount: onlineAgentsCount,
                                 message: agentActivityMessage,
-                                showsProgress: pendingFeedbackSubmission != nil
+                                showsProgress: pendingFeedbackSubmission != nil,
+                                isDispatching: isDispatchingNow,
+                                onDispatchNow: queuedTaskCount > 0 ? { Task { await dispatchNow() } } : nil
                             )
                         }
 
@@ -1661,7 +1665,9 @@ struct GenerativeResultsView: View {
                                 queuedTaskCount: queuedTaskCount,
                                 onlineAgentsCount: onlineAgentsCount,
                                 message: agentActivityMessage,
-                                showsProgress: pendingFeedbackSubmission != nil
+                                showsProgress: pendingFeedbackSubmission != nil,
+                                isDispatching: isDispatchingNow,
+                                onDispatchNow: queuedTaskCount > 0 ? { Task { await dispatchNow() } } : nil
                             )
                             .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
                             .listRowBackground(Color.clear)
@@ -2070,6 +2076,22 @@ struct GenerativeResultsView: View {
     }
 
     @MainActor
+    private func dispatchNow() async {
+        isDispatchingNow = true
+        dispatchError = nil
+        defer { isDispatchingNow = false }
+        do {
+            _ = try await store.runObjectiveNow(id: objectiveId)
+            await refreshActivityStatus()
+            extendActivityPolling(seconds: 150)
+            reconcileActivityPolling()
+        } catch {
+            dispatchError = error.localizedDescription
+            IOSRuntimeLog.log("[GenerativeResultsView] Dispatch now failed: \(error)")
+        }
+    }
+
+    @MainActor
     private func reconcileFeedbackState(with detail: IOSBackendObjectiveDetail) {
         if let latestFeedbackId = latestFeedbackResult?.objectiveFeedback.id,
            let feedback = detail.objectiveFeedbacks.first(where: { $0.id == latestFeedbackId }) {
@@ -2145,6 +2167,8 @@ private struct ResearchAgentActivityCard: View {
     let onlineAgentsCount: Int
     let message: String
     let showsProgress: Bool
+    var isDispatching: Bool = false
+    var onDispatchNow: (() -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -2163,7 +2187,7 @@ private struct ResearchAgentActivityCard: View {
 
                 Spacer()
 
-                if showsProgress {
+                if showsProgress || isDispatching {
                     ProgressView()
                 }
             }
@@ -2184,6 +2208,21 @@ private struct ResearchAgentActivityCard: View {
                     label: onlineAgentsCount == 1 ? "agent online" : "agents online",
                     tint: onlineAgentsCount > 0 ? .green : .secondary
                 )
+            }
+
+            if let onDispatchNow {
+                Button {
+                    onDispatchNow()
+                } label: {
+                    HStack {
+                        Label("Dispatch queued tasks now", systemImage: "paperplane.circle.fill")
+                        if isDispatching {
+                            ProgressView().padding(.leading, 4)
+                        }
+                    }
+                }
+                .buttonStyle(.bordered)
+                .disabled(isDispatching)
             }
         }
         .padding()

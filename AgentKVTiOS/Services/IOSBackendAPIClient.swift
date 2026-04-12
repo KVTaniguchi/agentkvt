@@ -427,6 +427,118 @@ struct IOSBackendObjectiveDetail: Decodable, Sendable {
     }
 }
 
+struct ObjectiveExecutionHealth: Sendable {
+    let hasInProgressWork: Bool
+    let hasStalledActiveWork: Bool
+    let freshestActiveSilence: TimeInterval?
+    let stalestActiveSilence: TimeInterval?
+    let staleThreshold: TimeInterval
+
+    private static let defaultStaleThreshold: TimeInterval = 15 * 60
+
+    static func assess(
+        objective: IOSBackendObjective,
+        tasks: [IOSBackendTask],
+        agentLogs: [IOSBackendAgentLog],
+        referenceDate: Date = Date()
+    ) -> ObjectiveExecutionHealth {
+        guard objective.status == "active" else {
+            return .init(
+                hasInProgressWork: false,
+                hasStalledActiveWork: false,
+                freshestActiveSilence: nil,
+                stalestActiveSilence: nil,
+                staleThreshold: defaultStaleThreshold
+            )
+        }
+
+        let activeTasks = tasks.filter { $0.status == "in_progress" }
+        guard !activeTasks.isEmpty else {
+            return .init(
+                hasInProgressWork: false,
+                hasStalledActiveWork: false,
+                freshestActiveSilence: nil,
+                stalestActiveSilence: nil,
+                staleThreshold: defaultStaleThreshold
+            )
+        }
+
+        let logsByTaskID = groupedLogsByTaskID(agentLogs)
+        let activeSilences = activeTasks.map { task in
+            max(0, referenceDate.timeIntervalSince(latestActivityDate(for: task, logsByTaskID: logsByTaskID)))
+        }
+        let staleThreshold = staleThreshold(tasks: tasks, logsByTaskID: logsByTaskID)
+        let freshestActiveSilence = activeSilences.min()
+        let stalestActiveSilence = activeSilences.max()
+
+        return .init(
+            hasInProgressWork: true,
+            hasStalledActiveWork: (freshestActiveSilence ?? 0) >= staleThreshold,
+            freshestActiveSilence: freshestActiveSilence,
+            stalestActiveSilence: stalestActiveSilence,
+            staleThreshold: staleThreshold
+        )
+    }
+
+    private static func groupedLogsByTaskID(_ agentLogs: [IOSBackendAgentLog]) -> [UUID: [IOSBackendAgentLog]] {
+        var grouped: [UUID: [IOSBackendAgentLog]] = [:]
+        for log in agentLogs {
+            guard let taskID = log.metadataJson["task_id"]?.stringValue.flatMap(UUID.init(uuidString:)) else {
+                continue
+            }
+            grouped[taskID, default: []].append(log)
+        }
+        return grouped
+    }
+
+    private static func latestActivityDate(
+        for task: IOSBackendTask,
+        logsByTaskID: [UUID: [IOSBackendAgentLog]]
+    ) -> Date {
+        (logsByTaskID[task.id] ?? []).map(\.timestamp).max() ?? task.updatedAt
+    }
+
+    private static func taskStartDate(
+        for task: IOSBackendTask,
+        logsByTaskID: [UUID: [IOSBackendAgentLog]]
+    ) -> Date {
+        let logs = (logsByTaskID[task.id] ?? []).sorted { $0.timestamp < $1.timestamp }
+        return logs.first(where: { $0.phase == "worker_claim" })?.timestamp
+            ?? logs.first?.timestamp
+            ?? task.createdAt
+    }
+
+    private static func staleThreshold(
+        tasks: [IOSBackendTask],
+        logsByTaskID: [UUID: [IOSBackendAgentLog]]
+    ) -> TimeInterval {
+        let recentCompletedDurations = tasks
+            .filter { $0.status == "completed" }
+            .sorted { $0.updatedAt > $1.updatedAt }
+            .prefix(5)
+            .compactMap { task -> TimeInterval? in
+                let duration = task.updatedAt.timeIntervalSince(taskStartDate(for: task, logsByTaskID: logsByTaskID))
+                guard duration >= 30, duration <= 60 * 90 else { return nil }
+                return duration
+            }
+
+        guard !recentCompletedDurations.isEmpty else {
+            return defaultStaleThreshold
+        }
+
+        return max(defaultStaleThreshold, median(recentCompletedDurations) * 3)
+    }
+
+    private static func median(_ values: [TimeInterval]) -> TimeInterval {
+        let sorted = values.sorted()
+        let middle = sorted.count / 2
+        if sorted.count.isMultiple(of: 2) {
+            return (sorted[middle - 1] + sorted[middle]) / 2
+        }
+        return sorted[middle]
+    }
+}
+
 // MARK: - Objective guidance (client-side)
 
 struct ObjectiveGuidance {

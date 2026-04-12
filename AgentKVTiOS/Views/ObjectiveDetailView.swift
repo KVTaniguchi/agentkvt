@@ -99,15 +99,34 @@ struct ObjectiveDetailView: View {
             .sorted { $0.updatedAt > $1.updatedAt }
     }
 
+    private var executionHealth: ObjectiveExecutionHealth {
+        ObjectiveExecutionHealth.assess(
+            objective: displayedObjective,
+            tasks: tasks,
+            agentLogs: agentLogs
+        )
+    }
+
+    private var hasInProgressWork: Bool {
+        executionHealth.hasInProgressWork
+    }
+
+    private var hasStaleActiveWork: Bool {
+        executionHealth.hasStalledActiveWork
+    }
+
     private var isActivelyRunningWork: Bool {
-        displayedObjective.status == "active" && taskCounts.inProgress > 0
+        hasInProgressWork && !hasStaleActiveWork
     }
 
     private var canDispatchQueuedTasksWhileActive: Bool {
-        displayedObjective.status == "active" && taskCounts.inProgress > 0 && taskCounts.pending > 0
+        isActivelyRunningWork && taskCounts.pending > 0
     }
 
     private var actionsSectionTitle: String {
+        if hasStaleActiveWork {
+            return "Recovery"
+        }
         if isActivelyRunningWork {
             return canDispatchQueuedTasksWhileActive ? "Manage Work" : "Recovery"
         }
@@ -117,6 +136,44 @@ struct ObjectiveDetailView: View {
     private var nextCheckInEstimate: ObjectiveNextCheckInEstimate? {
         guard isActivelyRunningWork else { return nil }
         return estimateNextCheckIn()
+    }
+
+    private var activeWorkStatusPillLabel: String {
+        hasStaleActiveWork ? "Needs attention" : "No action needed"
+    }
+
+    private var activeWorkStatusPillTint: Color {
+        hasStaleActiveWork ? .orange : .blue
+    }
+
+    private var activeWorkActionLabel: String {
+        hasStaleActiveWork ? "Work may be stalled" : "No action needed right now"
+    }
+
+    private var activeWorkActionIcon: String {
+        hasStaleActiveWork ? "exclamationmark.triangle.fill" : "checkmark.circle.fill"
+    }
+
+    private var activeWorkActionTint: Color {
+        hasStaleActiveWork ? .orange : .green
+    }
+
+    private var activeWorkActionMessage: String {
+        if hasStaleActiveWork {
+            let pendingMessage = taskCounts.pending > 0
+                ? " \(taskCounts.pending) queued task(s) are waiting behind it."
+                : ""
+            let agentHint = onlineAgentRegistrationsCount == 0
+                ? " The API also reports no online Mac agent right now."
+                : ""
+            return "The active task has not reported progress for about \(formattedStaleDuration(executionHealth.freshestActiveSilence)).\(pendingMessage) Use Reset stuck tasks & run below to requeue it and unblock the remaining research.\(agentHint)"
+        }
+
+        if canDispatchQueuedTasksWhileActive {
+            return "\(taskCounts.inProgress) task(s) are already running. Use the button below only if you want to nudge the remaining queued task(s) onto the Mac."
+        }
+
+        return "\(taskCounts.inProgress) task(s) are already running on the Mac. Use the controls below only if progress looks stuck."
     }
 
     private var guidanceLastFinding: String? { guidance?.lastFinding }
@@ -237,7 +294,7 @@ struct ObjectiveDetailView: View {
 
                 feedbackCard(for: promotedReviewFeedback, isPromoted: true)
             }
-        } else if isActivelyRunningWork {
+        } else if hasInProgressWork {
             VStack(alignment: .leading, spacing: 12) {
                 ObjectiveActivityCard(
                     summary: activitySummary,
@@ -249,8 +306,8 @@ struct ObjectiveDetailView: View {
                     lastFinding: nil,
                     showsOperationalMetrics: false,
                     nextCheckIn: nextCheckInEstimate,
-                    statusPillLabel: "No action needed",
-                    statusPillTint: .blue
+                    statusPillLabel: activeWorkStatusPillLabel,
+                    statusPillTint: activeWorkStatusPillTint
                 )
 
                 if !activeTasks.isEmpty {
@@ -462,17 +519,13 @@ struct ObjectiveDetailView: View {
             }
             .disabled(isStartingWork || isDeleting)
         } else {
-            if isActivelyRunningWork {
+            if hasInProgressWork {
                 VStack(alignment: .leading, spacing: 8) {
-                    Label("No action needed right now", systemImage: "checkmark.circle.fill")
+                    Label(activeWorkActionLabel, systemImage: activeWorkActionIcon)
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.green)
+                        .foregroundStyle(activeWorkActionTint)
 
-                    Text(
-                        canDispatchQueuedTasksWhileActive
-                        ? "\(taskCounts.inProgress) task(s) are already running. Use the button below only if you want to nudge the remaining queued task(s) onto the Mac."
-                        : "\(taskCounts.inProgress) task(s) are already running on the Mac. Use the controls below only if progress looks stuck."
-                    )
+                    Text(activeWorkActionMessage)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -510,19 +563,37 @@ struct ObjectiveDetailView: View {
                 .disabled(isStartingWork || isDeleting)
             }
 
-            if displayedObjective.status == "active", taskCounts.inProgress > 0 {
-                Button {
-                    actionInProgress = "resetTasks"
-                    Task { await resetStuckTasksAndRun() }
-                } label: {
-                    HStack {
-                        Label("Reset stuck tasks & run", systemImage: "arrow.uturn.backward.circle")
-                        if actionInProgress == "resetTasks" {
-                            ProgressView().padding(.leading, 4)
+            if hasInProgressWork {
+                if hasStaleActiveWork {
+                    Button {
+                        actionInProgress = "resetTasks"
+                        Task { await resetStuckTasksAndRun() }
+                    } label: {
+                        HStack {
+                            Label("Reset stuck tasks & run", systemImage: "arrow.uturn.backward.circle")
+                            if actionInProgress == "resetTasks" {
+                                ProgressView().padding(.leading, 4)
+                            }
                         }
                     }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.orange)
+                    .disabled(isStartingWork || isDeleting)
+                } else {
+                    Button {
+                        actionInProgress = "resetTasks"
+                        Task { await resetStuckTasksAndRun() }
+                    } label: {
+                        HStack {
+                            Label("Reset stuck tasks & run", systemImage: "arrow.uturn.backward.circle")
+                            if actionInProgress == "resetTasks" {
+                                ProgressView().padding(.leading, 4)
+                            }
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isStartingWork || isDeleting)
                 }
-                .disabled(isStartingWork || isDeleting)
             }
 
             if displayedObjective.status == "active" {
@@ -555,6 +626,10 @@ struct ObjectiveDetailView: View {
     }
 
     private var actionsFooter: String {
+        if hasStaleActiveWork {
+            return "The active task has been quiet for about \(formattedStaleDuration(executionHealth.freshestActiveSilence)). Reset stuck tasks & run moves in-progress work back to pending and asks the Mac agent to pick it up again."
+        }
+
         if needsPlanReview {
             return "Approve the proposed tasks to let the Mac agent begin. If the plan misses the mark, edit the prompt and regenerate it first."
         }
@@ -649,7 +724,21 @@ struct ObjectiveDetailView: View {
                     tint: .teal
                 )
             }
-            if taskCounts.inProgress > 0 {
+            if hasInProgressWork {
+                if hasStaleActiveWork {
+                    let queuedMessage = taskCounts.pending > 0
+                        ? " \(taskCounts.pending) queued task(s) are still waiting behind it."
+                        : ""
+                    let agentHint = onlineAgentRegistrationsCount == 0
+                        ? " The API also reports no online Mac agent right now."
+                        : ""
+                    return ObjectiveActivitySummary(
+                        title: "Work looks stalled",
+                        message: "The current in-progress task has not reported progress for about \(formattedStaleDuration(executionHealth.freshestActiveSilence)).\(queuedMessage) Use Reset stuck tasks & run below to requeue it and unblock the remaining research.\(agentHint)",
+                        systemImage: "exclamationmark.triangle.fill",
+                        tint: .orange
+                    )
+                }
                 let completedMessage = taskCounts.completed > 0
                     ? " \(taskCounts.completed) task(s) are already done."
                     : ""
@@ -1285,6 +1374,24 @@ struct ObjectiveDetailView: View {
             return "\(upperText) hr"
         }
         return "\(lowerText)-\(upperText) hr"
+    }
+
+    private func formattedStaleDuration(_ interval: TimeInterval?) -> String {
+        guard let interval else { return "a while" }
+
+        let roundedMinutes = max(1, Int((interval / 60).rounded()))
+        if roundedMinutes < 60 {
+            return roundedMinutes == 1 ? "1 min" : "\(roundedMinutes) min"
+        }
+
+        let hours = roundedMinutes / 60
+        let minutes = roundedMinutes % 60
+        if minutes == 0 {
+            return hours == 1 ? "1 hr" : "\(hours) hr"
+        }
+
+        let hourPart = hours == 1 ? "1 hr" : "\(hours) hr"
+        return "\(hourPart) \(minutes) min"
     }
 
     private func liveTaskMeta(for task: IOSBackendTask) -> String {
