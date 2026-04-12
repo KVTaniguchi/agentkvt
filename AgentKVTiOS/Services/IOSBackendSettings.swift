@@ -95,6 +95,10 @@ private struct IOSBackendValueResolver {
             return value.trimmingCharacters(in: .whitespacesAndNewlines)
         }
 
+        if let value = UserDefaults.standard.string(forKey: key), !value.isEmpty {
+            return value.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
         switch configValues[key] {
         case let string as String:
             return string.trimmingCharacters(in: .whitespacesAndNewlines)

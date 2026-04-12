@@ -9,7 +9,7 @@ struct RootView: View {
     @Environment(ActionsStore.self) private var actionsStore
     @State private var bootstrapState: BackendBootstrapState = .idle
 
-    private let backendSync = IOSBackendSyncService()
+    @State private var backendSync = IOSBackendSyncService()
 
     var body: some View {
         Group {
@@ -27,7 +27,12 @@ struct RootView: View {
                 BackendBootstrapErrorView(
                     backendURL: backendSync.settings.apiBaseURL?.absoluteString,
                     message: message,
-                    retry: { Task { await bootstrapFromBackend(force: true) } }
+                    retry: { Task { await bootstrapFromBackend(force: true) } },
+                    onSaveURL: { newURL in
+                        UserDefaults.standard.set(newURL, forKey: "AGENTKVT_API_BASE_URL")
+                        backendSync = IOSBackendSyncService()
+                        Task { await bootstrapFromBackend(force: true) }
+                    }
                 )
             case .onboarding:
                 FamilyOnboardingView(profileStore: profileStore)
@@ -111,6 +116,9 @@ private struct BackendBootstrapErrorView: View {
     let backendURL: String?
     let message: String
     let retry: () -> Void
+    let onSaveURL: (String) -> Void
+
+    @State private var urlInput: String = ""
 
     var body: some View {
         NavigationStack {
@@ -133,15 +141,36 @@ private struct BackendBootstrapErrorView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
 
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Server URL")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    TextField("http://192.168.1.x:3000", text: $urlInput)
+                        .textFieldStyle(.roundedBorder)
+                        .keyboardType(.URL)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                    Button("Save & Connect") {
+                        let trimmed = urlInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !trimmed.isEmpty else { return }
+                        onSaveURL(trimmed)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(urlInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+
                 Button("Retry") {
                     retry()
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.bordered)
 
                 Spacer()
             }
             .padding()
             .navigationTitle("Welcome")
+            .onAppear {
+                urlInput = backendURL ?? ""
+            }
         }
     }
 }
