@@ -63,8 +63,19 @@ struct ObjectiveDetailView: View {
         objectiveFeedbacks.contains { $0.status == "review_required" }
     }
 
+    private var promotedReviewFeedback: IOSBackendObjectiveFeedback? {
+        objectiveFeedbacks
+            .filter { $0.status == "review_required" }
+            .sorted { $0.createdAt > $1.createdAt }
+            .first
+    }
+
     private var followUpLoopFeedbacks: [IOSBackendObjectiveFeedback] {
         objectiveFeedbacks.sorted { $0.createdAt > $1.createdAt }
+    }
+
+    private var followUpHistoryFeedbacks: [IOSBackendObjectiveFeedback] {
+        followUpLoopFeedbacks.filter { $0.id != promotedReviewFeedback?.id }
     }
 
     private var hasApprovedPlanWaitingToStart: Bool {
@@ -86,6 +97,7 @@ struct ObjectiveDetailView: View {
     /// Inline "Next step" section — avoids `safeAreaInset` floating over short `List` content (Actions).
     private var shouldShowOrchestratorSection: Bool {
         guard showGuidanceButton, let g = guidance else { return false }
+        if promotedReviewFeedback != nil { return false }
         if g.actionKind == .approvePlan && needsPlanReview { return false }
         if g.actionKind == .resume { return false }
         return true
@@ -100,7 +112,8 @@ struct ObjectiveDetailView: View {
     }
 
     private var canSubmitFeedback: Bool {
-        shouldShowFeedbackLoop && (displayedObjective.status == "pending" || displayedObjective.status == "active")
+        guard promotedReviewFeedback == nil else { return false }
+        return shouldShowFeedbackLoop && (displayedObjective.status == "pending" || displayedObjective.status == "active")
     }
 
     private var feedbackTargets: [ObjectiveFeedbackTarget] {
@@ -174,7 +187,17 @@ struct ObjectiveDetailView: View {
 
     @ViewBuilder
     private var activitySectionContent: some View {
-        if !snapshots.isEmpty {
+        if promotedReviewFeedback != nil {
+            ObjectiveActivityCard(
+                summary: activitySummary,
+                taskCounts: taskCounts,
+                onlineAgentRegistrationsCount: onlineAgentRegistrationsCount,
+                snapshotCount: snapshots.count,
+                logCount: agentLogs.count,
+                lastLoadedAt: lastLoadedAt,
+                lastFinding: guidanceLastFinding
+            )
+        } else if !snapshots.isEmpty {
             NavigationLink {
                 GenerativeResultsView(
                     objectiveId: displayedObjective.id,
@@ -260,6 +283,21 @@ struct ObjectiveDetailView: View {
             Text("Research")
         }
 
+        if let promotedReviewFeedback {
+            Section {
+                Text("AgentKVT is waiting on your decision before it can continue this next pass.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                feedbackCard(for: promotedReviewFeedback, isPromoted: true)
+            } header: {
+                Text("Review Follow-up")
+            } footer: {
+                Text("Approve this next pass to continue, or regenerate or edit it if the direction needs work.")
+            }
+        }
+
         if canSubmitFeedback {
             Section {
                 Picker("Intent", selection: $selectedFeedbackKind) {
@@ -301,9 +339,9 @@ struct ObjectiveDetailView: View {
             }
         }
 
-        if !followUpLoopFeedbacks.isEmpty {
+        if !followUpHistoryFeedbacks.isEmpty {
             Section("Follow-up Loop") {
-                ForEach(followUpLoopFeedbacks) { feedback in
+                ForEach(followUpHistoryFeedbacks) { feedback in
                     feedbackCard(for: feedback)
                 }
             }
@@ -444,19 +482,19 @@ struct ObjectiveDetailView: View {
 
         switch displayedObjective.status {
         case "pending":
+            if hasFollowUpPlanReview {
+                return ObjectiveActivitySummary(
+                    title: "Next step: Review follow-up",
+                    message: "AgentKVT has prepared a next pass based on your feedback. Review it before more work begins.",
+                    systemImage: "arrow.triangle.branch",
+                    tint: .teal
+                )
+            }
             if taskCounts.initialProposed > 0 {
                 return ObjectiveActivitySummary(
                     title: "Plan ready for review",
                     message: "\(taskCounts.initialProposed) proposed task(s) are ready. Approve the plan when it looks right, or edit the prompt and regenerate it first.",
                     systemImage: "checklist.checked",
-                    tint: .teal
-                )
-            }
-            if hasFollowUpPlanReview {
-                return ObjectiveActivitySummary(
-                    title: "Follow-up plan ready",
-                    message: "A follow-up batch is waiting for review. Use the Follow-up Loop below to approve, regenerate, or edit it before more work starts.",
-                    systemImage: "arrow.triangle.branch",
                     tint: .teal
                 )
             }
@@ -475,19 +513,19 @@ struct ObjectiveDetailView: View {
                 tint: .orange
             )
         case "active":
+            if hasFollowUpPlanReview {
+                return ObjectiveActivitySummary(
+                    title: "Next step: Review follow-up",
+                    message: "AgentKVT has prepared a next pass based on your feedback. Review it before more work continues.",
+                    systemImage: "arrow.triangle.branch",
+                    tint: .teal
+                )
+            }
             if taskCounts.initialProposed > 0 {
                 return ObjectiveActivitySummary(
                     title: "Plan ready for review",
                     message: "\(taskCounts.initialProposed) proposed task(s) are ready. Approve the plan to dispatch work, or edit the prompt and regenerate the task breakdown.",
                     systemImage: "checklist.checked",
-                    tint: .teal
-                )
-            }
-            if hasFollowUpPlanReview {
-                return ObjectiveActivitySummary(
-                    title: "Follow-up plan ready",
-                    message: "A follow-up batch is waiting for review. Use the Follow-up Loop below to approve, regenerate, or edit it before AgentKVT continues.",
-                    systemImage: "arrow.triangle.branch",
                     tint: .teal
                 )
             }
@@ -596,7 +634,7 @@ struct ObjectiveDetailView: View {
                 }
             }
 
-            if displayedObjective.status == "pending" || displayedObjective.status == "active" {
+            if (displayedObjective.status == "pending" || displayedObjective.status == "active") && promotedReviewFeedback == nil {
                 Section {
                     actionsSectionContent
                 } header: {
@@ -1014,7 +1052,7 @@ struct ObjectiveDetailView: View {
     }
 
     @ViewBuilder
-    private func feedbackCard(for feedback: IOSBackendObjectiveFeedback) -> some View {
+    private func feedbackCard(for feedback: IOSBackendObjectiveFeedback, isPromoted: Bool = false) -> some View {
         let isReviewRequired = feedback.status == "review_required"
 
         ObjectiveFeedbackPlanCard(
@@ -1025,7 +1063,7 @@ struct ObjectiveDetailView: View {
                 followUpTasks: followUpTasks(for: feedback)
             ),
             objectiveStatus: displayedObjective.status,
-            isHighlighted: highlightedFeedbackID == feedback.id,
+            isHighlighted: isPromoted || highlightedFeedbackID == feedback.id,
             isWorking: feedbackPlanActionInProgressID == feedback.id,
             onApprove: isReviewRequired ? {
                 Task { await approveObjectiveFeedbackPlan(feedback) }
