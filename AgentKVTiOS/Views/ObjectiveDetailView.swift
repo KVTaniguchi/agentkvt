@@ -25,6 +25,7 @@ struct ObjectiveDetailView: View {
     @State private var highlightedFeedbackID: UUID?
     @State private var editingFeedbackContext: ObjectiveFeedbackComposerContext?
     @State private var feedbackPlanActionInProgressID: UUID?
+    @State private var guidance: ObjectiveGuidance?
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
@@ -72,6 +73,14 @@ struct ObjectiveDetailView: View {
 
     private var onlineAgentRegistrationsCount: Int {
         detail?.onlineAgentRegistrationsCount ?? 0
+    }
+
+    private var guidanceLastFinding: String? { guidance?.lastFinding }
+    private var guidanceIdleReason: String? { guidance?.idleReason }
+    private var isIdleResumeState: Bool { guidance?.actionKind == .resume }
+    private var showGuidanceButton: Bool {
+        guard let g = guidance else { return false }
+        return !g.buttonLabel.isEmpty && g.actionKind != .allDone && g.actionKind != .monitor
     }
 
     private var trimmedFeedbackDraft: String {
@@ -139,6 +148,249 @@ struct ObjectiveDetailView: View {
             return "Run now"
         default:
             return "Run now"
+        }
+    }
+
+    @ViewBuilder
+    private var agentLogsSectionContent: some View {
+        if !agentLogs.isEmpty {
+            ForEach(Array(agentLogs.prefix(8)), id: \.id) { (log: IOSBackendAgentLog) in
+                ObjectiveAgentLogRow(log: log)
+            }
+        } else if !isLoading {
+            Text("No objective-scoped agent logs yet.")
+                .foregroundStyle(.secondary)
+                .font(.subheadline)
+        }
+    }
+
+    @ViewBuilder
+    private var activitySectionContent: some View {
+        if !snapshots.isEmpty {
+            NavigationLink {
+                GenerativeResultsView(
+                    objectiveId: displayedObjective.id,
+                    objectiveGoal: displayedObjective.goal,
+                    objectiveStatus: displayedObjective.status,
+                    tasks: tasks,
+                    snapshots: snapshots,
+                    onlineAgentRegistrationsCount: onlineAgentRegistrationsCount,
+                    onFeedbackMutated: {
+                        Task { await loadDetail(showSpinner: false) }
+                    }
+                )
+            } label: {
+                ObjectiveActivityCard(
+                    summary: activitySummary,
+                    taskCounts: taskCounts,
+                    onlineAgentRegistrationsCount: onlineAgentRegistrationsCount,
+                    snapshotCount: snapshots.count,
+                    logCount: agentLogs.count,
+                    lastLoadedAt: lastLoadedAt,
+                    lastFinding: guidanceLastFinding,
+                    showsDisclosure: true
+                )
+            }
+        } else if isIdleResumeState {
+            ObjectiveIdleEmptyState(idleReason: guidanceIdleReason)
+        } else {
+            ObjectiveActivityCard(
+                summary: activitySummary,
+                taskCounts: taskCounts,
+                onlineAgentRegistrationsCount: onlineAgentRegistrationsCount,
+                snapshotCount: snapshots.count,
+                logCount: agentLogs.count,
+                lastLoadedAt: lastLoadedAt,
+                lastFinding: guidanceLastFinding
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var lowerSectionsContent: some View {
+        Section {
+            Text(displayedObjective.goal)
+                .font(.body)
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Edit prompt") {
+                showEditPromptSheet = true
+            }
+        } header: {
+            Text("Prompt")
+        } footer: {
+            if needsPlanReview {
+                Text("If you change the prompt, regenerate the plan so the proposed task list matches the updated objective.")
+            }
+        }
+
+        Section {
+            if !tasks.isEmpty {
+                ForEach(tasks) { task in
+                    TaskRow(task: task)
+                }
+            } else if !isLoading {
+                Text("No tasks yet.")
+                    .foregroundStyle(.secondary)
+                    .font(.subheadline)
+            }
+        } header: {
+            Text("Tasks")
+        }
+
+        Section {
+            if !snapshots.isEmpty {
+                ForEach(snapshots) { snapshot in
+                    SnapshotRow(snapshot: snapshot)
+                }
+            } else if !isLoading {
+                Text("No research data yet.")
+                    .foregroundStyle(.secondary)
+                    .font(.subheadline)
+            }
+        } header: {
+            Text("Research")
+        }
+
+        if canSubmitFeedback {
+            Section {
+                Picker("Intent", selection: $selectedFeedbackKind) {
+                    ForEach(ObjectiveFeedbackKindOption.allCases) { option in
+                        Text(option.label).tag(option.rawValue)
+                    }
+                }
+                .pickerStyle(.menu)
+
+                if feedbackTargets.count > 1 {
+                    Picker("Focus", selection: $selectedFeedbackTargetID) {
+                        ForEach(feedbackTargets) { target in
+                            Text(target.label).tag(target.id)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                }
+
+                TextField("Tell AgentKVT what to research next...", text: $feedbackDraft, axis: .vertical)
+                    .lineLimit(3...6)
+
+                Button {
+                    Task { await submitObjectiveFeedback() }
+                } label: {
+                    HStack {
+                        Label("Create Next Pass", systemImage: "arrow.triangle.branch")
+                        if isSubmittingFeedback {
+                            ProgressView().padding(.leading, 4)
+                        }
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(runNowProminentTint)
+                .disabled(trimmedFeedbackDraft.isEmpty || isSubmittingFeedback || isStartingWork || isDeleting)
+            } header: {
+                Text("Continue Research")
+            } footer: {
+                Text("Submitting feedback creates the next pass for this objective. Review stays visible below, and active objectives can queue approved work automatically.")
+            }
+        }
+
+        if !followUpLoopFeedbacks.isEmpty {
+            Section("Follow-up Loop") {
+                ForEach(followUpLoopFeedbacks) { feedback in
+                    feedbackCard(for: feedback)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var actionsSectionContent: some View {
+        if needsPlanReview {
+            Button {
+                actionInProgress = "approvePlan"
+                Task { await approveObjectivePlan() }
+            } label: {
+                HStack {
+                    Label(
+                        displayedObjective.status == "active" ? "Approve plan & start work" : "Approve plan",
+                        systemImage: "checkmark.circle.fill"
+                    )
+                    if actionInProgress == "approvePlan" || isStartingWork && actionInProgress == nil {
+                        ProgressView().padding(.leading, 4)
+                    }
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(runNowProminentTint)
+            .disabled(isStartingWork || isDeleting)
+
+            Button {
+                actionInProgress = "regeneratePlan"
+                Task { await regenerateObjectivePlan() }
+            } label: {
+                HStack {
+                    Label("Regenerate plan", systemImage: "arrow.trianglehead.clockwise")
+                    if actionInProgress == "regeneratePlan" {
+                        ProgressView().padding(.leading, 4)
+                    }
+                }
+            }
+            .disabled(isStartingWork || isDeleting)
+        } else {
+            Button {
+                actionInProgress = "runNow"
+                Task { await runObjectiveNow() }
+            } label: {
+                HStack {
+                    Label(runNowLabel, systemImage: "play.circle.fill")
+                    if actionInProgress == "runNow" {
+                        ProgressView().padding(.leading, 4)
+                    }
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(runNowProminentTint)
+            .disabled(isStartingWork || isDeleting)
+
+            if displayedObjective.status == "active", taskCounts.inProgress > 0 {
+                Button {
+                    actionInProgress = "resetTasks"
+                    Task { await resetStuckTasksAndRun() }
+                } label: {
+                    HStack {
+                        Label("Reset stuck tasks & run", systemImage: "arrow.uturn.backward.circle")
+                        if actionInProgress == "resetTasks" {
+                            ProgressView().padding(.leading, 4)
+                        }
+                    }
+                }
+                .disabled(isStartingWork || isDeleting)
+            }
+
+            if displayedObjective.status == "active" {
+                Button(role: .destructive) {
+                    showRerunAllConfirmation = true
+                } label: {
+                    HStack {
+                        Label("Rerun all tasks", systemImage: "arrow.clockwise.circle")
+                        if actionInProgress == "rerunTasks" {
+                            ProgressView().padding(.leading, 4)
+                        }
+                    }
+                }
+                .disabled(isStartingWork || isDeleting)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var guidanceToolbarButton: some View {
+        if showGuidanceButton, let g = guidance {
+            Button { handleGuidanceAction(g.actionKind) } label: {
+                Label(g.buttonLabel, systemImage: g.buttonIcon)
+                    .font(.body.weight(.semibold))
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(isStartingWork || isDeleting || actionInProgress != nil)
         }
     }
 
@@ -308,123 +560,15 @@ struct ObjectiveDetailView: View {
         }
     }
 
-    var body: some View {
+    private var listView: some View {
         List {
             Section("Activity") {
-                if !snapshots.isEmpty {
-                    NavigationLink {
-                        GenerativeResultsView(
-                            objectiveId: displayedObjective.id,
-                            objectiveGoal: displayedObjective.goal,
-                            objectiveStatus: displayedObjective.status,
-                            tasks: tasks,
-                            snapshots: snapshots,
-                            onlineAgentRegistrationsCount: onlineAgentRegistrationsCount,
-                            onFeedbackMutated: {
-                                Task { await loadDetail(showSpinner: false) }
-                            }
-                        )
-                    } label: {
-                        ObjectiveActivityCard(
-                            summary: activitySummary,
-                            taskCounts: taskCounts,
-                            onlineAgentRegistrationsCount: onlineAgentRegistrationsCount,
-                            snapshotCount: snapshots.count,
-                            logCount: agentLogs.count,
-                            lastLoadedAt: lastLoadedAt,
-                            showsDisclosure: true
-                        )
-                    }
-                } else {
-                    ObjectiveActivityCard(
-                        summary: activitySummary,
-                        taskCounts: taskCounts,
-                        onlineAgentRegistrationsCount: onlineAgentRegistrationsCount,
-                        snapshotCount: snapshots.count,
-                        logCount: agentLogs.count,
-                        lastLoadedAt: lastLoadedAt
-                    )
-                }
+                activitySectionContent
             }
 
             if displayedObjective.status == "pending" || displayedObjective.status == "active" {
                 Section {
-                    if needsPlanReview {
-                        Button {
-                            actionInProgress = "approvePlan"
-                            Task { await approveObjectivePlan() }
-                        } label: {
-                            HStack {
-                                Label(
-                                    displayedObjective.status == "active" ? "Approve plan & start work" : "Approve plan",
-                                    systemImage: "checkmark.circle.fill"
-                                )
-                                if actionInProgress == "approvePlan" || isStartingWork && actionInProgress == nil {
-                                    ProgressView().padding(.leading, 4)
-                                }
-                            }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(runNowProminentTint)
-                        .disabled(isStartingWork || isDeleting)
-                        
-                        Button {
-                            actionInProgress = "regeneratePlan"
-                            Task { await regenerateObjectivePlan() }
-                        } label: {
-                            HStack {
-                                Label("Regenerate plan", systemImage: "arrow.trianglehead.clockwise")
-                                if actionInProgress == "regeneratePlan" {
-                                    ProgressView().padding(.leading, 4)
-                                }
-                            }
-                        }
-                        .disabled(isStartingWork || isDeleting)
-                    } else {
-                        Button {
-                            actionInProgress = "runNow"
-                            Task { await runObjectiveNow() }
-                        } label: {
-                            HStack {
-                                Label(runNowLabel, systemImage: "play.circle.fill")
-                                if actionInProgress == "runNow" {
-                                    ProgressView().padding(.leading, 4)
-                                }
-                            }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(runNowProminentTint)
-                        .disabled(isStartingWork || isDeleting)
-
-                        if displayedObjective.status == "active", taskCounts.inProgress > 0 {
-                            Button {
-                                actionInProgress = "resetTasks"
-                                Task { await resetStuckTasksAndRun() }
-                            } label: {
-                                HStack {
-                                    Label("Reset stuck tasks & run", systemImage: "arrow.uturn.backward.circle")
-                                    if actionInProgress == "resetTasks" {
-                                        ProgressView().padding(.leading, 4)
-                                    }
-                                }
-                            }
-                            .disabled(isStartingWork || isDeleting)
-                        }
-
-                        if displayedObjective.status == "active" {
-                            Button(role: .destructive) {
-                                showRerunAllConfirmation = true
-                            } label: {
-                                HStack {
-                                    Label("Rerun all tasks", systemImage: "arrow.clockwise.circle")
-                                    if actionInProgress == "rerunTasks" {
-                                        ProgressView().padding(.leading, 4)
-                                    }
-                                }
-                            }
-                            .disabled(isStartingWork || isDeleting)
-                        }
-                    }
+                    actionsSectionContent
                 } header: {
                     Text("Actions")
                 } footer: {
@@ -432,111 +576,10 @@ struct ObjectiveDetailView: View {
                 }
             }
 
-            Section {
-                Text(displayedObjective.goal)
-                    .font(.body)
-                    .foregroundStyle(.primary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Button("Edit prompt") {
-                    showEditPromptSheet = true
-                }
-            } header: {
-                Text("Prompt")
-            } footer: {
-                if needsPlanReview {
-                    Text("If you change the prompt, regenerate the plan so the proposed task list matches the updated objective.")
-                }
-            }
-
-            // Tasks
-            Section {
-                if !tasks.isEmpty {
-                    ForEach(tasks) { task in
-                        TaskRow(task: task)
-                    }
-                } else if !isLoading {
-                    Text("No tasks yet.")
-                        .foregroundStyle(.secondary)
-                        .font(.subheadline)
-                }
-            } header: {
-                Text("Tasks")
-            }
-
-            // Research Snapshots
-            Section {
-                if !snapshots.isEmpty {
-                    ForEach(snapshots) { snapshot in
-                        SnapshotRow(snapshot: snapshot)
-                    }
-                } else if !isLoading {
-                    Text("No research data yet.")
-                        .foregroundStyle(.secondary)
-                        .font(.subheadline)
-                }
-            } header: {
-                Text("Research")
-            }
-
-            if canSubmitFeedback {
-                Section {
-                    Picker("Intent", selection: $selectedFeedbackKind) {
-                        ForEach(ObjectiveFeedbackKindOption.allCases) { option in
-                            Text(option.label).tag(option.rawValue)
-                        }
-                    }
-                    .pickerStyle(.menu)
-
-                    if feedbackTargets.count > 1 {
-                        Picker("Focus", selection: $selectedFeedbackTargetID) {
-                            ForEach(feedbackTargets) { target in
-                                Text(target.label).tag(target.id)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                    }
-
-                    TextField("Tell AgentKVT what to research next...", text: $feedbackDraft, axis: .vertical)
-                        .lineLimit(3...6)
-
-                    Button {
-                        Task { await submitObjectiveFeedback() }
-                    } label: {
-                        HStack {
-                            Label("Create Next Pass", systemImage: "arrow.triangle.branch")
-                            if isSubmittingFeedback {
-                                ProgressView().padding(.leading, 4)
-                            }
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(runNowProminentTint)
-                    .disabled(trimmedFeedbackDraft.isEmpty || isSubmittingFeedback || isStartingWork || isDeleting)
-                } header: {
-                    Text("Continue Research")
-                } footer: {
-                    Text("Submitting feedback creates the next pass for this objective. Review stays visible below, and active objectives can queue approved work automatically.")
-                }
-            }
-
-            if !followUpLoopFeedbacks.isEmpty {
-                Section("Follow-up Loop") {
-                    ForEach(followUpLoopFeedbacks) { feedback in
-                        feedbackCard(for: feedback)
-                    }
-                }
-            }
+            lowerSectionsContent
 
             Section("Recent Agent Logs") {
-                if !agentLogs.isEmpty {
-                    ForEach(Array(agentLogs.prefix(8)), id: \.id) { log in
-                        ObjectiveAgentLogRow(log: log)
-                    }
-                } else if !isLoading {
-                    Text("No objective-scoped agent logs yet.")
-                        .foregroundStyle(.secondary)
-                        .font(.subheadline)
-                }
+                agentLogsSectionContent
             }
         }
         .navigationTitle(displayedObjective.goal)
@@ -548,17 +591,18 @@ struct ObjectiveDetailView: View {
                 }
             }
         }
-        .confirmationDialog(
-            "Delete objective?",
-            isPresented: $showDeleteConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("Delete", role: .destructive) {
-                Task { await deleteObjective() }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if showGuidanceButton, let g = guidance {
+                Button { handleGuidanceAction(g.actionKind) } label: {
+                    Label(g.buttonLabel, systemImage: g.buttonIcon)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isStartingWork || isDeleting || actionInProgress != nil)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(.bar)
             }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Tasks and research tied to this objective will be removed.")
         }
         .refreshable { await loadDetail(showSpinner: false) }
         .overlay {
@@ -577,43 +621,8 @@ struct ObjectiveDetailView: View {
                 }
             }
         }
-        .alert("Could Not Load Detail", isPresented: Binding(
-            get: { errorMessage != nil },
-            set: { if !$0 { errorMessage = nil } }
-        )) {
-            Button("OK", role: .cancel) { errorMessage = nil }
-        } message: {
-            Text(errorMessage ?? "An error occurred.")
-        }
-        .confirmationDialog(
-            "Rerun all tasks?",
-            isPresented: $showRerunAllConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("Rerun all tasks", role: .destructive) {
-                Task { await rerunAllTasks() }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Every task resets to pending and the Mac agent is asked to run them again. Existing research snapshots may still be listed until new results arrive.")
-        }
-        .alert("Action failed", isPresented: Binding(
-            get: { actionError != nil },
-            set: { if !$0 { actionError = nil } }
-        )) {
-            Button("OK", role: .cancel) { actionError = nil }
-        } message: {
-            Text(actionError ?? "An error occurred.")
-        }
-        .alert("Could Not Delete Objective", isPresented: Binding(
-            get: { deleteError != nil },
-            set: { if !$0 { deleteError = nil } }
-        )) {
-            Button("OK", role: .cancel) { deleteError = nil }
-        } message: {
-            Text(deleteError ?? "An error occurred.")
-        }
         .task { await loadDetail() }
+        .onChange(of: displayedObjective) { recomputeGuidance() }
         .onDisappear {
             pollTask?.cancel()
             pollTask = nil
@@ -654,6 +663,58 @@ struct ObjectiveDetailView: View {
         }
     }
 
+    var body: some View {
+        listView
+            .confirmationDialog(
+                "Delete objective?",
+                isPresented: $showDeleteConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Delete", role: .destructive) {
+                    Task { await deleteObjective() }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Tasks and research tied to this objective will be removed.")
+            }
+            .confirmationDialog(
+                "Rerun all tasks?",
+                isPresented: $showRerunAllConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Rerun all tasks", role: .destructive) {
+                    Task { await rerunAllTasks() }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Every task resets to pending and the Mac agent is asked to run them again. Existing research snapshots may still be listed until new results arrive.")
+            }
+            .alert("Could Not Load Detail", isPresented: Binding(
+                get: { errorMessage != nil },
+                set: { if !$0 { errorMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) { errorMessage = nil }
+            } message: {
+                Text(errorMessage ?? "An error occurred.")
+            }
+            .alert("Action failed", isPresented: Binding(
+                get: { actionError != nil },
+                set: { if !$0 { actionError = nil } }
+            )) {
+                Button("OK", role: .cancel) { actionError = nil }
+            } message: {
+                Text(actionError ?? "An error occurred.")
+            }
+            .alert("Could Not Delete Objective", isPresented: Binding(
+                get: { deleteError != nil },
+                set: { if !$0 { deleteError = nil } }
+            )) {
+                Button("OK", role: .cancel) { deleteError = nil }
+            } message: {
+                Text(deleteError ?? "An error occurred.")
+            }
+    }
+
     @MainActor
     private func loadDetail(showSpinner: Bool = true) async {
         if showSpinner {
@@ -674,6 +735,7 @@ struct ObjectiveDetailView: View {
             reconcileFeedbackTargetSelection()
             reconcileHighlightedFeedbackSelection()
             lastLoadedAt = Date()
+            recomputeGuidance()
             reconcilePolling()
         } catch {
             if showSpinner {
@@ -681,6 +743,40 @@ struct ObjectiveDetailView: View {
             } else {
                 IOSRuntimeLog.log("[ObjectiveDetailView] Auto-refresh failed: \(error)")
             }
+        }
+    }
+
+    private func recomputeGuidance() {
+        guard let detail else { guidance = nil; return }
+        guidance = ObjectiveGuidanceProvider.compute(
+            objective: displayedObjective,
+            tasks: detail.tasks,
+            feedbacks: detail.objectiveFeedbacks,
+            snapshots: detail.researchSnapshots
+        )
+    }
+
+    private func handleGuidanceAction(_ actionKind: ObjectiveGuidance.ActionKind) {
+        switch actionKind {
+        case .approvePlan:
+            actionInProgress = "approvePlan"
+            Task { await approveObjectivePlan() }
+        case .reviewFeedback:
+            if let feedback = objectiveFeedbacks.first(where: { $0.status == "review_required" }) {
+                editingFeedbackContext = composerContext(for: feedback)
+            }
+        case .planNextSteps:
+            editingFeedbackContext = ObjectiveFeedbackComposerContext(
+                existingFeedback: nil,
+                feedbackKind: ObjectiveFeedbackKindOption.followUp.rawValue,
+                targetID: ObjectiveFeedbackTarget.objectiveID,
+                draft: ""
+            )
+        case .resume:
+            actionInProgress = "runNow"
+            Task { await runObjectiveNow() }
+        case .allDone, .monitor:
+            break
         }
     }
 
@@ -1008,6 +1104,7 @@ private struct ObjectiveActivityCard: View {
     let snapshotCount: Int
     let logCount: Int
     let lastLoadedAt: Date?
+    var lastFinding: String? = nil
     var showsDisclosure = false
 
     var body: some View {
@@ -1076,6 +1173,13 @@ private struct ObjectiveActivityCard: View {
                 }
             }
 
+            if let lastFinding {
+                Label(lastFinding, systemImage: "sparkle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
             if let lastLoadedAt {
                 Text("Last checked \(lastLoadedAt, style: .relative)")
                     .font(.caption)
@@ -1083,6 +1187,28 @@ private struct ObjectiveActivityCard: View {
             }
         }
         .padding(.vertical, 4)
+    }
+}
+
+private struct ObjectiveIdleEmptyState: View {
+    let idleReason: String?
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "play.circle")
+                .font(.largeTitle)
+                .foregroundStyle(.secondary)
+            Text("No agents running")
+                .font(.headline)
+            if let idleReason {
+                Text(idleReason)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
     }
 }
 

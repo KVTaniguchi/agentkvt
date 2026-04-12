@@ -240,7 +240,7 @@ struct IOSBackendObjectiveBrief: Codable, Sendable, Equatable {
     }
 }
 
-struct IOSBackendObjective: Decodable, Sendable, Identifiable {
+struct IOSBackendObjective: Decodable, Sendable, Identifiable, Equatable {
     let id: UUID
     let workspaceId: UUID
     let goal: String
@@ -424,6 +424,80 @@ struct IOSBackendObjectiveDetail: Decodable, Sendable {
         objectiveFeedbacks = try container.decodeIfPresent([IOSBackendObjectiveFeedback].self, forKey: .objectiveFeedbacks) ?? []
         agentLogs = try container.decodeIfPresent([IOSBackendAgentLog].self, forKey: .agentLogs) ?? []
         onlineAgentRegistrationsCount = try container.decodeIfPresent(Int.self, forKey: .onlineAgentRegistrationsCount) ?? 0
+    }
+}
+
+// MARK: - Objective guidance (client-side)
+
+struct ObjectiveGuidance {
+    enum ActionKind: Equatable {
+        case approvePlan
+        case reviewFeedback
+        case resume
+        case planNextSteps
+        case allDone
+        case monitor
+    }
+
+    let buttonLabel: String
+    let buttonIcon: String
+    let actionKind: ActionKind
+    /// Most recent resultSummary from a completed task, for the activity card insight line.
+    let lastFinding: String?
+    /// Explains why nothing is running; only set when actionKind == .resume.
+    let idleReason: String?
+}
+
+struct ObjectiveGuidanceProvider {
+    static func compute(
+        objective: IOSBackendObjective,
+        tasks: [IOSBackendTask],
+        feedbacks: [IOSBackendObjectiveFeedback],
+        snapshots: [IOSBackendResearchSnapshot]
+    ) -> ObjectiveGuidance {
+        let initialProposed = tasks.filter { $0.status == "proposed" && $0.sourceFeedbackId == nil }.count
+        let followUpProposed = tasks.filter { $0.status == "proposed" && $0.sourceFeedbackId != nil }.count
+        let pending = tasks.filter { $0.status == "pending" }.count
+        let inProgress = tasks.filter { $0.status == "in_progress" }.count
+        let completed = tasks.filter { $0.status == "completed" }.count
+        let reviewRequired = feedbacks.filter { $0.status == "review_required" }
+        let activeFeedbacks = feedbacks.filter { $0.status == "review_required" || $0.status == "approved" }
+        let lastFinding = tasks
+            .filter { $0.status == "completed" && $0.resultSummary != nil }
+            .sorted { $0.updatedAt > $1.updatedAt }
+            .first?.resultSummary
+
+        if objective.status == "completed" {
+            return .init(buttonLabel: "", buttonIcon: "", actionKind: .allDone,
+                         lastFinding: lastFinding, idleReason: nil)
+        }
+        if initialProposed > 0 {
+            return .init(buttonLabel: "Review Plan", buttonIcon: "checklist",
+                         actionKind: .approvePlan, lastFinding: lastFinding, idleReason: nil)
+        }
+        if !reviewRequired.isEmpty {
+            return .init(buttonLabel: "Review Follow-up", buttonIcon: "text.badge.plus",
+                         actionKind: .reviewFeedback, lastFinding: lastFinding, idleReason: nil)
+        }
+        if followUpProposed > 0 {
+            return .init(buttonLabel: "Review Plan", buttonIcon: "checklist",
+                         actionKind: .approvePlan, lastFinding: lastFinding, idleReason: nil)
+        }
+        if inProgress > 0 || pending > 0 {
+            return .init(buttonLabel: "", buttonIcon: "", actionKind: .monitor,
+                         lastFinding: lastFinding, idleReason: nil)
+        }
+        if completed > 0 && activeFeedbacks.isEmpty {
+            return .init(buttonLabel: "Plan Next Steps", buttonIcon: "arrow.right.circle",
+                         actionKind: .planNextSteps, lastFinding: lastFinding, idleReason: nil)
+        }
+        if objective.status == "active" {
+            return .init(buttonLabel: "Resume", buttonIcon: "play.circle",
+                         actionKind: .resume, lastFinding: lastFinding,
+                         idleReason: "No tasks are active or pending.")
+        }
+        return .init(buttonLabel: "", buttonIcon: "", actionKind: .monitor,
+                     lastFinding: lastFinding, idleReason: nil)
     }
 }
 
