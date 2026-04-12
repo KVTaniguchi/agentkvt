@@ -62,12 +62,8 @@ struct ObjectiveDetailView: View {
         objectiveFeedbacks.contains { $0.status == "review_required" }
     }
 
-    private var reviewRequiredFeedbacks: [IOSBackendObjectiveFeedback] {
-        objectiveFeedbacks.filter { $0.status == "review_required" }
-    }
-
-    private var feedbackHistory: [IOSBackendObjectiveFeedback] {
-        objectiveFeedbacks.filter { $0.status != "review_required" }
+    private var followUpLoopFeedbacks: [IOSBackendObjectiveFeedback] {
+        objectiveFeedbacks.sorted { $0.createdAt > $1.createdAt }
     }
 
     private var hasApprovedPlanWaitingToStart: Bool {
@@ -91,11 +87,16 @@ struct ObjectiveDetailView: View {
     }
 
     private var feedbackTargets: [ObjectiveFeedbackTarget] {
-        var targets = [ObjectiveFeedbackTarget(id: ObjectiveFeedbackTarget.objectiveID, label: "Entire objective")]
+        var targets = [ObjectiveFeedbackTarget(
+            id: ObjectiveFeedbackTarget.objectiveID,
+            label: "Entire objective",
+            preview: ObjectiveFeedbackPresentation.previewText(displayedObjective.goal)
+        )]
         targets.append(contentsOf: snapshots.prefix(6).map {
             ObjectiveFeedbackTarget(
                 id: "snapshot-\($0.id.uuidString)",
-                label: "Finding: \($0.key)",
+                label: ObjectiveFeedbackPresentation.targetLabel(for: $0),
+                preview: ObjectiveFeedbackPresentation.previewText($0.value),
                 researchSnapshotId: $0.id
             )
         })
@@ -103,6 +104,7 @@ struct ObjectiveDetailView: View {
             ObjectiveFeedbackTarget(
                 id: "task-\($0.id.uuidString)",
                 label: "Task: \($0.description)",
+                preview: ObjectiveFeedbackPresentation.previewText($0.description),
                 taskId: $0.id
             )
         })
@@ -112,7 +114,7 @@ struct ObjectiveDetailView: View {
     private var selectedFeedbackTarget: ObjectiveFeedbackTarget {
         feedbackTargets.first(where: { $0.id == selectedFeedbackTargetID })
             ?? feedbackTargets.first
-            ?? .init(id: ObjectiveFeedbackTarget.objectiveID, label: "Entire objective")
+            ?? .init(id: ObjectiveFeedbackTarget.objectiveID, label: "Entire objective", preview: nil)
     }
 
     /// System `borderedProminent` + default tint often yields a pale blue fill in dark mode; white labels are hard to read.
@@ -192,7 +194,7 @@ struct ObjectiveDetailView: View {
             if hasFollowUpPlanReview {
                 return ObjectiveActivitySummary(
                     title: "Follow-up plan ready",
-                    message: "A follow-up batch is waiting for review. Use the Follow-up Review section below to approve, regenerate, or edit it before more work starts.",
+                    message: "A follow-up batch is waiting for review. Use the Follow-up Loop below to approve, regenerate, or edit it before more work starts.",
                     systemImage: "arrow.triangle.branch",
                     tint: .teal
                 )
@@ -223,7 +225,7 @@ struct ObjectiveDetailView: View {
             if hasFollowUpPlanReview {
                 return ObjectiveActivitySummary(
                     title: "Follow-up plan ready",
-                    message: "A follow-up batch is waiting for review. Use the Follow-up Review section below to approve, regenerate, or edit it before AgentKVT continues.",
+                    message: "A follow-up batch is waiting for review. Use the Follow-up Loop below to approve, regenerate, or edit it before AgentKVT continues.",
                     systemImage: "arrow.triangle.branch",
                     tint: .teal
                 )
@@ -446,14 +448,6 @@ struct ObjectiveDetailView: View {
                 }
             }
 
-            if !reviewRequiredFeedbacks.isEmpty {
-                Section("Follow-up Review") {
-                    ForEach(reviewRequiredFeedbacks) { feedback in
-                        feedbackCard(for: feedback)
-                    }
-                }
-            }
-
             // Tasks
             Section {
                 if !tasks.isEmpty {
@@ -509,7 +503,7 @@ struct ObjectiveDetailView: View {
                         Task { await submitObjectiveFeedback() }
                     } label: {
                         HStack {
-                            Label("Create follow-up tasks", systemImage: "arrow.triangle.branch")
+                            Label("Create Next Pass", systemImage: "arrow.triangle.branch")
                             if isSubmittingFeedback {
                                 ProgressView().padding(.leading, 4)
                             }
@@ -521,13 +515,13 @@ struct ObjectiveDetailView: View {
                 } header: {
                     Text("Continue Research")
                 } footer: {
-                    Text("Submitting feedback creates 1-3 new follow-up tasks. Active objectives queue them automatically so the agent can keep going.")
+                    Text("Submitting feedback creates the next pass for this objective. Review stays visible below, and active objectives can queue approved work automatically.")
                 }
             }
 
-            if !feedbackHistory.isEmpty {
-                Section("Feedback Loop") {
-                    ForEach(feedbackHistory) { feedback in
+            if !followUpLoopFeedbacks.isEmpty {
+                Section("Follow-up Loop") {
+                    ForEach(followUpLoopFeedbacks) { feedback in
                         feedbackCard(for: feedback)
                     }
                 }
@@ -876,13 +870,25 @@ struct ObjectiveDetailView: View {
     private func feedbackTargetLabel(for feedback: IOSBackendObjectiveFeedback) -> String {
         if let snapshotId = feedback.researchSnapshotId,
            let snapshot = snapshots.first(where: { $0.id == snapshotId }) {
-            return "Finding: \(snapshot.key)"
+            return ObjectiveFeedbackPresentation.targetLabel(for: snapshot)
         }
         if let taskId = feedback.taskId,
            let task = tasks.first(where: { $0.id == taskId }) {
             return "Task: \(task.description)"
         }
         return "Entire objective"
+    }
+
+    private func feedbackTargetPreview(for feedback: IOSBackendObjectiveFeedback) -> String? {
+        if let snapshotId = feedback.researchSnapshotId,
+           let snapshot = snapshots.first(where: { $0.id == snapshotId }) {
+            return ObjectiveFeedbackPresentation.previewText(snapshot.value)
+        }
+        if let taskId = feedback.taskId,
+           let task = tasks.first(where: { $0.id == taskId }) {
+            return ObjectiveFeedbackPresentation.previewText(task.description)
+        }
+        return ObjectiveFeedbackPresentation.previewText(displayedObjective.goal)
     }
 
     private func composerContext(for feedback: IOSBackendObjectiveFeedback) -> ObjectiveFeedbackComposerContext {
@@ -899,10 +905,13 @@ struct ObjectiveDetailView: View {
         let isReviewRequired = feedback.status == "review_required"
 
         ObjectiveFeedbackPlanCard(
-            feedback: feedback,
-            targetLabel: feedbackTargetLabel(for: feedback),
+            model: ObjectiveFeedbackCardModel(
+                feedback: feedback,
+                targetLabel: feedbackTargetLabel(for: feedback),
+                targetPreview: feedbackTargetPreview(for: feedback),
+                followUpTasks: followUpTasks(for: feedback)
+            ),
             objectiveStatus: displayedObjective.status,
-            followUpTasks: followUpTasks(for: feedback),
             isHighlighted: highlightedFeedbackID == feedback.id,
             isWorking: feedbackPlanActionInProgressID == feedback.id,
             onApprove: isReviewRequired ? {
@@ -1283,11 +1292,19 @@ struct SnapshotRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(snapshot.key)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text(snapshot.value)
+            Text(ObjectiveFeedbackPresentation.findingTitle(for: snapshot.key))
                 .font(.headline)
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if ObjectiveFeedbackPresentation.findingTitle(for: snapshot.key) != snapshot.key {
+                Text(snapshot.key)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+
+            Text(snapshot.value)
+                .font(.subheadline)
                 .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
 

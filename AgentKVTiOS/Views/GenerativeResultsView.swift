@@ -29,6 +29,7 @@ struct ObjectiveFeedbackTarget: Identifiable, Hashable {
 
     let id: String
     let label: String
+    let preview: String?
     var taskId: UUID? = nil
     var researchSnapshotId: UUID? = nil
 
@@ -56,6 +57,8 @@ struct ObjectiveFeedbackSubmissionRequest: Sendable {
     let feedbackKind: String
     let taskId: UUID?
     let researchSnapshotId: UUID?
+    let targetLabel: String
+    let targetPreview: String?
 }
 
 enum ObjectiveFeedbackKindOption: String, CaseIterable, Identifiable {
@@ -100,6 +103,174 @@ enum ObjectiveFeedbackKindOption: String, CaseIterable, Identifiable {
     static func from(rawValue: String) -> ObjectiveFeedbackKindOption {
         ObjectiveFeedbackKindOption(rawValue: rawValue) ?? .followUp
     }
+}
+
+enum ObjectiveFeedbackPresentation {
+    static func findingTitle(for key: String) -> String {
+        let cleaned = key
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: "-", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !cleaned.isEmpty else { return "Untitled finding" }
+
+        let collapsed = cleaned.replacingOccurrences(
+            of: "\\s+",
+            with: " ",
+            options: .regularExpression
+        )
+
+        return collapsed.prefix(1).capitalized + collapsed.dropFirst()
+    }
+
+    static func targetLabel(for snapshot: IOSBackendResearchSnapshot) -> String {
+        "Finding: \(findingTitle(for: snapshot.key))"
+    }
+
+    static func previewText(_ text: String?, limit: Int = 140) -> String? {
+        guard let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else {
+            return nil
+        }
+        guard trimmed.count > limit else { return trimmed }
+        return String(trimmed.prefix(limit)).trimmingCharacters(in: .whitespacesAndNewlines) + "…"
+    }
+
+    static func statusColor(for status: String) -> Color {
+        switch status {
+        case "review_required": return .teal
+        case "queued": return .blue
+        case "planned": return .orange
+        case "completed": return .green
+        case "failed": return .red
+        case "submitting": return .blue
+        case "received_building_plan": return .teal
+        case "timed_out_but_refreshing": return .orange
+        default: return .secondary
+        }
+    }
+
+    static func statusLabel(for status: String) -> String {
+        switch status {
+        case "review_required": return "Ready for review"
+        case "queued": return "Queued for agent"
+        case "planned": return "Saved for later"
+        case "completed": return "Completed"
+        case "failed": return "Needs attention"
+        case "submitting": return "Sending feedback"
+        case "received_building_plan": return "Creating next pass"
+        case "timed_out_but_refreshing": return "Still working"
+        default:
+            return status.replacingOccurrences(of: "_", with: " ").capitalized
+        }
+    }
+
+    static func statusMessage(for status: String, objectiveStatus: String) -> String? {
+        switch status {
+        case "review_required":
+            return "Review this next pass before AgentKVT keeps going."
+        case "queued":
+            if objectiveStatus == "active" {
+                return "This next pass is queued for the agent and will start as capacity opens up."
+            }
+            return "This next pass is ready and will begin when you start work."
+        case "planned":
+            return "This next pass was saved to the objective for later review."
+        case "completed":
+            return "This follow-up batch already finished."
+        case "failed":
+            return "This follow-up needs attention before it can continue."
+        case "submitting":
+            return "Sending your feedback to AgentKVT."
+        case "received_building_plan":
+            return "Feedback received. Building the next pass now."
+        case "timed_out_but_refreshing":
+            return "This is taking longer than expected. The Research screen will keep refreshing."
+        default:
+            return nil
+        }
+    }
+}
+
+struct ObjectiveFeedbackCardModel: Identifiable, Sendable {
+    let id: String
+    let feedbackId: UUID?
+    let feedbackKind: String
+    let status: String
+    let content: String
+    let createdAt: Date
+    let completedAt: Date?
+    let completionSummary: String?
+    let targetLabel: String
+    let targetPreview: String?
+    let followUpTasks: [IOSBackendTask]
+
+    init(
+        id: String,
+        feedbackId: UUID?,
+        feedbackKind: String,
+        status: String,
+        content: String,
+        createdAt: Date,
+        completedAt: Date? = nil,
+        completionSummary: String? = nil,
+        targetLabel: String,
+        targetPreview: String? = nil,
+        followUpTasks: [IOSBackendTask] = []
+    ) {
+        self.id = id
+        self.feedbackId = feedbackId
+        self.feedbackKind = feedbackKind
+        self.status = status
+        self.content = content
+        self.createdAt = createdAt
+        self.completedAt = completedAt
+        self.completionSummary = completionSummary
+        self.targetLabel = targetLabel
+        self.targetPreview = targetPreview
+        self.followUpTasks = followUpTasks
+    }
+
+    init(
+        feedback: IOSBackendObjectiveFeedback,
+        targetLabel: String,
+        targetPreview: String? = nil,
+        followUpTasks: [IOSBackendTask] = []
+    ) {
+        self.init(
+            id: feedback.id.uuidString,
+            feedbackId: feedback.id,
+            feedbackKind: feedback.feedbackKind,
+            status: feedback.status,
+            content: feedback.content,
+            createdAt: feedback.createdAt,
+            completedAt: feedback.completedAt,
+            completionSummary: feedback.completionSummary,
+            targetLabel: targetLabel,
+            targetPreview: targetPreview,
+            followUpTasks: followUpTasks
+        )
+    }
+
+    static func pending(from request: ObjectiveFeedbackSubmissionRequest, status: String, createdAt: Date) -> ObjectiveFeedbackCardModel {
+        ObjectiveFeedbackCardModel(
+            id: "pending-\(createdAt.timeIntervalSince1970)",
+            feedbackId: nil,
+            feedbackKind: request.feedbackKind,
+            status: status,
+            content: request.content,
+            createdAt: createdAt,
+            targetLabel: request.targetLabel,
+            targetPreview: ObjectiveFeedbackPresentation.previewText(request.targetPreview),
+            followUpTasks: []
+        )
+    }
+}
+
+struct ObjectiveFeedbackPendingSubmission: Identifiable, Sendable {
+    let id = UUID()
+    let request: ObjectiveFeedbackSubmissionRequest
+    let card: ObjectiveFeedbackCardModel
+    let submittedAt: Date
 }
 
 // MARK: - Node renderer
@@ -246,7 +417,7 @@ struct ObjectiveFeedbackComposerSheet: View {
     let snapshots: [IOSBackendResearchSnapshot]
     let editingFeedback: IOSBackendObjectiveFeedback?
     var onSubmitted: ((IOSBackendSubmitObjectiveFeedbackResult) -> Void)? = nil
-    var onCreateRequested: ((ObjectiveFeedbackSubmissionRequest) -> Void)? = nil
+    var onTimedOut: ((ObjectiveFeedbackPendingSubmission) -> Void)? = nil
 
     @Environment(ObjectivesStore.self) private var store
     @Environment(\.dismiss) private var dismiss
@@ -254,8 +425,16 @@ struct ObjectiveFeedbackComposerSheet: View {
     @State private var feedbackDraft = ""
     @State private var selectedFeedbackKind = ObjectiveFeedbackKindOption.followUp.rawValue
     @State private var selectedFeedbackTargetID = ObjectiveFeedbackTarget.objectiveID
-    @State private var isSubmitting = false
     @State private var errorMessage: String?
+    @State private var submissionPhase: SubmissionPhase = .editing
+
+    private enum SubmissionPhase {
+        case editing
+        case submitting
+        case receivedBuildingPlan
+        case success(IOSBackendSubmitObjectiveFeedbackResult)
+        case timedOut(ObjectiveFeedbackPendingSubmission)
+    }
 
     init(
         objectiveId: UUID,
@@ -268,7 +447,7 @@ struct ObjectiveFeedbackComposerSheet: View {
         initialFeedbackTargetID: String = ObjectiveFeedbackTarget.objectiveID,
         initialFeedbackDraft: String = "",
         onSubmitted: ((IOSBackendSubmitObjectiveFeedbackResult) -> Void)? = nil,
-        onCreateRequested: ((ObjectiveFeedbackSubmissionRequest) -> Void)? = nil
+        onTimedOut: ((ObjectiveFeedbackPendingSubmission) -> Void)? = nil
     ) {
         self.objectiveId = objectiveId
         self.objectiveGoal = objectiveGoal
@@ -277,7 +456,7 @@ struct ObjectiveFeedbackComposerSheet: View {
         self.snapshots = snapshots
         self.editingFeedback = editingFeedback
         self.onSubmitted = onSubmitted
-        self.onCreateRequested = onCreateRequested
+        self.onTimedOut = onTimedOut
         _selectedFeedbackKind = State(initialValue: initialFeedbackKind)
         _selectedFeedbackTargetID = State(initialValue: initialFeedbackTargetID)
         _feedbackDraft = State(initialValue: initialFeedbackDraft)
@@ -288,7 +467,11 @@ struct ObjectiveFeedbackComposerSheet: View {
     }
 
     private var submitLabel: String {
-        editingFeedback == nil ? "Create follow-up tasks" : "Update follow-up plan"
+        editingFeedback == nil ? "Create Next Pass" : "Update Follow-up"
+    }
+
+    private var doneLabel: String {
+        editingFeedback == nil ? "Back to Research" : "Done"
     }
 
     private var trimmedFeedbackDraft: String {
@@ -300,16 +483,23 @@ struct ObjectiveFeedbackComposerSheet: View {
             content: trimmedFeedbackDraft,
             feedbackKind: selectedFeedbackKind,
             taskId: selectedFeedbackTarget.taskId,
-            researchSnapshotId: selectedFeedbackTarget.researchSnapshotId
+            researchSnapshotId: selectedFeedbackTarget.researchSnapshotId,
+            targetLabel: selectedFeedbackTarget.label,
+            targetPreview: selectedFeedbackTarget.preview
         )
     }
 
     private var feedbackTargets: [ObjectiveFeedbackTarget] {
-        var targets = [ObjectiveFeedbackTarget(id: ObjectiveFeedbackTarget.objectiveID, label: "Entire objective")]
+        var targets = [ObjectiveFeedbackTarget(
+            id: ObjectiveFeedbackTarget.objectiveID,
+            label: "Entire objective",
+            preview: ObjectiveFeedbackPresentation.previewText(objectiveGoal)
+        )]
         targets.append(contentsOf: snapshots.prefix(8).map {
             ObjectiveFeedbackTarget(
                 id: "snapshot-\($0.id.uuidString)",
-                label: "Finding: \($0.key)",
+                label: ObjectiveFeedbackPresentation.targetLabel(for: $0),
+                preview: ObjectiveFeedbackPresentation.previewText($0.value),
                 researchSnapshotId: $0.id
             )
         })
@@ -317,6 +507,7 @@ struct ObjectiveFeedbackComposerSheet: View {
             ObjectiveFeedbackTarget(
                 id: "task-\($0.id.uuidString)",
                 label: "Task: \($0.description)",
+                preview: ObjectiveFeedbackPresentation.previewText($0.description),
                 taskId: $0.id
             )
         })
@@ -326,87 +517,171 @@ struct ObjectiveFeedbackComposerSheet: View {
     private var selectedFeedbackTarget: ObjectiveFeedbackTarget {
         feedbackTargets.first(where: { $0.id == selectedFeedbackTargetID })
             ?? feedbackTargets.first
-            ?? .init(id: ObjectiveFeedbackTarget.objectiveID, label: "Entire objective")
+            ?? .init(id: ObjectiveFeedbackTarget.objectiveID, label: "Entire objective", preview: nil)
     }
 
     private var footerCopy: String {
-        if editingFeedback == nil, onCreateRequested != nil {
-            if objectiveStatus == "active" {
-                return "Submitting follow-up tasks closes this sheet right away. The Research screen will keep updating while approved work gets picked up."
-            }
-            return "Submitting follow-up tasks closes this sheet right away. The Research screen will keep updating while the next plan is prepared."
-        }
         if objectiveStatus == "active" {
-            return "Active objectives queue approved follow-up tasks automatically so the agent can keep going."
+            return "Active objectives can queue approved follow-up work automatically so the agent can keep going."
         }
-        return "Pending objectives save approved follow-up tasks for later, and larger batches stay under review until you approve them."
+        return "Pending objectives save the next pass for later, and larger batches stay under review until you approve them."
+    }
+
+    private var submissionStateTitle: String {
+        switch submissionPhase {
+        case .editing:
+            return title
+        case .submitting:
+            return editingFeedback == nil ? "Sending Feedback" : "Updating Follow-up"
+        case .receivedBuildingPlan:
+            return editingFeedback == nil ? "Creating Next Pass" : "Saving Follow-up"
+        case .success:
+            return editingFeedback == nil ? "Next Pass Ready" : "Follow-up Updated"
+        case .timedOut:
+            return "Still Working"
+        }
+    }
+
+    private var isBlockingDismiss: Bool {
+        switch submissionPhase {
+        case .submitting, .receivedBuildingPlan:
+            return true
+        default:
+            return false
+        }
     }
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    Text(objectiveGoal)
-                        .font(.subheadline)
-                        .foregroundStyle(.primary)
-                        .fixedSize(horizontal: false, vertical: true)
-                } header: {
-                    Text("Objective")
-                }
-
-                Section {
-                    Picker("Intent", selection: $selectedFeedbackKind) {
-                        ForEach(ObjectiveFeedbackKindOption.allCases) { option in
-                            Text(option.label).tag(option.rawValue)
+            Group {
+                switch submissionPhase {
+                case .editing:
+                    Form {
+                        Section("Context") {
+                            FeedbackComposerContextCard(
+                                kind: ObjectiveFeedbackKindOption.from(rawValue: selectedFeedbackKind),
+                                targetLabel: selectedFeedbackTarget.label,
+                                targetPreview: selectedFeedbackTarget.preview
+                            )
                         }
-                    }
-                    .pickerStyle(.menu)
 
-                    if feedbackTargets.count > 1 {
-                        Picker("Focus", selection: $selectedFeedbackTargetID) {
-                            ForEach(feedbackTargets) { target in
-                                Text(target.label).tag(target.id)
+                        Section {
+                            Picker("Intent", selection: $selectedFeedbackKind) {
+                                ForEach(ObjectiveFeedbackKindOption.allCases) { option in
+                                    Text(option.label).tag(option.rawValue)
+                                }
                             }
-                        }
-                        .pickerStyle(.menu)
-                    }
+                            .pickerStyle(.menu)
 
-                    TextField("Tell AgentKVT what to research next...", text: $feedbackDraft, axis: .vertical)
-                        .lineLimit(4...8)
-
-                    Button {
-                        if editingFeedback == nil, let onCreateRequested {
-                            errorMessage = nil
-                            onCreateRequested(submissionRequest)
-                            dismiss()
-                        } else {
-                            Task { await submit() }
-                        }
-                    } label: {
-                        HStack {
-                            Label(submitLabel, systemImage: "arrow.triangle.branch")
-                            if isSubmitting {
-                                ProgressView()
-                                    .padding(.leading, 4)
+                            if feedbackTargets.count > 1 {
+                                Picker("Focus", selection: $selectedFeedbackTargetID) {
+                                    ForEach(feedbackTargets) { target in
+                                        Text(target.label).tag(target.id)
+                                    }
+                                }
+                                .pickerStyle(.menu)
                             }
+
+                            TextField("Tell AgentKVT what to research next...", text: $feedbackDraft, axis: .vertical)
+                                .lineLimit(4...8)
+
+                            Button {
+                                Task { await submit() }
+                            } label: {
+                                Label(submitLabel, systemImage: "arrow.triangle.branch")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(ObjectiveFeedbackKindOption.from(rawValue: selectedFeedbackKind).tint)
+                            .disabled(trimmedFeedbackDraft.isEmpty)
+                        } header: {
+                            Text("Next Pass")
+                        } footer: {
+                            Text(footerCopy)
                         }
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(ObjectiveFeedbackKindOption.from(rawValue: selectedFeedbackKind).tint)
-                    .disabled(trimmedFeedbackDraft.isEmpty || isSubmitting)
-                } header: {
-                    Text("Next Step")
-                } footer: {
-                    Text(footerCopy)
+
+                case .submitting, .receivedBuildingPlan:
+                    FeedbackComposerSubmissionStateView(
+                        kind: ObjectiveFeedbackKindOption.from(rawValue: selectedFeedbackKind),
+                        targetLabel: selectedFeedbackTarget.label,
+                        targetPreview: selectedFeedbackTarget.preview,
+                        content: trimmedFeedbackDraft,
+                        status: {
+                            switch submissionPhase {
+                            case .submitting:
+                                return "submitting"
+                            default:
+                                return "received_building_plan"
+                            }
+                        }()
+                    )
+
+                case .success(let result):
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 16) {
+                            FeedbackComposerStatusHeader(
+                                title: editingFeedback == nil ? "Feedback received" : "Follow-up updated",
+                                message: ObjectiveFeedbackPresentation.statusMessage(
+                                    for: result.objectiveFeedback.status,
+                                    objectiveStatus: objectiveStatus
+                                ) ?? "The Research screen will keep this next pass connected to your feedback."
+                            )
+
+                            ObjectiveFeedbackPlanCard(
+                                model: ObjectiveFeedbackCardModel(
+                                    feedback: result.objectiveFeedback,
+                                    targetLabel: submissionRequest.targetLabel,
+                                    targetPreview: submissionRequest.targetPreview,
+                                    followUpTasks: result.followUpTasks
+                                ),
+                                objectiveStatus: objectiveStatus,
+                                isHighlighted: true
+                            )
+
+                            Button(doneLabel) {
+                                dismiss()
+                            }
+                            .buttonStyle(.borderedProminent)
+                        }
+                        .padding()
+                    }
+
+                case .timedOut(let pendingSubmission):
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 16) {
+                            FeedbackComposerStatusHeader(
+                                title: "Feedback received",
+                                message: "This request is taking longer than expected. The Research screen will keep refreshing so you can see the next pass as soon as it lands.",
+                                systemImage: "clock.badge.exclamationmark.fill",
+                                tint: .orange
+                            )
+
+                            ObjectiveFeedbackPlanCard(
+                                model: pendingSubmission.card,
+                                objectiveStatus: objectiveStatus,
+                                isHighlighted: true
+                            )
+
+                            Button(doneLabel) {
+                                dismiss()
+                            }
+                            .buttonStyle(.borderedProminent)
+                        }
+                        .padding()
+                    }
                 }
             }
-            .navigationTitle(title)
+            .navigationTitle(submissionStateTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                if case .editing = submissionPhase {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { dismiss() }
+                    }
                 }
             }
+            .interactiveDismissDisabled(isBlockingDismiss)
             .alert("Could Not Submit Feedback", isPresented: Binding(
                 get: { errorMessage != nil },
                 set: { if !$0 { errorMessage = nil } }
@@ -422,9 +697,20 @@ struct ObjectiveFeedbackComposerSheet: View {
     private func submit() async {
         guard !trimmedFeedbackDraft.isEmpty else { return }
 
+        let request = submissionRequest
+        let submittedAt = Date()
+
         errorMessage = nil
-        isSubmitting = true
-        defer { isSubmitting = false }
+        submissionPhase = .submitting
+
+        let acknowledgementTask = Task {
+            try? await Task.sleep(for: .milliseconds(220))
+            await MainActor.run {
+                if case .submitting = submissionPhase {
+                    submissionPhase = .receivedBuildingPlan
+                }
+            }
+        }
 
         do {
             let result: IOSBackendSubmitObjectiveFeedbackResult
@@ -432,68 +718,100 @@ struct ObjectiveFeedbackComposerSheet: View {
                 result = try await store.updateObjectiveFeedback(
                     objectiveId: objectiveId,
                     feedbackId: editingFeedback.id,
-                    content: submissionRequest.content,
-                    feedbackKind: submissionRequest.feedbackKind,
-                    taskId: submissionRequest.taskId,
-                    researchSnapshotId: submissionRequest.researchSnapshotId
+                    content: request.content,
+                    feedbackKind: request.feedbackKind,
+                    taskId: request.taskId,
+                    researchSnapshotId: request.researchSnapshotId
                 )
             } else {
                 result = try await store.submitObjectiveFeedback(
                     id: objectiveId,
-                    content: submissionRequest.content,
-                    feedbackKind: submissionRequest.feedbackKind,
-                    taskId: submissionRequest.taskId,
-                    researchSnapshotId: submissionRequest.researchSnapshotId
+                    content: request.content,
+                    feedbackKind: request.feedbackKind,
+                    taskId: request.taskId,
+                    researchSnapshotId: request.researchSnapshotId
                 )
             }
+            acknowledgementTask.cancel()
             onSubmitted?(result)
-            dismiss()
+            submissionPhase = .success(result)
         } catch {
-            errorMessage = error.localizedDescription
+            acknowledgementTask.cancel()
+            if isTimeoutError(error) {
+                let pendingSubmission = ObjectiveFeedbackPendingSubmission(
+                    request: request,
+                    card: ObjectiveFeedbackCardModel.pending(
+                        from: request,
+                        status: "timed_out_but_refreshing",
+                        createdAt: submittedAt
+                    ),
+                    submittedAt: submittedAt
+                )
+                onTimedOut?(pendingSubmission)
+                submissionPhase = .timedOut(pendingSubmission)
+            } else {
+                submissionPhase = .editing
+                errorMessage = error.localizedDescription
+            }
         }
+    }
+
+    private func isTimeoutError(_ error: Error) -> Bool {
+        if let urlError = error as? URLError {
+            return urlError.code == .timedOut
+        }
+        let nsError = error as NSError
+        return nsError.domain == NSURLErrorDomain && nsError.code == URLError.timedOut.rawValue
     }
 }
 
 struct ObjectiveFeedbackPlanCard: View {
-    let feedback: IOSBackendObjectiveFeedback
-    let targetLabel: String
+    let model: ObjectiveFeedbackCardModel
     let objectiveStatus: String
-    let followUpTasks: [IOSBackendTask]
     var isHighlighted = false
     var isWorking = false
     var onApprove: (() -> Void)? = nil
     var onRegenerate: (() -> Void)? = nil
     var onEdit: (() -> Void)? = nil
 
+    @State private var taskExpansionOverride: Bool?
+
     private var kind: ObjectiveFeedbackKindOption {
-        .from(rawValue: feedback.feedbackKind)
+        .from(rawValue: model.feedbackKind)
     }
 
     private var statusColor: Color {
-        switch feedback.status {
-        case "review_required": return .teal
-        case "queued": return .blue
-        case "planned": return .orange
-        case "completed": return .green
-        case "failed": return .red
-        default: return .secondary
-        }
+        ObjectiveFeedbackPresentation.statusColor(for: model.status)
     }
 
     private var statusLabel: String {
-        feedback.status.replacingOccurrences(of: "_", with: " ").capitalized
+        ObjectiveFeedbackPresentation.statusLabel(for: model.status)
     }
 
-    private var shouldShowTasks: Bool {
-        !followUpTasks.isEmpty && (isHighlighted || feedback.status == "review_required" || feedback.status == "completed")
+    private var defaultTasksExpanded: Bool {
+        isHighlighted || model.status == "review_required" || model.status == "completed"
+    }
+
+    private var showsTasks: Bool {
+        !model.followUpTasks.isEmpty && (taskExpansionOverride ?? defaultTasksExpanded)
     }
 
     private var approvalLabel: String {
         objectiveStatus == "active" ? "Approve & queue" : "Approve"
     }
 
+    private var relativeDate: Date {
+        model.completedAt ?? model.createdAt
+    }
+
+    private var taskDisclosureLabel: String {
+        let count = model.followUpTasks.count
+        let label = count == 1 ? "linked task" : "linked tasks"
+        return "\(count) \(label)"
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center, spacing: 8) {
                 Text(kind.label)
                     .font(.caption.weight(.semibold))
@@ -509,44 +827,64 @@ struct ObjectiveFeedbackPlanCard: View {
 
                 Spacer()
 
-                if feedback.status == "completed", let completedAt = feedback.completedAt {
-                    Text(completedAt, style: .relative)
+                Text(relativeDate, style: .relative)
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(model.targetLabel)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+
+                if let targetPreview = ObjectiveFeedbackPresentation.previewText(model.targetPreview) {
+                    Text(targetPreview)
                         .font(.caption)
-                        .foregroundStyle(.tertiary)
-                } else {
-                    Text(feedback.createdAt, style: .relative)
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
 
-            Text(targetLabel)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            Text(feedback.content)
+            Text(model.content)
                 .font(.subheadline)
                 .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            if followUpTasks.count > 0 {
-                Text("\(followUpTasks.count) follow-up task(s) created")
+            if let statusMessage = ObjectiveFeedbackPresentation.statusMessage(for: model.status, objectiveStatus: objectiveStatus) {
+                Text(statusMessage)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
-            if shouldShowTasks {
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(followUpTasks) { task in
-                        TaskRow(task: task)
+            if !model.followUpTasks.isEmpty {
+                Button {
+                    taskExpansionOverride = !(taskExpansionOverride ?? defaultTasksExpanded)
+                } label: {
+                    HStack(spacing: 8) {
+                        Text(taskDisclosureLabel)
+                            .font(.caption.weight(.semibold))
+                        Spacer()
+                        Image(systemName: showsTasks ? "chevron.up" : "chevron.down")
+                            .font(.caption.weight(.semibold))
                     }
                 }
-                .padding(10)
-                .background(Color(uiColor: .secondarySystemGroupedBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+
+                if showsTasks {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(model.followUpTasks) { task in
+                            TaskRow(task: task)
+                        }
+                    }
+                    .padding(10)
+                    .background(Color(uiColor: .secondarySystemGroupedBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
             }
 
-            if let completionSummary = feedback.completionSummary, !completionSummary.isEmpty {
+            if let completionSummary = model.completionSummary, !completionSummary.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("What changed")
                         .font(.caption.weight(.semibold))
@@ -558,11 +896,7 @@ struct ObjectiveFeedbackPlanCard: View {
                 }
             }
 
-            if feedback.status == "review_required" {
-                Text("Review this batch before AgentKVT starts the next pass.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
+            if model.status == "review_required" {
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 8) {
                         if let onApprove {
@@ -637,6 +971,10 @@ struct ObjectiveFeedbackPlanCard: View {
         .padding()
         .background(Color(uiColor: .secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 16))
+        .overlay {
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(isHighlighted ? statusColor.opacity(0.45) : Color.clear, lineWidth: 2)
+        }
     }
 
     @ViewBuilder
@@ -672,6 +1010,120 @@ struct ObjectiveFeedbackPlanCard: View {
                 styledButton
             }
         }
+    }
+}
+
+private struct FeedbackComposerContextCard: View {
+    let kind: ObjectiveFeedbackKindOption
+    let targetLabel: String
+    let targetPreview: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Label(kind.label, systemImage: kind.systemImage)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(kind.tint)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(kind.tint.opacity(0.14))
+                    .clipShape(Capsule())
+
+                Text("Focused on \(targetLabel)")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let targetPreview = ObjectiveFeedbackPresentation.previewText(targetPreview) {
+                Text(targetPreview)
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(uiColor: .secondarySystemGroupedBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+private struct FeedbackComposerSubmissionStateView: View {
+    let kind: ObjectiveFeedbackKindOption
+    let targetLabel: String
+    let targetPreview: String?
+    let content: String
+    let status: String
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                FeedbackComposerStatusHeader(
+                    title: status == "submitting" ? "Sending your feedback" : "Feedback received",
+                    message: ObjectiveFeedbackPresentation.statusMessage(for: status, objectiveStatus: "active")
+                        ?? "Building the next pass now.",
+                    systemImage: status == "submitting" ? "arrow.up.circle.fill" : "arrow.triangle.branch.circle.fill",
+                    tint: status == "submitting" ? .blue : .teal,
+                    showsProgress: true
+                )
+
+                ObjectiveFeedbackPlanCard(
+                    model: ObjectiveFeedbackCardModel(
+                        id: "composer-\(status)",
+                        feedbackId: nil,
+                        feedbackKind: kind.rawValue,
+                        status: status,
+                        content: content,
+                        createdAt: Date(),
+                        targetLabel: targetLabel,
+                        targetPreview: targetPreview,
+                        followUpTasks: []
+                    ),
+                    objectiveStatus: "active",
+                    isHighlighted: true
+                )
+            }
+            .padding()
+        }
+    }
+}
+
+private struct FeedbackComposerStatusHeader: View {
+    let title: String
+    let message: String
+    var systemImage = "checkmark.circle.fill"
+    var tint: Color = .green
+    var showsProgress = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 10) {
+                Image(systemName: systemImage)
+                    .font(.headline)
+                    .foregroundStyle(tint)
+
+                Text(title)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+
+                Spacer()
+
+                if showsProgress {
+                    ProgressView()
+                }
+            }
+
+            Text(message)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 }
 
@@ -750,12 +1202,10 @@ struct GenerativeResultsView: View {
     @State private var useFallback = false
     @State private var composerContext: ObjectiveFeedbackComposerContext?
     @State private var latestFeedbackResult: IOSBackendSubmitObjectiveFeedbackResult?
-    @State private var feedbackSuccessMessage: String?
+    @State private var pendingFeedbackSubmission: ObjectiveFeedbackPendingSubmission?
     @State private var feedbackErrorMessage: String?
-    @State private var activeFeedbackAction: String?
+    @State private var activeFeedbackActionID: UUID?
     @State private var activityDetail: IOSBackendObjectiveDetail?
-    @State private var isSubmittingFollowUpInBackground = false
-    @State private var inlineActivityMessage: String?
     @State private var activityPollTask: Task<Void, Never>?
     @State private var activityPollToken = UUID()
     @State private var activityPollUntil: Date?
@@ -772,6 +1222,14 @@ struct GenerativeResultsView: View {
         activityDetail?.tasks ?? tasks
     }
 
+    private var activityFeedbacks: [IOSBackendObjectiveFeedback] {
+        activityDetail?.objectiveFeedbacks ?? []
+    }
+
+    private var sortedActivityFeedbacks: [IOSBackendObjectiveFeedback] {
+        activityFeedbacks.sorted { $0.createdAt > $1.createdAt }
+    }
+
     private var onlineAgentsCount: Int {
         activityDetail?.onlineAgentRegistrationsCount ?? onlineAgentRegistrationsCount
     }
@@ -784,24 +1242,97 @@ struct GenerativeResultsView: View {
         activityTasks.filter { $0.status == "pending" }.count
     }
 
+    private var latestTrackedFeedbackId: UUID? {
+        latestFollowUpCard?.feedbackId
+    }
+
+    private var latestTrackedQueuedTaskCount: Int {
+        guard let feedbackId = latestTrackedFeedbackId else { return 0 }
+        return activityTasks.filter { $0.sourceFeedbackId == feedbackId && $0.status == "pending" }.count
+    }
+
+    private var latestTrackedRunningTaskCount: Int {
+        guard let feedbackId = latestTrackedFeedbackId else { return 0 }
+        return activityTasks.filter { $0.sourceFeedbackId == feedbackId && $0.status == "in_progress" }.count
+    }
+
+    private var followUpLoopCards: [ObjectiveFeedbackCardModel] {
+        var cards: [ObjectiveFeedbackCardModel] = []
+
+        if let pendingFeedbackSubmission {
+            cards.append(pendingFeedbackSubmission.card)
+        }
+
+        if let latestFeedbackResult,
+           !sortedActivityFeedbacks.contains(where: { $0.id == latestFeedbackResult.objectiveFeedback.id }) {
+            cards.append(
+                feedbackCardModel(
+                    for: latestFeedbackResult.objectiveFeedback,
+                    linkedTasks: latestFeedbackResult.followUpTasks
+                )
+            )
+        }
+
+        for feedback in sortedActivityFeedbacks {
+            let alreadyPresent = cards.contains { card in
+                card.feedbackId == feedback.id
+            }
+            if !alreadyPresent {
+                cards.append(feedbackCardModel(for: feedback))
+            }
+        }
+
+        return cards
+    }
+
+    private var latestFollowUpCard: ObjectiveFeedbackCardModel? {
+        followUpLoopCards.first
+    }
+
+    private var historicalFollowUpCards: [ObjectiveFeedbackCardModel] {
+        Array(followUpLoopCards.dropFirst())
+    }
+
     private var shouldShowAgentActivity: Bool {
-        isSubmittingFollowUpInBackground ||
-            inlineActivityMessage != nil ||
+        latestFollowUpCard != nil ||
+            pendingFeedbackSubmission != nil ||
             runningTaskCount > 0 ||
             queuedTaskCount > 0 ||
             onlineAgentsCount > 0
     }
 
     private var shouldPollAgentActivity: Bool {
-        isSubmittingFollowUpInBackground ||
+        pendingFeedbackSubmission != nil ||
             runningTaskCount > 0 ||
             queuedTaskCount > 0 ||
             (activityPollUntil.map { $0 > Date() } ?? false)
     }
 
     private var agentActivityMessage: String {
-        if isSubmittingFollowUpInBackground {
-            return "Creating follow-up tasks in the background. You can keep browsing while this screen refreshes activity."
+        if pendingFeedbackSubmission != nil {
+            return "Still working on your latest follow-up. This screen will keep refreshing until the next pass shows up."
+        }
+        if latestTrackedRunningTaskCount > 0 {
+            if latestTrackedRunningTaskCount == 1 {
+                return "Work from your latest follow-up is now running."
+            }
+            return "\(latestTrackedRunningTaskCount) tasks from your latest follow-up are now running."
+        }
+        if latestTrackedQueuedTaskCount > 0 {
+            if onlineAgentsCount > 0 {
+                if latestTrackedQueuedTaskCount == 1 {
+                    return "Your latest follow-up is queued for the next available agent."
+                }
+                return "\(latestTrackedQueuedTaskCount) tasks from your latest follow-up are queued for the next available agent."
+            }
+            if latestTrackedQueuedTaskCount == 1 {
+                return "Your latest follow-up is queued, but no agent looks online yet."
+            }
+            return "\(latestTrackedQueuedTaskCount) tasks from your latest follow-up are queued, but no agent looks online yet."
+        }
+        if let latestFollowUpCard,
+           let statusMessage = ObjectiveFeedbackPresentation.statusMessage(for: latestFollowUpCard.status, objectiveStatus: objectiveStatus) {
+            return statusMessage
         }
         if runningTaskCount > 0 {
             return "\(runningTaskCount) task(s) are currently running."
@@ -811,9 +1342,6 @@ struct GenerativeResultsView: View {
                 return "\(queuedTaskCount) task(s) are queued and ready for the next available agent."
             }
             return "\(queuedTaskCount) task(s) are queued. No agent looks online yet."
-        }
-        if let inlineActivityMessage {
-            return inlineActivityMessage
         }
         if onlineAgentsCount > 0 {
             return "\(onlineAgentsCount) agent(s) are online and ready for work."
@@ -836,18 +1364,32 @@ struct GenerativeResultsView: View {
                     VStack(alignment: .leading, spacing: 16) {
                         NodeView(node: layout)
 
+                        if let latestFollowUpCard {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("Latest Follow-up")
+                                    .font(.headline)
+                                followUpCard(for: latestFollowUpCard)
+                            }
+                        }
+
                         if shouldShowAgentActivity {
                             ResearchAgentActivityCard(
                                 runningTaskCount: runningTaskCount,
                                 queuedTaskCount: queuedTaskCount,
                                 onlineAgentsCount: onlineAgentsCount,
                                 message: agentActivityMessage,
-                                showsProgress: isSubmittingFollowUpInBackground
+                                showsProgress: pendingFeedbackSubmission != nil
                             )
                         }
 
-                        if let latestFeedbackResult {
-                            latestFeedbackPlanCard(for: latestFeedbackResult)
+                        if !historicalFollowUpCards.isEmpty {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("Follow-up Loop")
+                                    .font(.headline)
+                                ForEach(historicalFollowUpCards) { card in
+                                    followUpCard(for: card)
+                                }
+                            }
                         }
 
                         if canContinueResearch && !snapshots.isEmpty {
@@ -867,6 +1409,14 @@ struct GenerativeResultsView: View {
                 .background(Color(.systemGroupedBackground))
             } else {
                 List {
+                    if let latestFollowUpCard {
+                        Section("Latest Follow-up") {
+                            followUpCard(for: latestFollowUpCard)
+                                .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
+                                .listRowBackground(Color.clear)
+                        }
+                    }
+
                     if shouldShowAgentActivity {
                         Section("Agent Activity") {
                             ResearchAgentActivityCard(
@@ -874,18 +1424,20 @@ struct GenerativeResultsView: View {
                                 queuedTaskCount: queuedTaskCount,
                                 onlineAgentsCount: onlineAgentsCount,
                                 message: agentActivityMessage,
-                                showsProgress: isSubmittingFollowUpInBackground
+                                showsProgress: pendingFeedbackSubmission != nil
                             )
                             .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
                             .listRowBackground(Color.clear)
                         }
                     }
 
-                    if let latestFeedbackResult {
-                        Section("Latest Follow-up Plan") {
-                            latestFeedbackPlanCard(for: latestFeedbackResult)
-                            .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
-                            .listRowBackground(Color.clear)
+                    if !historicalFollowUpCards.isEmpty {
+                        Section("Follow-up Loop") {
+                            ForEach(historicalFollowUpCards) { card in
+                                followUpCard(for: card)
+                                    .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
+                                    .listRowBackground(Color.clear)
+                            }
                         }
                     }
 
@@ -988,24 +1540,14 @@ struct GenerativeResultsView: View {
                 initialFeedbackTargetID: context.targetID,
                 initialFeedbackDraft: context.draft,
                 onSubmitted: { result in
-                    latestFeedbackResult = result
-                    feedbackSuccessMessage = successMessage(for: result.objectiveFeedback.status)
-                    onFeedbackMutated?()
+                    handleFeedbackSubmitted(result)
                 },
-                onCreateRequested: { request in
-                    submitFeedbackInBackground(request)
+                onTimedOut: { pending in
+                    handleFeedbackTimedOut(pending)
                 }
             )
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
-        }
-        .alert("Research Updated", isPresented: Binding(
-            get: { feedbackSuccessMessage != nil },
-            set: { if !$0 { feedbackSuccessMessage = nil } }
-        )) {
-            Button("OK", role: .cancel) { feedbackSuccessMessage = nil }
-        } message: {
-            Text(feedbackSuccessMessage ?? "An error occurred.")
         }
         .alert("Could Not Update Follow-up Plan", isPresented: Binding(
             get: { feedbackErrorMessage != nil },
@@ -1032,35 +1574,78 @@ struct GenerativeResultsView: View {
     private func feedbackTargetLabel(for feedback: IOSBackendObjectiveFeedback) -> String {
         if let snapshotId = feedback.researchSnapshotId,
            let snapshot = snapshots.first(where: { $0.id == snapshotId }) {
-            return "Finding: \(snapshot.key)"
+            return ObjectiveFeedbackPresentation.targetLabel(for: snapshot)
         }
         if let taskId = feedback.taskId,
-           let task = tasks.first(where: { $0.id == taskId }) {
+           let task = activityTasks.first(where: { $0.id == taskId }) ?? tasks.first(where: { $0.id == taskId }) {
             return "Task: \(task.description)"
         }
         return "Entire objective"
     }
 
-    @ViewBuilder
-    private func latestFeedbackPlanCard(for result: IOSBackendSubmitObjectiveFeedbackResult) -> some View {
-        let feedback = result.objectiveFeedback
-        let requiresReview = feedback.status == "review_required"
+    private func feedbackTargetPreview(for feedback: IOSBackendObjectiveFeedback) -> String? {
+        if let snapshotId = feedback.researchSnapshotId,
+           let snapshot = snapshots.first(where: { $0.id == snapshotId }) {
+            return ObjectiveFeedbackPresentation.previewText(snapshot.value)
+        }
+        if let taskId = feedback.taskId,
+           let task = activityTasks.first(where: { $0.id == taskId }) ?? tasks.first(where: { $0.id == taskId }) {
+            return ObjectiveFeedbackPresentation.previewText(task.description)
+        }
+        return ObjectiveFeedbackPresentation.previewText(objectiveGoal)
+    }
 
-        ObjectiveFeedbackPlanCard(
+    private func followUpTasks(for feedback: IOSBackendObjectiveFeedback) -> [IOSBackendTask] {
+        activityTasks.filter { $0.sourceFeedbackId == feedback.id }
+    }
+
+    private func feedbackRecord(for feedbackId: UUID?) -> IOSBackendObjectiveFeedback? {
+        guard let feedbackId else { return nil }
+        if let feedback = activityFeedbacks.first(where: { $0.id == feedbackId }) {
+            return feedback
+        }
+        if latestFeedbackResult?.objectiveFeedback.id == feedbackId {
+            return latestFeedbackResult?.objectiveFeedback
+        }
+        return nil
+    }
+
+    private func feedbackCardModel(
+        for feedback: IOSBackendObjectiveFeedback,
+        linkedTasks: [IOSBackendTask]? = nil
+    ) -> ObjectiveFeedbackCardModel {
+        ObjectiveFeedbackCardModel(
             feedback: feedback,
             targetLabel: feedbackTargetLabel(for: feedback),
+            targetPreview: feedbackTargetPreview(for: feedback),
+            followUpTasks: linkedTasks ?? followUpTasks(for: feedback)
+        )
+    }
+
+    @ViewBuilder
+    private func followUpCard(for model: ObjectiveFeedbackCardModel) -> some View {
+        let feedback = feedbackRecord(for: model.feedbackId)
+        let requiresReview = feedback?.status == "review_required"
+
+        ObjectiveFeedbackPlanCard(
+            model: model,
             objectiveStatus: objectiveStatus,
-            followUpTasks: result.followUpTasks,
-            isHighlighted: true,
-            isWorking: activeFeedbackAction != nil,
+            isHighlighted: latestFollowUpCard?.id == model.id,
+            isWorking: feedback?.id == activeFeedbackActionID,
             onApprove: requiresReview ? {
-                Task { await approveLatestFeedbackPlan() }
+                if let feedback {
+                    Task { await approveFeedbackPlan(feedback) }
+                }
             } : nil,
             onRegenerate: requiresReview ? {
-                Task { await regenerateLatestFeedbackPlan() }
+                if let feedback {
+                    Task { await regenerateFeedbackPlan(feedback) }
+                }
             } : nil,
             onEdit: requiresReview ? {
-                composerContext = composerContext(for: feedback)
+                if let feedback {
+                    composerContext = composerContext(for: feedback)
+                }
             } : nil
         )
     }
@@ -1074,112 +1659,67 @@ struct GenerativeResultsView: View {
         )
     }
 
-    private func successMessage(for status: String) -> String {
-        switch status {
-        case "review_required":
-            return "Your follow-up plan is ready for review."
-        case "queued":
-            return "Follow-up tasks were queued for the agent."
-        case "planned":
-            return "Follow-up tasks were added to this objective for later review."
-        case "completed":
-            return "This follow-up batch is already complete."
-        default:
-            return "Research updated."
-        }
-    }
-
-    private func inlineMessage(for status: String) -> String {
-        switch status {
-        case "review_required":
-            return "The follow-up plan is ready for review."
-        case "queued":
-            return "Follow-up tasks were queued. Agent activity below will refresh automatically."
-        case "planned":
-            return "Follow-up tasks were added and saved for later review."
-        case "completed":
-            return "This follow-up batch is already complete."
-        default:
-            return "Research activity updated."
-        }
-    }
-
     @MainActor
-    private func approveLatestFeedbackPlan() async {
-        guard let feedback = latestFeedbackResult?.objectiveFeedback else { return }
-        feedbackErrorMessage = nil
-        activeFeedbackAction = "approve"
-        defer { activeFeedbackAction = nil }
-
-        do {
-            let result = try await store.approveObjectiveFeedbackPlan(objectiveId: objectiveId, feedbackId: feedback.id)
-            latestFeedbackResult = result
-            feedbackSuccessMessage = successMessage(for: result.objectiveFeedback.status)
-            onFeedbackMutated?()
-            await refreshActivityStatus()
-            extendActivityPolling()
-            reconcileActivityPolling()
-        } catch {
-            feedbackErrorMessage = error.localizedDescription
-        }
-    }
-
-    @MainActor
-    private func regenerateLatestFeedbackPlan() async {
-        guard let feedback = latestFeedbackResult?.objectiveFeedback else { return }
-        feedbackErrorMessage = nil
-        activeFeedbackAction = "regenerate"
-        defer { activeFeedbackAction = nil }
-
-        do {
-            let result = try await store.regenerateObjectiveFeedbackPlan(objectiveId: objectiveId, feedbackId: feedback.id)
-            latestFeedbackResult = result
-            feedbackSuccessMessage = successMessage(for: result.objectiveFeedback.status)
-            onFeedbackMutated?()
-            await refreshActivityStatus()
-            extendActivityPolling()
-            reconcileActivityPolling()
-        } catch {
-            feedbackErrorMessage = error.localizedDescription
-        }
-    }
-
-    @MainActor
-    private func submitFeedbackInBackground(_ request: ObjectiveFeedbackSubmissionRequest) {
-        feedbackErrorMessage = nil
-        feedbackSuccessMessage = nil
-        inlineActivityMessage = nil
-        isSubmittingFollowUpInBackground = true
+    private func handleFeedbackSubmitted(_ result: IOSBackendSubmitObjectiveFeedbackResult) {
+        pendingFeedbackSubmission = nil
+        latestFeedbackResult = result
+        onFeedbackMutated?()
         extendActivityPolling()
         reconcileActivityPolling()
 
         Task {
-            do {
-                let result = try await store.submitObjectiveFeedback(
-                    id: objectiveId,
-                    content: request.content,
-                    feedbackKind: request.feedbackKind,
-                    taskId: request.taskId,
-                    researchSnapshotId: request.researchSnapshotId
-                )
-                latestFeedbackResult = result
-                inlineActivityMessage = inlineMessage(for: result.objectiveFeedback.status)
-                isSubmittingFollowUpInBackground = false
-                onFeedbackMutated?()
-                await refreshActivityStatus()
-                extendActivityPolling()
-                reconcileActivityPolling()
-            } catch {
-                isSubmittingFollowUpInBackground = false
-                if isTimeoutError(error) {
-                    inlineActivityMessage = "This request is taking longer than expected. The Research screen will keep refreshing activity."
-                    extendActivityPolling()
-                    reconcileActivityPolling()
-                    await refreshActivityStatus()
-                } else {
-                    feedbackErrorMessage = error.localizedDescription
-                }
-            }
+            await refreshActivityStatus()
+            extendActivityPolling()
+            reconcileActivityPolling()
+        }
+    }
+
+    @MainActor
+    private func handleFeedbackTimedOut(_ pending: ObjectiveFeedbackPendingSubmission) {
+        pendingFeedbackSubmission = pending
+        extendActivityPolling()
+        reconcileActivityPolling()
+
+        Task {
+            await refreshActivityStatus()
+        }
+    }
+
+    @MainActor
+    private func approveFeedbackPlan(_ feedback: IOSBackendObjectiveFeedback) async {
+        feedbackErrorMessage = nil
+        activeFeedbackActionID = feedback.id
+        defer { activeFeedbackActionID = nil }
+
+        do {
+            let result = try await store.approveObjectiveFeedbackPlan(objectiveId: objectiveId, feedbackId: feedback.id)
+            latestFeedbackResult = result
+            pendingFeedbackSubmission = nil
+            onFeedbackMutated?()
+            await refreshActivityStatus()
+            extendActivityPolling()
+            reconcileActivityPolling()
+        } catch {
+            feedbackErrorMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func regenerateFeedbackPlan(_ feedback: IOSBackendObjectiveFeedback) async {
+        feedbackErrorMessage = nil
+        activeFeedbackActionID = feedback.id
+        defer { activeFeedbackActionID = nil }
+
+        do {
+            let result = try await store.regenerateObjectiveFeedbackPlan(objectiveId: objectiveId, feedbackId: feedback.id)
+            latestFeedbackResult = result
+            pendingFeedbackSubmission = nil
+            onFeedbackMutated?()
+            await refreshActivityStatus()
+            extendActivityPolling()
+            reconcileActivityPolling()
+        } catch {
+            feedbackErrorMessage = error.localizedDescription
         }
     }
 
@@ -1218,10 +1758,45 @@ struct GenerativeResultsView: View {
     @MainActor
     private func refreshActivityStatus() async {
         do {
-            activityDetail = try await store.fetchDetail(for: objectiveId)
+            let detail = try await store.fetchDetail(for: objectiveId)
+            activityDetail = detail
+            reconcileFeedbackState(with: detail)
         } catch {
             IOSRuntimeLog.log("[GenerativeResultsView] Activity refresh failed: \(error)")
         }
+    }
+
+    @MainActor
+    private func reconcileFeedbackState(with detail: IOSBackendObjectiveDetail) {
+        if let latestFeedbackId = latestFeedbackResult?.objectiveFeedback.id,
+           let feedback = detail.objectiveFeedbacks.first(where: { $0.id == latestFeedbackId }) {
+            latestFeedbackResult = IOSBackendSubmitObjectiveFeedbackResult(
+                objective: detail.objective,
+                objectiveFeedback: feedback,
+                followUpTasks: detail.tasks.filter { $0.sourceFeedbackId == feedback.id }
+            )
+        }
+
+        if let pendingFeedbackSubmission,
+           let feedback = detail.objectiveFeedbacks.first(where: { matchesPendingSubmission($0, pending: pendingFeedbackSubmission) }) {
+            latestFeedbackResult = IOSBackendSubmitObjectiveFeedbackResult(
+                objective: detail.objective,
+                objectiveFeedback: feedback,
+                followUpTasks: detail.tasks.filter { $0.sourceFeedbackId == feedback.id }
+            )
+            self.pendingFeedbackSubmission = nil
+        }
+    }
+
+    private func matchesPendingSubmission(
+        _ feedback: IOSBackendObjectiveFeedback,
+        pending: ObjectiveFeedbackPendingSubmission
+    ) -> Bool {
+        feedback.content == pending.request.content &&
+            feedback.feedbackKind == pending.request.feedbackKind &&
+            feedback.taskId == pending.request.taskId &&
+            feedback.researchSnapshotId == pending.request.researchSnapshotId &&
+            feedback.createdAt >= pending.submittedAt.addingTimeInterval(-15)
     }
 
     @MainActor
@@ -1258,14 +1833,6 @@ struct GenerativeResultsView: View {
             return
         }
         activityPollUntil = nextDeadline
-    }
-
-    private func isTimeoutError(_ error: Error) -> Bool {
-        if let urlError = error as? URLError {
-            return urlError.code == .timedOut
-        }
-        let nsError = error as NSError
-        return nsError.domain == NSURLErrorDomain && nsError.code == URLError.timedOut.rawValue
     }
 }
 
