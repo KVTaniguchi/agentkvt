@@ -30,7 +30,7 @@ actor ObjectiveExecutionPool {
         taskRunner: AgentTaskRunner,
         backendClient: BackendAPIClient?,
         maxConcurrentWorkers: Int,
-        researchSettleTimeoutSeconds: TimeInterval = 600
+        researchSettleTimeoutSeconds: TimeInterval = 1800
     ) {
         self.processor = ObjectiveExecutionProcessor(
             modelContainer: modelContainer,
@@ -1499,7 +1499,10 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             taskName: "Objective Recovery Supervisor"
         )
         do {
-            try await waitForResearchToSettle(objectiveId: orphan.objectiveId, taskId: orphan.taskId)
+            // Recovery supervisors inherit leftover research units from the prior session; give
+            // them a generous timeout (1 hour) since the single worker may need to drain units
+            // for several concurrent tasks before reaching these.
+            try await waitForResearchToSettle(objectiveId: orphan.objectiveId, taskId: orphan.taskId, timeout: 3600)
             _ = try ensureSynthesisWorkUnit(
                 objectiveId: orphan.objectiveId,
                 taskId: orphan.taskId,
