@@ -13,6 +13,7 @@ class ObjectivePresentationBuilder
     - text:   {"type":"text","content":"string","style":"headline|body|caption"} (style defaults to body)
     - stat:   {"type":"stat","label":"string","value":"string","delta":"optional change note"}
     - badge:  {"type":"badge","label":"string","color":"green|red|orange|blue|gray"}
+    - link:   {"type":"link","label":"string","url":"string"}
     - divider: {"type":"divider"}
 
     Rules:
@@ -21,6 +22,7 @@ class ObjectivePresentationBuilder
     - Use cards to group related findings into sections
     - Use stats for key metrics and quantitative findings
     - Use badges for status labels, tags, and categories
+    - Include a link node at the bottom of a card if the research finding references a specific actionable URL
     - Keep all text concise — this is a mobile UI
     - Respond with ONLY the JSON object, no markdown fences, no explanation
   PROMPT

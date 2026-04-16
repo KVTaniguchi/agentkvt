@@ -17,6 +17,8 @@ struct UINode: Codable, Sendable {
     let delta: String?
     // badge
     let color: String?    // "green" | "red" | "orange" | "blue" | "gray"
+    // link
+    let url: String?
 }
 
 struct UIPresentation: Codable, Sendable {
@@ -483,6 +485,8 @@ struct NodeView: View {
             StatNodeView(node: node)
         case "badge":
             BadgeNodeView(node: node)
+        case "link":
+            LinkNodeView(node: node)
         case "divider":
             Divider()
         default:
@@ -587,6 +591,23 @@ private struct BadgeNodeView: View {
                 .padding(.vertical, 4)
                 .background(tint.opacity(0.12))
                 .clipShape(Capsule())
+        }
+    }
+}
+
+private struct LinkNodeView: View {
+    let node: UINode
+
+    var body: some View {
+        if let label = node.label, let urlStr = node.url, let url = URL(string: urlStr) {
+            Link(destination: url) {
+                Label(label, systemImage: "arrow.up.right.square")
+                    .frame(maxWidth: .infinity, alignment: .center)
+            }
+            .buttonStyle(.borderedProminent)
+            #if os(iOS)
+            .controlSize(.large)
+            #endif
         }
     }
 }

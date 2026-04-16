@@ -2033,7 +2033,8 @@ struct SnapshotRow: View {
                     .clipShape(Capsule())
             }
 
-            Text(ObjectiveFeedbackPresentation.displayText(snapshot.value) ?? snapshot.value)
+            let valueText = ObjectiveFeedbackPresentation.displayText(snapshot.value) ?? snapshot.value
+            Text(LocalizedStringKey(valueText))
                 .font(.subheadline)
                 .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
