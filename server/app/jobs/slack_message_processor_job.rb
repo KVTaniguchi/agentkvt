@@ -14,7 +14,7 @@ class SlackMessageProcessorJob < ApplicationJob
     objective = workspace.objectives.find_by(id: result["objective_id"])
     return unless objective
 
-    ResearchSnapshot.create!(
+    ResearchSnapshot.upsert_for_objective!(
       objective:  objective,
       key:        "slack_signal",
       value:      result["summary"].presence || message.text.truncate(500),

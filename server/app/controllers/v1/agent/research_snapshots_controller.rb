@@ -25,24 +25,21 @@ module V1
           task_id.present?
         end
 
-        snapshot = objective.research_snapshots.find_or_initialize_by(key: snapshot_params[:key])
-
-        if snapshot.persisted?
-          if snapshot.value != snapshot_params[:value]
-            snapshot.previous_value = snapshot.value
-            snapshot.delta_note = "Changed from #{snapshot.value} to #{snapshot_params[:value]}"
-          else
-            # Same value: clear any stale delta_note so DeltaMonitorJob doesn't re-alert.
-            snapshot.delta_note = nil
-          end
-        end
-
-        snapshot.assign_attributes(
+        snapshot = ResearchSnapshot.upsert_for_objective!(
+          objective: objective,
+          key: snapshot_params[:key],
           value: snapshot_params[:value],
+          is_repellent: snapshot_params[:is_repellent],
+          repellent_reason: snapshot_params[:repellent_reason],
+          repellent_scope: snapshot_params[:repellent_scope],
+          snapshot_kind: snapshot_params[:snapshot_kind] || "result",
           task_id: task_id,
           checked_at: Time.current
         )
-        snapshot.save!
+
+        if snapshot.is_repellent
+          objective.decrement!(:nutrient_density)
+        end
 
         # Update parent task status if a task_id was supplied
         if task_id && mark_task_completed
@@ -60,7 +57,9 @@ module V1
       private
 
       def snapshot_params
-        params.require(:research_snapshot).permit(:key, :value)
+        params.require(:research_snapshot).permit(
+          :key, :value, :is_repellent, :repellent_reason, :repellent_scope, :snapshot_kind
+        )
       end
     end
   end
