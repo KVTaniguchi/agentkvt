@@ -3,6 +3,24 @@ class ResearchSnapshot < ApplicationRecord
   belongs_to :task, optional: true
   has_many :anchored_objective_feedbacks, class_name: "ObjectiveFeedback", dependent: :nullify
 
+  SNAPSHOT_KINDS = %w[result exudate].freeze
+
+  def self.supports_snapshot_kind?
+    attribute_names.include?("snapshot_kind")
+  end
+
+  def self.supports_is_repellent?
+    attribute_names.include?("is_repellent")
+  end
+
+  def self.supports_repellent_reason?
+    attribute_names.include?("repellent_reason")
+  end
+
+  def self.supports_repellent_scope?
+    attribute_names.include?("repellent_scope")
+  end
+
   def self.upsert_for_objective!(objective:, key:, value:, checked_at: Time.current, task_id: nil, is_repellent: false, repellent_reason: nil, repellent_scope: nil, snapshot_kind: "result")
     attempts = 0
 
@@ -19,15 +37,17 @@ class ResearchSnapshot < ApplicationRecord
         end
       end
 
-      snapshot.assign_attributes(
+      attrs = {
         value: value,
-        is_repellent: is_repellent,
-        repellent_reason: repellent_reason,
-        repellent_scope: repellent_scope,
-        snapshot_kind: snapshot_kind,
         task_id: task_id,
         checked_at: checked_at
-      )
+      }
+      attrs[:is_repellent] = is_repellent if supports_is_repellent?
+      attrs[:repellent_reason] = repellent_reason if supports_repellent_reason?
+      attrs[:repellent_scope] = repellent_scope if supports_repellent_scope?
+      attrs[:snapshot_kind] = snapshot_kind if supports_snapshot_kind?
+
+      snapshot.assign_attributes(attrs)
       snapshot.save!
       snapshot
     rescue ActiveRecord::RecordNotUnique
@@ -39,9 +59,7 @@ class ResearchSnapshot < ApplicationRecord
 
   validates :key, presence: true
   validates :value, presence: true
-
-  SNAPSHOT_KINDS = %w[result exudate].freeze
-  validates :snapshot_kind, inclusion: { in: SNAPSHOT_KINDS }
+  validates :snapshot_kind, inclusion: { in: SNAPSHOT_KINDS }, if: :supports_snapshot_kind?
 
   validate :value_must_be_plain_language
 
@@ -49,9 +67,13 @@ class ResearchSnapshot < ApplicationRecord
 
   private
 
+  def supports_snapshot_kind?
+    has_attribute?("snapshot_kind")
+  end
+
   def value_must_be_plain_language
     return if value.blank?
-    return if snapshot_kind == "exudate"
+    return if supports_snapshot_kind? && self[:snapshot_kind] == "exudate"
 
     if ResearchSnapshotValueValidator.json_structure_blob?(value)
       errors.add(:value, "must be plain-language findings, not JSON or structured blobs")

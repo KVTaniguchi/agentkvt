@@ -37,7 +37,7 @@ module V1
           checked_at: Time.current
         )
 
-        if snapshot.is_repellent
+        if snapshot.has_attribute?("is_repellent") && snapshot[:is_repellent]
           objective.decrement!(:nutrient_density)
         end
 
