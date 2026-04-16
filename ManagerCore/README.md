@@ -21,8 +21,6 @@ Shared SwiftData schema and entities for the AgentKVT system (Brain on macOS, Re
 - **ResearchSnapshot** — Persisted research findings (local delta tracking).
 - **InboundFile** — Uploaded file tracking.
 
-### Ingestion
-- **IncomingEmailSummary** — Pre-summarized emails from the CloudKit bridge.
 
 ### Legacy
 - **~~MissionDefinition~~** — *(Deprecated)* Superseded by server-side Objectives.

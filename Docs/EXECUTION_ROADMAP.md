@@ -13,8 +13,8 @@ Use alongside [SOVEREIGN_PLANNER_VISION.md](SOVEREIGN_PLANNER_VISION.md), [FOUND
 Build a private, local-first planning system where:
 
 - the macOS Brain decomposes objectives into tasks, researches them, and generates structured outputs
-- the iOS Remote presents research results, reviewable follow-up loops, deterministic user actions, and clear live-work monitoring
-- the Rails backend on Mac acts as the system of record for objectives, tasks, research snapshots, action items, and logs
+- the iOS Remote presents research results, reviewable follow-up loops, and clear live-work monitoring
+- the Rails backend on Mac acts as the system of record for objectives, tasks, research snapshots, and logs
 - model usage remains local, constrained, and inspectable
 
 ## MVP Definition
@@ -27,13 +27,12 @@ A user can:
 2. Let the server decompose it into tasks
 3. Let the Mac agent research each task using web search and local LLM
 4. View structured research results back on iPhone
-5. Receive `ActionItem`s with concrete next steps
-6. Inspect an `AgentLog` trail showing the research and synthesis
+5. Inspect an `AgentLog` trail showing the research and synthesis
 
 ### MVP scope
 
-- shared data schema for Objectives, Tasks, ResearchSnapshots, ActionItems, AgentLogs, LifeContext
-- iOS UI for creating objectives, reviewing plans and follow-ups, monitoring live work, viewing research results, and managing actions
+- shared data schema for Objectives, Tasks, ResearchSnapshots, AgentLogs, LifeContext
+- iOS UI for creating objectives, reviewing plans and follow-ups, monitoring live work, and viewing research results
 - Rails backend with objective planning, task dispatch, and result persistence
 - macOS runner that executes tasks via ObjectiveExecutionPool with bounded concurrency
 - local LLM integration through Ollama
@@ -55,8 +54,8 @@ All major components are implemented with real business logic. The system runs i
 
 - **Rails API backend** — full CRUD for objectives with task decomposition via `ObjectivePlanner`; `TaskExecutorJob` dispatches work to Mac agents; workspace isolation via `X-Workspace-Slug`; bearer token auth for agent endpoints; `ObjectivePresentationBuilder` for generative results UI
 - **Mac runner** — event-driven `AgentExecutionQueue`; `ObjectiveExecutionPool` with configurable concurrent workers; `AgentTaskRunner` with retry logic for refusals and missing tool calls; tool registry with 20+ tools; `BackendAPIClient` for API integration
-- **iOS app** — objective CRUD with plan approval and run/rerun/reset controls; generative results view via `ObjectivePresentationBuilder`; `Latest Follow-up` / `Follow-up Loop`; Objective Detail live monitoring with `Working On Now` and `Likely next check-in`; action items with intent routing; agent log view; chat interface; inbound file uploads; family member profiles; backend bootstrap on launch
-- **ManagerCore** — shared Swift package with SwiftData models (ActionItem, AgentLog, FamilyMember, LifeContext, ChatThread, ChatMessage, WorkUnit, EphemeralPin, ResourceHealth, ResearchSnapshot, InboundFile, IncomingEmailSummary)
+- **iOS app** — objective CRUD with plan approval and run/rerun/reset controls; generative results view via `ObjectivePresentationBuilder`; `Latest Follow-up` / `Follow-up Loop`; Objective Detail live monitoring with `Working On Now` and `Likely next check-in`; agent log view; chat interface; inbound file uploads; family member profiles; backend bootstrap on launch
+- **ManagerCore** — shared Swift package with SwiftData models (AgentLog, FamilyMember, LifeContext, ChatThread, ChatMessage, WorkUnit, EphemeralPin, ResourceHealth, ResearchSnapshot, InboundFile)
 - **Structured logging** — AgentLog phases include start, tool_call, tool_result, assistant, assistant_final, outcome, error, warning
 - **Email ingestion** — IMAP poller + EmailIngestor + sanitization pipeline
 - **Research pipeline** — multi_step_search, read/write_objective_snapshot, read/write_research_snapshot tools
@@ -80,7 +79,7 @@ All major components are implemented with real business logic. The system runs i
 | Area | Status | Notes |
 |---|---|---|
 | Shared data model | Done | Core entities in ManagerCore + Rails schema. |
-| iOS objective + actions UI | Done | Full objective lifecycle, research results, action items, chat. |
+| iOS objective UI | Done | Full objective lifecycle, research results, and chat. |
 | macOS brain | Done | Event-driven scheduler, ObjectiveExecutionPool, AgentTaskRunner. |
 | Local LLM usage | Done | Ollama with tool-calling (llama4:latest default). |
 | Rails backend | Done | Full API surface; objective planning + task dispatch. |
@@ -120,7 +119,7 @@ All major components are implemented with real business logic. The system runs i
 
 ## Key Decisions To Preserve
 
-- Objectives + deterministic actions remain the primary interaction model
+- Objectives + structured research remain the primary interaction model
 - Tools stay sandboxed and explicitly allowlisted
 - Personal data is sanitized locally before model exposure
 - Local-first execution is the baseline; Rails runs on the same Mac as the agent

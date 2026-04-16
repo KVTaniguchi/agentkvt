@@ -5,7 +5,7 @@ This document defines the verification path for AgentKVT's core loop:
 1. Create an objective on iOS
 2. Let the Rails backend decompose it into tasks
 3. Let the Mac Brain research each task
-4. Inspect research results, live work state, and action items on iOS
+4. Inspect research results and live work state on iOS
 
 ## Success Criteria
 
@@ -17,7 +17,6 @@ An E2E pass is successful when all of the following are true:
 - the agent produces at least one `ResearchSnapshot`
 - `AgentLog` contains start, tool_call, tool_result, and outcome entries for the run
 - the iOS app shows research results in the Research screen and a clear next-step state in Objective Detail
-- any created `ActionItem`s are visible in the Actions tab
 
 ## Recommended First Scenario
 
@@ -69,8 +68,7 @@ Open [AgentKVTiOS/GETTING_STARTED.md](../AgentKVTiOS/GETTING_STARTED.md) and lau
 Verify:
 - the app opens successfully
 - the Objectives tab is visible
-- the Actions tab is accessible
-- the Log tab opens
+- objective detail loads without a dedicated Log tab
 
 ### 2. Prepare the Rails backend
 
@@ -146,8 +144,7 @@ In the iOS app:
   - `Latest Follow-up`
   - `Agent Activity`
   - `Follow-up Loop`
-- The Log tab should show execution entries
-- Any created ActionItems should appear in the Actions tab
+- Objective Detail should show recent execution activity
 
 ### 7. Verify run and recovery controls
 
@@ -219,4 +216,4 @@ cd AgentKVTMac
 swift run AgentKVTMacRunner
 ```
 
-This runs a single test that creates one ActionItem via `write_action_item`. It does not test the objectives pipeline.
+This runs the runner in single-run mode for a basic smoke test. It does not test the objectives pipeline.

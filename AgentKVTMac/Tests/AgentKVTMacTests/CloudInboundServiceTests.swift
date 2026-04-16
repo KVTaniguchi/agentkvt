@@ -10,7 +10,6 @@ struct CloudInboundServiceTests {
         let schema = Schema([
             LifeContext.self,
             ResearchSnapshot.self,
-            ActionItem.self,
             AgentLog.self,
             InboundFile.self
         ])

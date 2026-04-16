@@ -6,7 +6,6 @@ Use these IDs when configuring which tools a task or objective is authorized to 
 
 | Tool ID | Description |
 |---------|-------------|
-| `write_action_item` | Write a dynamic action item (button) for the iOS dashboard. Title and systemIntent from LLM; payload optional. |
 | `write_objective_snapshot` | Persist research findings (prose) for an objective task to the Rails backend. |
 | `read_objective_snapshot` | Read existing research snapshots for an objective/task from the Rails backend. |
 
@@ -27,8 +26,6 @@ Use these IDs when configuring which tools a task or objective is authorized to 
 | `get_life_context` | Read LifeContext entries (goals, location, preferences) from local SwiftData. |
 | `fetch_agent_logs` | Read recent agent logs. Filter by mission_name or phases. |
 | `fetch_bee_ai_context` | Fetch personal context from [Bee Computer](https://docs.bee.computer/docs) via local `bee proxy`. See [BEE_AI_INTEGRATION_PLAN.md](BEE_AI_INTEGRATION_PLAN.md). |
-| `fetch_email_summaries` | Read pre-summarized emails that arrived via the CloudKit bridge. |
-| `mark_email_summary_processed` | Mark a CloudKit email summary as processed. |
 | `github_agent` | Read-only GitHub operations on allowed repositories (list issues). PAT and repo allowlist configured at startup. |
 
 ## Communication Tools
@@ -58,19 +55,6 @@ Use these IDs when configuring which tools a task or objective is authorized to 
 
 ---
 
-## SystemIntent Values for write_action_item
-
-When calling `write_action_item`, `systemIntent` must be one of these values. Each intent requires specific keys in `payloadJson`. The canonical schema is defined in `ManagerCore/Sources/ManagerCore/SystemIntent.swift`.
-
-| systemIntent | Required payloadJson keys | Optional payloadJson keys |
-|---|---|---|
-| `calendar.create` | `eventTitle` (string), `startDate` (ISO-8601) | `durationMinutes` (integer, default 60), `notes` (string) |
-| `mail.reply` | `toAddress` (string), `subject` (string), `draftBody` (string) | — |
-| `reminder.add` | `reminderTitle` (string) | `dueDate` (ISO-8601), `notes` (string) |
-| `url.open` | `url` (absolute URL string) | `label` (string) |
-
-Legacy alias `open_url` is normalized to `url.open`, but new prompts should use canonical values above.
-
 ## Runtime Behavior
 
-When `write_action_item` is in a task's allowed tools, the Mac runner automatically appends runtime guidance telling the model that the tool is authorized and that the task must create at least one visible action item before finishing. A task that still never calls this tool will produce a `"warning"` phase `AgentLog` entry and no visible output on iOS.
+The Mac runner automatically appends runtime guidance for each tool in a task's allowed list, helping the model understand when and how to use each tool effectively. Tool guidance is generated dynamically based on the task's system prompt and allowed tool IDs.

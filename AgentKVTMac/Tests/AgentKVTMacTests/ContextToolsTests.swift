@@ -126,7 +126,7 @@ struct ContextToolsTests {
     // MARK: - Helpers
     
     private func createInMemoryContext() throws -> (ModelContext, ModelContainer) {
-        let schema = Schema([LifeContext.self, WorkUnit.self, ActionItem.self, AgentLog.self])
+        let schema = Schema([LifeContext.self, WorkUnit.self, AgentLog.self])
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
         let container = try ModelContainer(for: schema, configurations: [config])
         return (ModelContext(container), container)

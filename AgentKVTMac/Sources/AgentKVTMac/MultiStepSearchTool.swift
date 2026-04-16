@@ -11,7 +11,7 @@ public func makeMultiStepSearchTool(apiKey: String? = nil) -> ToolRegistry.Tool 
             Run 2–5 related search or browse sub-queries in a single turn and receive one synthesized Markdown report.
             Use for comparison research (e.g. check hotel prices across multiple sites, compare flight options).
             Each step is either a web search ("search") or a direct URL browse ("browse").
-            Results are capped per step to preserve context. Do not call write_action_item in the same response — review the report first.
+            Results are capped per step to preserve context. Review the report before taking further action.
             """,
         parameters: .init(
             type: "object",

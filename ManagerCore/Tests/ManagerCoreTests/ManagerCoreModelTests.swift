@@ -17,19 +17,6 @@ struct ManagerCoreModelTests {
         #expect(snap.deltaNote == "down $10")
     }
 
-    @Test("ActionItem can be created and has expected properties")
-    func actionItemCreation() throws {
-        let item = ActionItem(
-            title: "Review: Acme Corp - Senior iOS",
-            systemIntent: SystemIntent.urlOpen.rawValue,
-            payloadData: "{\"url\":\"https://example.com/job\"}".data(using: .utf8)
-        )
-        #expect(item.title == "Review: Acme Corp - Senior iOS")
-        #expect(item.systemIntent == SystemIntent.urlOpen.rawValue)
-        #expect(item.isHandled == false)
-        #expect(item.relevanceScore == 1.0)
-    }
-
     @Test("LifeContext can be created with key and value")
     func lifeContextCreation() throws {
         let ctx = LifeContext(key: "goals", value: "Senior iOS in Philly")
@@ -48,7 +35,7 @@ struct ManagerCoreModelTests {
 
     @Test("ChatThread and ChatMessage can be created with expected defaults")
     func chatModelCreation() throws {
-        let thread = ChatThread(title: "Quick Chat", allowedToolIds: ["write_action_item"])
+        let thread = ChatThread(title: "Quick Chat", allowedToolIds: ["fetch_agent_logs"])
         let pendingMessage = ChatMessage(
             threadId: thread.id,
             role: "user",
@@ -57,7 +44,7 @@ struct ManagerCoreModelTests {
         )
 
         #expect(thread.title == "Quick Chat")
-        #expect(thread.allowedToolIds == ["write_action_item"])
+        #expect(thread.allowedToolIds == ["fetch_agent_logs"])
         #expect(!thread.systemPrompt.isEmpty)
         #expect(pendingMessage.threadId == thread.id)
         #expect(pendingMessage.role == "user")
@@ -68,7 +55,6 @@ struct ManagerCoreModelTests {
     func stigmergyModelsRoundTrip() throws {
         let schema = Schema([
             LifeContext.self,
-            ActionItem.self,
             AgentLog.self,
             InboundFile.self,
             ChatThread.self,
@@ -116,7 +102,6 @@ struct ManagerCoreModelTests {
     func schemaAndContainer() throws {
         let schema = Schema([
             LifeContext.self,
-            ActionItem.self,
             AgentLog.self,
             InboundFile.self,
             ChatThread.self,
@@ -134,9 +119,6 @@ struct ManagerCoreModelTests {
         let snap = ResearchSnapshot(key: "metric", lastKnownValue: "42")
         context.insert(snap)
 
-        let item = ActionItem(title: "Test action", systemIntent: "test")
-        context.insert(item)
-
         let thread = ChatThread(title: "Assistant")
         context.insert(thread)
 
@@ -150,10 +132,6 @@ struct ManagerCoreModelTests {
         #expect(snaps.count == 1)
         #expect(snaps[0].key == "metric")
 
-        let itemDesc = FetchDescriptor<ActionItem>()
-        let items = try context.fetch(itemDesc)
-        #expect(items.count == 1)
-
         let threadDesc = FetchDescriptor<ChatThread>()
         let threads = try context.fetch(threadDesc)
         #expect(threads.count == 1)
@@ -162,40 +140,5 @@ struct ManagerCoreModelTests {
         let messages = try context.fetch(messageDesc)
         #expect(messages.count == 1)
         #expect(messages[0].threadId == thread.id)
-    }
-
-    @Test("Deleting an ActionItem persists removal across SwiftData contexts")
-    func actionItemDeletionPersistsAcrossContexts() throws {
-        let schema = Schema([
-            ActionItem.self,
-            AgentLog.self,
-        ])
-        let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
-        let container = try ModelContainer(for: schema, configurations: [config])
-        let context = ModelContext(container)
-
-        let actionItem = ActionItem(
-            title: "Review nightly briefing",
-            systemIntent: SystemIntent.urlOpen.rawValue
-        )
-        let log = AgentLog(
-            phase: "assistant_final",
-            content: "Mission completed successfully."
-        )
-
-        context.insert(actionItem)
-        context.insert(log)
-        try context.save()
-
-        context.delete(actionItem)
-        try context.save()
-
-        let verificationContext = ModelContext(container)
-        let actionItems = try verificationContext.fetch(FetchDescriptor<ActionItem>())
-        let logs = try verificationContext.fetch(FetchDescriptor<AgentLog>())
-
-        #expect(actionItems.isEmpty)
-        #expect(logs.count == 1)
-        #expect(logs[0].phase == "assistant_final")
     }
 }

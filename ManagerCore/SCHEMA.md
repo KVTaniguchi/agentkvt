@@ -143,23 +143,6 @@ Uploaded file tracking.
 
 ---
 
-## Ingestion Entities
-
-### IncomingEmailSummary
-Pre-summarized emails from the CloudKit bridge (iOS edge processing).
-
-| Property     | Type     | Description                          |
-|-------------|----------|--------------------------------------|
-| id          | UUID     | Unique identifier                    |
-| subject     | String   | Email subject                        |
-| senderHint  | String?  | Sender identifier                    |
-| summary     | String   | Summarized content                   |
-| isProcessed | Bool     | Whether the agent has processed it   |
-| receivedAt  | Date     | When the email arrived               |
-| processedAt | Date?    | When the agent processed it          |
-
----
-
 ## Legacy Entities
 
 ### ~~MissionDefinition~~ *(Deprecated)*
@@ -199,7 +182,6 @@ let schema = Schema([
     ResourceHealth.self,
     ResearchSnapshot.self,
     InboundFile.self,
-    IncomingEmailSummary.self,
 ])
 let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 let container = try ModelContainer(for: schema, configurations: [config])

@@ -24,7 +24,6 @@ SwiftUI iPhone client for the AgentKVT family server. The app reads shared famil
 - **Objectives tab:** Create and manage server-backed objectives. Review plan and follow-up states, monitor live work with `Working On Now` and `Likely next check-in`, inspect research results, and use the `Latest Follow-up` / `Follow-up Loop` flow.
 - **Actions tab:** Lists server-backed `ActionItem` entries with native intent buttons (url.open, calendar.create, etc.).
 - **Context tab:** Edit server-backed `LifeContext` entries (goals, location, preferences).
-- **Log tab:** Review recent family-server agent logs grouped by phase.
 - **Chat tab:** Conversational interface with the agent, with family profile attribution.
 - **Files tab:** Upload PDFs, text files, or spreadsheets to the family server for agent processing.
 

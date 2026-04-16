@@ -2,8 +2,8 @@
 
 The Mac agent polls `kvtingest@gmail.com` via IMAP and processes each incoming email
 as an agent task. Subscribe to mailing lists and newsletters using that address
-instead of your personal email — the agent extracts action items and surfaces them
-in the iOS Actions tab.
+instead of your personal email — the agent extracts key findings and logs them
+via the Agent Log for review in the iOS app.
 
 ## Architecture
 
@@ -20,10 +20,10 @@ AgentExecutionQueue dispatches .emailFile event
         │
         │  incoming_email_trigger tool reads next pending email
         ▼
-Agent creates ActionItems (calendar.create, url.open, reminder.add, …)
+Agent logs findings via AgentLog
         │
         ▼
-iOS Actions tab
+iOS Agent Log tab
 ```
 
 No Rails changes. No iOS changes. The IMAP poller slots into the existing
@@ -95,7 +95,7 @@ Open the iOS app → Missions → +
 |-------|-------|
 | Name | Mailing List Processor |
 | Schedule | webhook |
-| Allowed tools | `incoming_email_trigger`, `write_action_item` |
+| Allowed tools | `incoming_email_trigger` |
 
 System prompt:
 
@@ -104,13 +104,13 @@ You process incoming mailing list and newsletter emails.
 
 Call incoming_email_trigger to read the next email.
 
-From the email content, extract the most useful items and call write_action_item for each:
-- Events or deadlines → system_intent: "calendar.create" with date/time
-- Links or articles worth reading → system_intent: "url.open" with the URL and a short label
-- Reminders or follow-ups → system_intent: "reminder.add" with due date if mentioned
+From the email content, extract the most useful items and summarize them:
+- Events or deadlines with dates
+- Links or articles worth reading
+- Reminders or follow-ups with due dates if mentioned
 
-Write at most 3 action items per email. Prefer specific, actionable items over vague summaries.
-If the email is pure promotional noise with no actionable content, do not write any action items.
+Provide a concise summary of at most 3 actionable findings per email.
+If the email is pure promotional noise with no actionable content, note that and move on.
 ```
 
 ---
@@ -143,8 +143,7 @@ The script:
 5. Returns a JSON array of written paths
 
 `EmailIngestor` watches the inbox directory and enqueues each `.eml` for the
-`incoming_email_trigger` tool. The Mailing List Processor mission fires, reads the email,
-and writes action items.
+`incoming_email_trigger` tool. The Mailing List Processor mission fires and reads the email.
 
 ---
 
@@ -172,7 +171,7 @@ tail -f ~/.agentkvt/logs/agentkvt-mac.log | grep -E "IMAP|emailFile"
 
 **3. iOS confirmation:**
 
-Action items from the processed email appear in the iOS Actions tab.
+Processed email findings appear in the iOS Agent Log tab.
 
 **4. Mark-read check:**
 

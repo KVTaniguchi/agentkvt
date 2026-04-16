@@ -15,7 +15,6 @@ The following entities are owned by the backend and synced to clients via the AP
 
 - `FamilyMember`
 - `LifeContext`
-- `ActionItem`
 - `AgentLog`
 - `Objective`
 - `ObjectiveFeedback`

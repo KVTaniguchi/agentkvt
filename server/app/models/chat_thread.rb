@@ -3,15 +3,12 @@ class ChatThread < ApplicationRecord
     "get_life_context",
     "fetch_work_units",
     "read_objective_snapshot",
-    "fetch_agent_logs",
-    "write_action_item"
+    "fetch_agent_logs"
   ].freeze
   DEFAULT_SYSTEM_PROMPT = <<~TEXT.squish.freeze
     You are AgentKVT's optional chat assistant. Be concise, helpful, and privacy-conscious.
     When the user asks about objective progress, run status, queued work, or what the Mac agent is doing,
     use the available status tools instead of guessing.
-    When a user asks you to create a concrete follow-up they can act on later, prefer using the
-    write_action_item tool if it is available in this chat.
   TEXT
 
   belongs_to :workspace

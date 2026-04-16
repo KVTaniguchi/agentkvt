@@ -15,22 +15,16 @@ struct DashboardView: View {
             ObjectivesDashboardView()
                 .tabItem { Label("Objectives", systemImage: "target") }
                 .tag(0)
-            ActionItemsList()
-                .tabItem { Label("Actions", systemImage: "square.grid.2x2") }
-                .tag(1)
 
             LifeContextView()
                 .tabItem { Label("Context", systemImage: "person.crop.circle") }
                 .tag(3)
-            AgentLogView()
-                .tabItem { Label("Log", systemImage: "doc.text.magnifyingglass") }
-                .tag(4)
             ChatView()
                 .tabItem { Label("Chat", systemImage: "message") }
-                .tag(5)
+                .tag(4)
             InboundFilesView(isImporterPresented: $isImporterPresented)
                 .tabItem { Label("Files", systemImage: "doc") }
-                .tag(6)
+                .tag(5)
         }
         .fileImporter(
             isPresented: $isImporterPresented,
@@ -96,176 +90,6 @@ struct DashboardView: View {
     }
 }
 
-struct ActionItemsList: View {
-    @Environment(ActionsStore.self) private var store
-    @State private var handleErrorMessage: String?
-
-    var body: some View {
-        NavigationStack {
-            List {
-                ForEach(store.items, id: \.id) { item in
-                    NavigationLink {
-                        RemoteActionItemDetailView(item: item) {
-                            Task { await markHandled(item) }
-                        }
-                    } label: {
-                        RemoteActionItemRow(item: item)
-                    }
-                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                        Button {
-                            Task { await markHandled(item) }
-                        } label: {
-                            Label("Mark Done", systemImage: "checkmark.circle.fill")
-                        }
-                        .tint(.green)
-                    }
-                    .contextMenu {
-                        Button {
-                            Task { await markHandled(item) }
-                        } label: {
-                            Label("Mark Done", systemImage: "checkmark.circle")
-                        }
-                    }
-                }
-            }
-            .navigationTitle("Actions")
-            .refreshable { await store.refresh() }
-            .overlay {
-                if store.isLoading && store.items.isEmpty {
-                    ProgressView()
-                }
-            }
-            .emptyState(store.items.isEmpty && !store.isLoading,
-                        message: "No action items. Missions on the Mac will create them.")
-            .familyProfileToolbar()
-        }
-        .task { await store.refresh() }
-        .alert("Could Not Mark Action Done", isPresented: Binding(
-            get: { handleErrorMessage != nil },
-            set: { if !$0 { handleErrorMessage = nil } }
-        )) {
-            Button("OK", role: .cancel) { handleErrorMessage = nil }
-        } message: {
-            Text(handleErrorMessage ?? "The action item could not be updated.")
-        }
-    }
-
-    @MainActor
-    private func markHandled(_ item: IOSBackendActionItem) async {
-        do {
-            try await store.markHandled(item)
-        } catch {
-            handleErrorMessage = error.localizedDescription
-            IOSRuntimeLog.log("[ActionItemsList] markHandled failed for \(item.id): \(error)")
-        }
-    }
-}
-
-struct RemoteActionItemRow: View {
-    let item: IOSBackendActionItem
-
-    private var route: IntentRoute { IntentRoute.route(for: item) }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(item.title)
-                .font(.headline)
-                .foregroundStyle(.primary)
-                .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 6) {
-                Label(route.label, systemImage: route.iconName)
-                    .font(.caption)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(route.badgeColor.opacity(0.85))
-                    .clipShape(Capsule())
-            }
-            Text(item.timestamp, style: .relative)
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-        }
-        .padding(.vertical, 4)
-    }
-}
-
-struct RemoteActionItemDetailView: View {
-    let item: IOSBackendActionItem
-    let onMarkHandled: () -> Void
-
-    @Environment(\.dismiss) private var dismiss
-
-    private var payloadText: String? {
-        guard !item.payloadJson.isEmpty else { return nil }
-        let obj = item.payloadJson.mapValues { $0.foundationObject }
-        guard let data = try? JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted]),
-              let pretty = String(data: data, encoding: .utf8) else { return nil }
-        return pretty
-    }
-
-    var body: some View {
-        List {
-            Section {
-                VStack(alignment: .leading, spacing: 14) {
-                    Text(item.title)
-                        .font(.title2.weight(.semibold))
-                        .foregroundStyle(.primary)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    Label(item.timestamp.formatted(date: .abbreviated, time: .shortened),
-                          systemImage: "clock")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.vertical, 8)
-            }
-
-            if !item.isHandled {
-                Section {
-                    RemoteDynamicIntentButton(item: item)
-                        .listRowInsets(.init(top: 12, leading: 16, bottom: 12, trailing: 16))
-                } footer: {
-                    Text("Use the action above to follow the agent's recommendation. Tap Done after you've handled it.")
-                }
-            }
-
-            Section {
-                DisclosureGroup("Technical Details") {
-                    LabeledContent("Intent", value: item.systemIntent)
-                    LabeledContent("Handled", value: item.isHandled ? "Yes" : "No")
-                    LabeledContent("Created by", value: item.createdBy ?? "agent")
-
-                    if let payloadText {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Payload")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            ScrollView(.horizontal) {
-                                Text(payloadText)
-                                    .font(.system(.body, design: .monospaced))
-                                    .textSelection(.enabled)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                        }
-                        .padding(.vertical, 4)
-                    }
-                }
-            }
-        }
-        .navigationTitle("Review Action")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                if !item.isHandled {
-                    Button("Done") {
-                        onMarkHandled()
-                        dismiss()
-                    }
-                }
-            }
-        }
-    }
-}
 
 /// UI constants for Inbound Files (accessibility / UI tests).
 enum InboundFilesImportUI {

@@ -15,6 +15,25 @@ class TaskExecutorJob < ApplicationJob
                  .first
       return unless task
 
+      # Check for repelling snapshots (circuit breaker)
+      repelling_snapshots = task.objective.research_snapshots.where(is_repellent: true)
+      if repelling_snapshots.exists?
+        # Basic check: if the task description mentions any of the repellent scopes, bail out.
+        task_desc_norm = task.description.downcase
+        matched_repellent = repelling_snapshots.find do |rs|
+          scope = rs.repellent_scope.to_s.downcase
+          scope.present? && task_desc_norm.include?(scope)
+        end
+        
+        if matched_repellent
+          task.update_columns(
+            status: "completed",
+            result_summary: "Skipped due to known dead-end: #{matched_repellent.repellent_reason.presence || 'Circuit breaker triggered.'}"
+          )
+          return
+        end
+      end
+
       workspace = task.objective.workspace
       agent = AgentRegistration.capable_of(task.required_capabilities)
                                .where(workspace: workspace)

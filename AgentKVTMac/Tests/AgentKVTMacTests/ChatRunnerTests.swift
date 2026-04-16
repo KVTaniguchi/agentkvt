@@ -8,7 +8,6 @@ private func makeChatTestContainer() throws -> (ModelContext, ModelContainer) {
     let schema = Schema([
         LifeContext.self,
         WorkUnit.self,
-        ActionItem.self,
         AgentLog.self,
         InboundFile.self,
         ChatThread.self,

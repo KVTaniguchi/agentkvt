@@ -34,12 +34,11 @@ private final class InvalidPlanningThenSlowClient: OllamaClientProtocol, @unchec
 private func makePlanningContainer() throws -> (ModelContainer, ModelContext) {
     let schema = Schema([
         LifeContext.self,
-        ActionItem.self,
         AgentLog.self,
         InboundFile.self,
         ChatThread.self,
         ChatMessage.self,
-        IncomingEmailSummary.self,
+
         WorkUnit.self,
         EphemeralPin.self,
         ResourceHealth.self,

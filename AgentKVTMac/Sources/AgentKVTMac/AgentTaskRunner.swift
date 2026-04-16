@@ -3,7 +3,7 @@ import ManagerCore
 import SwiftData
 
 /// Runs a single mission: invokes the LLM with the mission's prompt and allowed tools,
-/// then writes outcome to AgentLog. ActionItems are written by tools (e.g. write_action_item).
+/// then writes outcome to AgentLog.
 public final class AgentTaskRunner: @unchecked Sendable {
     public struct Request: Sendable {
         public struct ExecutionMetadata: Sendable {
@@ -34,9 +34,6 @@ public final class AgentTaskRunner: @unchecked Sendable {
         public let isEnabled: Bool
         public let lastRunAt: Date?
         public let executionMetadata: ExecutionMetadata?
-        /// Summaries of unhandled actions already created by this mission. Injected into the
-        /// system prompt so the LLM avoids creating duplicate suggestions on repeated runs.
-        public let existingActionItemSummaries: [String]
         /// When set, used as the user message instead of the generic "Execute your mission…" line.
         public let userMessageOverride: String?
 
@@ -50,7 +47,6 @@ public final class AgentTaskRunner: @unchecked Sendable {
             isEnabled: Bool = true,
             lastRunAt: Date? = nil,
             executionMetadata: ExecutionMetadata? = nil,
-            existingActionItemSummaries: [String] = [],
             userMessageOverride: String? = nil
         ) {
             self.id = id
@@ -62,26 +58,9 @@ public final class AgentTaskRunner: @unchecked Sendable {
             self.isEnabled = isEnabled
             self.lastRunAt = lastRunAt
             self.executionMetadata = executionMetadata
-            self.existingActionItemSummaries = existingActionItemSummaries
             self.userMessageOverride = userMessageOverride
         }
 
-        
-        func with(existingActionItemSummaries: [String]) -> Request {
-            Request(
-                id: id,
-                taskName: taskName,
-                systemPrompt: systemPrompt,
-                triggerSchedule: triggerSchedule,
-                allowedToolIds: allowedToolIds,
-                ownerProfileId: ownerProfileId,
-                isEnabled: isEnabled,
-                lastRunAt: lastRunAt,
-                executionMetadata: executionMetadata,
-                existingActionItemSummaries: existingActionItemSummaries,
-                userMessageOverride: userMessageOverride
-            )
-        }
     }
 
     private let modelContext: ModelContext
@@ -103,7 +82,7 @@ public final class AgentTaskRunner: @unchecked Sendable {
         "multi_step_search",
         "read_research_snapshot"
     ]
-    private let deferredVisibleOutputToolIds: Set<String> = ["write_action_item"]
+
 
 
     private final class ToolTranscriptRecorder: @unchecked Sendable {
@@ -133,8 +112,7 @@ public final class AgentTaskRunner: @unchecked Sendable {
         let allowedTools = request.allowedToolIds
         let systemPrompt = taskSystemPrompt(
             basePrompt: request.systemPrompt,
-            allowedTools: allowedTools,
-            existingActionItemSummaries: request.existingActionItemSummaries
+            allowedTools: allowedTools
         )
         let userMessage = request.userMessageOverride ?? taskUserMessage(ownerProfileId: request.ownerProfileId)
         let context = AgentTaskExecutionContext.Context(
@@ -211,11 +189,6 @@ public final class AgentTaskRunner: @unchecked Sendable {
         return nil
     }
 
-    /// Returns a retry nudge string for regular missions (those with `write_action_item`) when
-    /// the first loop ended without calling it. Covers two failure modes observed in production:
-    /// 1. Model emitted raw tool-call JSON as prose (`{"tool_calls":[...]}`) instead of using the tool API.
-    /// 2. Model called `write_action_item` in the same batch as a data-gathering tool, got deferred,
-    ///    then produced a final response without retrying.
     private func taskUserMessage(ownerProfileId: UUID?) -> String {
         var message = "Execute your mission. Use the available tools to create action items or other outputs as defined in your instructions."
         guard let ownerProfileId else {
@@ -294,24 +267,14 @@ public final class AgentTaskRunner: @unchecked Sendable {
     }
 
     private func missionToolBatchExecutionPolicy() -> AgentLoop.ToolBatchExecutionPolicy {
-        AgentLoop.ToolBatchExecutionPolicy { [freshDataToolIds = self.freshDataToolIds, deferredVisibleOutputToolIds = self.deferredVisibleOutputToolIds] requestedToolName, batchToolNames in
-            guard deferredVisibleOutputToolIds.contains(requestedToolName) else {
-                return nil
-            }
-            let batchToolSet = Set(batchToolNames)
-            guard !batchToolSet.isDisjoint(with: freshDataToolIds) else {
-                return nil
-            }
-            return """
-            Deferred: \(requestedToolName) was skipped because this same response also requested fresh data-gathering tools. Review the new tool results and then call \(requestedToolName) in a later response.
-            """
+        AgentLoop.ToolBatchExecutionPolicy { requestedToolName, batchToolNames in
+            return nil
         }
     }
 
     private func taskSystemPrompt(
         basePrompt: String,
-        allowedTools: [String],
-        existingActionItemSummaries: [String] = []
+        allowedTools: [String]
     ) -> String {
         let trimmedPrompt = basePrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let toolGuidance = runtimeToolGuidance(basePrompt: trimmedPrompt, allowedTools: allowedTools)
@@ -319,34 +282,9 @@ public final class AgentTaskRunner: @unchecked Sendable {
         var sections: [String] = []
         if !trimmedPrompt.isEmpty { sections.append(trimmedPrompt) }
         if !toolGuidance.isEmpty { sections.append(toolGuidance) }
-        if !existingActionItemSummaries.isEmpty {
-            let list = existingActionItemSummaries
-                .map { Self.sanitizeActionItemTitle($0) }
-                .filter { !$0.isEmpty }
-                .map { "  - \($0)" }
-                .joined(separator: "\n")
-            if !list.isEmpty {
-                sections.append("""
-                Already-pending actions from this mission (the user has not handled these yet — do not create duplicates):
-                \(list)
-                Only call write_action_item if you have something meaningfully different to surface.
-                """)
-            }
-        }
         return sections.joined(separator: "\n\n")
     }
 
-    /// Strip characters that could be used to inject instructions into the system prompt.
-    /// Allows printable ASCII except newlines, carriage returns, and null bytes, then caps length.
-    /// This prevents stored action item titles from acting as prompt injection vectors.
-    private static func sanitizeActionItemTitle(_ raw: String) -> String {
-        let allowed = raw.unicodeScalars.filter { scalar in
-            scalar.value >= 0x20 && scalar.value < 0x7F && scalar != "\\"
-        }
-        let cleaned = String(String.UnicodeScalarView(allowed))
-            .trimmingCharacters(in: .whitespaces)
-        return String(cleaned.prefix(120))
-    }
 
     private func runtimeToolGuidance(basePrompt: String, allowedTools: [String]) -> String {
         let normalizedToolIds = Array(NSOrderedSet(array: allowedTools)) as? [String] ?? allowedTools
@@ -373,31 +311,10 @@ public final class AgentTaskRunner: @unchecked Sendable {
 
     private func runtimeToolSection(for toolId: String, basePrompt: String) -> String? {
         switch toolId {
-        case "write_action_item":
-            let cardinalityInstruction: String
-            if basePrompt.localizedCaseInsensitiveContains("exactly one action item")
-                || basePrompt.localizedCaseInsensitiveContains("create one action item")
-                || basePrompt.localizedCaseInsensitiveContains("one action per") {
-                cardinalityInstruction = "Create exactly one action item unless the mission instructions explicitly require more."
-            } else {
-                cardinalityInstruction = "Create at least one action item before you finish."
-            }
-
-            return """
-            write_action_item requirement:
-            - This mission is only successful after you call write_action_item.
-            - \(cardinalityInstruction)
-            - Do not end with plain text only.
-            - Use one of these systemIntent values only: calendar.create, mail.reply, reminder.add, url.open.
-            - If you found a concrete URL the user should review, prefer systemIntent "url.open" and include payloadJson with the required URL field.
-            - Keep the action item title short, specific, and user-facing.
-            - If you need fresh information from tools such as web_search_and_fetch or headless_browser_scout, call those tools first, review their results, and only then call write_action_item in a later response.
-            """
         case "web_search_and_fetch":
             return """
             web_search_and_fetch guidance:
             - Use this tool for current web information, recent facts, or anything that depends on live pages and matches the mission.
-            - Do not call write_action_item in the same response as this search. Search first, then review the fetched results, then create the action item in a later response.
             """
         case "fetch_agent_logs":
             return """
@@ -405,13 +322,11 @@ public final class AgentTaskRunner: @unchecked Sendable {
             - Use this tool to inspect recent execution history before drawing conclusions about failures or unexpected output.
             - Filter by mission_name to focus on a specific mission, or omit it to see all recent activity.
             - Use phases: "error,warning" to focus on problems, or "tool_call,tool_result" to trace what the agent actually fetched.
-            - After reviewing the logs, surface a write_action_item with a concrete diagnosis or recommended fix.
             """
         case "headless_browser_scout":
             return """
             headless_browser_scout guidance:
             - Use this tool when a site needs a real browser, JavaScript execution, or click/fill interactions.
-            - When this tool gathers fresh information, wait for its results before calling write_action_item.
             - Only browse URLs that are directly relevant to the mission's stated topic. If a search result is a job listing, career page, social media profile, news article, or any other page unrelated to the mission's goal, skip it entirely — do not call this tool on it.
             """
         case "send_notification_email":
@@ -439,7 +354,6 @@ public final class AgentTaskRunner: @unchecked Sendable {
             multi_step_search guidance:
             - Use this to run 2–5 related queries in one turn (e.g. compare hotel prices across 3 sites).
             - Pass steps_json with type "search" for web queries or "browse" for specific URLs.
-            - Do not call write_action_item in the same response — review results first.
             """
         case "read_research_snapshot":
             return """
@@ -451,7 +365,6 @@ public final class AgentTaskRunner: @unchecked Sendable {
             return """
             write_research_snapshot guidance:
             - Call after observing a current value to persist it and detect meaningful change.
-            - Only call write_action_item if the result starts with "changed:".
             """
         case "read_objective_snapshot":
             return """

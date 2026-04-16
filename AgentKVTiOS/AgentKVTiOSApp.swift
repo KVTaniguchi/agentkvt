@@ -6,8 +6,6 @@ struct AgentKVTiOSApp: App {
 
     @State private var familyMembersStore: FamilyMembersStore
     @State private var lifeContextStore: LifeContextStore
-    @State private var agentLogsStore: AgentLogsStore
-    @State private var actionsStore: ActionsStore
     @State private var objectivesStore: ObjectivesStore
     @State private var objectiveDraftStore: ObjectiveDraftStore
     @State private var chatStore: ChatStore
@@ -21,8 +19,6 @@ struct AgentKVTiOSApp: App {
         let sync = IOSBackendSyncService()
         _familyMembersStore = State(wrappedValue: FamilyMembersStore(sync: sync))
         _lifeContextStore = State(wrappedValue: LifeContextStore(sync: sync))
-        _agentLogsStore = State(wrappedValue: AgentLogsStore(sync: sync))
-        _actionsStore = State(wrappedValue: ActionsStore(sync: sync))
         _objectivesStore = State(wrappedValue: ObjectivesStore(sync: sync))
         _objectiveDraftStore = State(wrappedValue: ObjectiveDraftStore(sync: sync))
         _chatStore = State(wrappedValue: ChatStore(sync: sync))
@@ -35,8 +31,6 @@ struct AgentKVTiOSApp: App {
                 .environmentObject(familyProfileStore)
                 .environment(familyMembersStore)
                 .environment(lifeContextStore)
-                .environment(agentLogsStore)
-                .environment(actionsStore)
                 .environment(objectivesStore)
                 .environment(objectiveDraftStore)
                 .environment(chatStore)

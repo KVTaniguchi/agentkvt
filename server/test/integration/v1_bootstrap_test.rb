@@ -5,11 +5,6 @@ class V1BootstrapTest < ActionDispatch::IntegrationTest
   setup do
     @workspace = Workspace.create!(name: "Default Workspace", slug: "workspace-#{SecureRandom.hex(4)}")
     @family_member = @workspace.family_members.create!(display_name: "Kevin", symbol: "K")
-    @workspace.action_items.create!(
-      title: "Review Example Co role",
-      system_intent: "url.open",
-      payload_json: { "url" => "https://example.com/jobs/1" }
-    )
     @workspace.agent_logs.create!(
       phase: "outcome",
       content: "Completed objective task."
@@ -28,10 +23,8 @@ class V1BootstrapTest < ActionDispatch::IntegrationTest
 
     assert_equal @workspace.slug, body.dig("workspace", "slug")
     assert_equal 1, body["family_members"].length
-    assert_equal 1, body["action_items"].length
     assert_equal 1, body["agent_logs"].length
     assert_equal 1, body["life_context_entries"].length
-    assert_equal 1, body["pending_action_items_count"]
     assert_equal 1, body["recent_agent_log_count"]
   end
 

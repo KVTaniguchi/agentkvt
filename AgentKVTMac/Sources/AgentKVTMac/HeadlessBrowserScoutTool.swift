@@ -18,7 +18,8 @@ public func makeHeadlessBrowserScoutTool() -> ToolRegistry.Tool {
             type: "object",
             properties: [
                 "url": .init(type: "string", description: "Full HTTPS URL to load (must match the mission—e.g. a page the user asked you to open or scrape)."),
-                "actions_json": .init(type: "string", description: "Optional. JSON array of actions: [{\"type\":\"click\",\"selector\":\"button.primary\"}, {\"type\":\"fill\",\"selector\":\"#email\",\"value\":\"user@example.com\"}]")
+                "actions_json": .init(type: "string", description: "Optional. JSON array of actions: [{\"type\":\"click\",\"selector\":\"button.primary\"}, {\"type\":\"fill\",\"selector\":\"#email\",\"value\":\"user@example.com\"}]"),
+                "extract_selector": .init(type: "string", description: "Optional CSS selector to extract text from a specific element instead of the entire page.")
             ],
             required: ["url"]
         ),
@@ -27,14 +28,15 @@ public func makeHeadlessBrowserScoutTool() -> ToolRegistry.Tool {
                 return "Error: url is required and must be non-empty."
             }
             let actionsJson = args["actions_json"] as? String
-            return await HeadlessBrowserScout.run(url: urlString.trimmingCharacters(in: .whitespaces), actionsJson: actionsJson)
+            let extractSelector = args["extract_selector"] as? String
+            return await HeadlessBrowserScout.run(url: urlString.trimmingCharacters(in: .whitespaces), actionsJson: actionsJson, extractSelector: extractSelector)
         }
     )
 }
 
 enum HeadlessBrowserScout {
     /// Load URL (and optional actions), return extracted page content.
-    static func run(url: String, actionsJson: String?) async -> String {
+    static func run(url: String, actionsJson: String?, extractSelector: String?) async -> String {
         guard let parsed = URL(string: url), parsed.scheme == "https" || parsed.scheme == "http" else {
             return "Error: invalid or unsupported URL (must be http/https)."
         }
@@ -43,11 +45,11 @@ enum HeadlessBrowserScout {
             (try? JSONDecoder().decode([BrowserAction].self, from: data)) ?? []
         } ?? []
 
-        return await runOnMain(url: parsed, actions: actions)
+        return await runOnMain(url: parsed, actions: actions, extractSelector: extractSelector)
     }
 
     @MainActor
-    private static func runOnMain(url: URL, actions: [BrowserAction]) async -> String {
+    private static func runOnMain(url: URL, actions: [BrowserAction], extractSelector: String?) async -> String {
         await withCheckedContinuation { continuation in
             var resumed = false
             let resumeOnce: (String) -> Void = { result in
@@ -76,6 +78,7 @@ enum HeadlessBrowserScout {
 
             let delegate = NavigationDelegate(
                 actions: actions,
+                extractSelector: extractSelector,
                 window: window,
                 onDone: { result in
                     window.close()
@@ -104,13 +107,15 @@ private struct BrowserAction: Codable {
 
 private final class NavigationDelegate: NSObject, WKNavigationDelegate {
     let actions: [BrowserAction]
+    let extractSelector: String?
     weak var window: NSWindow?
     let onDone: (String) -> Void
     private let lock = NSLock()
     var didFinish = false
 
-    init(actions: [BrowserAction], window: NSWindow, onDone: @escaping (String) -> Void) {
+    init(actions: [BrowserAction], extractSelector: String?, window: NSWindow, onDone: @escaping (String) -> Void) {
         self.actions = actions
+        self.extractSelector = extractSelector
         self.window = window
         self.onDone = onDone
     }
@@ -165,9 +170,12 @@ private final class NavigationDelegate: NSObject, WKNavigationDelegate {
     }
 
     private func extractContent(webView: WKWebView) {
+        let safeSelector = extractSelector?.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") ?? ""
+        let rootNode = safeSelector.isEmpty ? "document.body" : "document.querySelector(\"\(safeSelector)\") || document.body"
+        
         let script = """
         (function() {
-            var body = document.body;
+            var body = \(rootNode);
             if (!body) return '';
             var clone = body.cloneNode(true);
             var scripts = clone.querySelectorAll('script, style, nav, footer, [role="banner"]');

@@ -57,7 +57,7 @@ public final class MockOllamaClient: OllamaClientProtocol, @unchecked Sendable {
 }
 
 extension OllamaClient.Message {
-    /// One assistant message with tool_calls (e.g. write_action_item).
+    /// One assistant message with tool_calls.
     public static func assistantWithToolCalls(_ toolCalls: [OllamaClient.ToolCall]) -> OllamaClient.Message {
         .init(role: "assistant", content: nil, toolCalls: toolCalls)
     }
@@ -83,16 +83,6 @@ extension OllamaClient.ToolCall {
         )
     }
 
-    public static func writeActionItem(title: String, systemIntent: String, payloadJson: String = "{}") -> OllamaClient.ToolCall {
-        let dict: [String: String] = ["title": title, "systemIntent": systemIntent, "payloadJson": payloadJson]
-        let data = try! JSONSerialization.data(withJSONObject: dict)
-        let args = String(data: data, encoding: .utf8)!
-        return .init(
-            id: nil,
-            type: "function",
-            function: .init(name: "write_action_item", arguments: args)
-        )
-    }
 
     public static func sendNotificationEmail(subject: String, body: String) -> OllamaClient.ToolCall {
         let dict: [String: String] = ["subject": subject, "body": body]

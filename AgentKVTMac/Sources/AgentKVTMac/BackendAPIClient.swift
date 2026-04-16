@@ -75,22 +75,6 @@ public struct BackendInboundFile: Codable, Sendable {
 
 
 
-public struct BackendActionItem: Codable, Sendable {
-    public let id: UUID
-    public let workspaceId: UUID
-
-    public let ownerProfileId: UUID?
-    public let title: String
-    public let systemIntent: String
-    public let payloadJson: [String: String]
-    public let relevanceScore: Double
-    public let isHandled: Bool
-    public let handledAt: Date?
-    public let timestamp: Date
-    public let createdBy: String
-    public let createdAt: Date
-    public let updatedAt: Date
-}
 
 public struct BackendAgentLog: Codable, Sendable {
     public let id: UUID
@@ -130,13 +114,6 @@ private struct BackendInboundFilesEnvelope: Codable {
 
 
 
-private struct BackendActionItemEnvelope: Codable {
-    let actionItem: BackendActionItem
-}
-
-private struct BackendActionItemsEnvelope: Codable {
-    let actionItems: [BackendActionItem]
-}
 
 private struct BackendAgentLogEnvelope: Codable {
     let agentLog: BackendAgentLog
@@ -154,6 +131,10 @@ public struct BackendResearchSnapshot: Codable, Sendable {
     public let value: String
     public let previousValue: String?
     public let deltaNote: String?
+    public let isRepellent: Bool?
+    public let repellentReason: String?
+    public let repellentScope: String?
+    public let snapshotKind: String?
     public let checkedAt: Date
     public let createdAt: Date
     public let updatedAt: Date
@@ -281,6 +262,10 @@ public actor BackendAPIClient {
         taskId: UUID? = nil,
         key: String,
         value: String,
+        isRepellent: Bool? = false,
+        repellentReason: String? = nil,
+        repellentScope: String? = nil,
+        snapshotKind: String? = "result",
         markTaskCompleted: Bool? = nil
     ) async throws -> BackendResearchSnapshot {
         if let msg = ObjectiveResearchSnapshotPayload.clientRejectionMessageIfInvalid(value) {
@@ -294,11 +279,20 @@ public actor BackendAPIClient {
         if let markTaskCompleted {
             queryItems.append(URLQueryItem(name: "mark_task_completed", value: markTaskCompleted ? "true" : "false"))
         }
+        var researchSnapshotPayload: [String: Any] = [
+            "key": key,
+            "value": value,
+            "is_repellent": isRepellent ?? false,
+            "snapshot_kind": snapshotKind ?? "result"
+        ]
+        if let r = repellentReason { researchSnapshotPayload["repellent_reason"] = r }
+        if let s = repellentScope { researchSnapshotPayload["repellent_scope"] = s }
+
         let data = try await performRequest(
             path: path,
             method: "POST",
             queryItems: queryItems,
-            jsonBody: ["research_snapshot": ["key": key, "value": value]],
+            jsonBody: ["research_snapshot": researchSnapshotPayload],
             requiresAgentAuth: true
         )
         return try decoder.decode(BackendResearchSnapshotEnvelope.self, from: data).researchSnapshot

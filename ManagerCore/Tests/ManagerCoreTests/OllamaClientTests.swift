@@ -15,7 +15,7 @@ struct OllamaClientTests {
               {
                 "type": "function",
                 "function": {
-                  "name": "write_action_item",
+                  "name": "web_search_and_fetch",
                   "arguments": {
                     "title": "Review test",
                     "systemIntent": "url.open"
@@ -45,7 +45,7 @@ struct OllamaClientTests {
               {
                 "type": "function",
                 "function": {
-                  "name": "write_action_item",
+                  "name": "web_search_and_fetch",
                   "arguments": "{\\"title\\":\\"Review test\\",\\"systemIntent\\":\\"url.open\\"}"
                 }
               }

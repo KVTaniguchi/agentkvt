@@ -29,7 +29,7 @@ Based on [FOUNDATIONAL_PLAN.MD](../FOUNDATIONAL_PLAN.MD) and [README.md](../READ
 ```
 
 - **Brain (macOS):** Event-driven scheduler + ObjectiveExecutionPool with concurrent workers; inference via Ollama.
-- **Remote (iOS):** SwiftUI dashboard with Objectives, Actions, Context, Log, Chat, and Files tabs.
+- **Remote (iOS):** SwiftUI dashboard with Objectives, Actions, Context, Chat, and Files tabs.
 - **Backend (Rails + Postgres):** System of record; objective planning, task dispatch, research persistence.
 - **Bridge:** HTTPS/HTTP to the Rails API. SwiftData on each device for local concerns; Postgres is authoritative.
 
@@ -48,7 +48,6 @@ Based on [FOUNDATIONAL_PLAN.MD](../FOUNDATIONAL_PLAN.MD) and [README.md](../READ
   - **WorkUnit / EphemeralPin / ResourceHealth** — stigmergy board models
   - **InboundFile** — uploaded file tracking
   - **ResearchSnapshot** — persisted research findings
-  - **IncomingEmailSummary** — pre-summarized emails from CloudKit bridge
   - **~~MissionDefinition~~** — *(legacy, deprecated)* — superseded by server-side Objectives
 
 ---
@@ -112,7 +111,6 @@ The runner automatically appends runtime guidance for allowed tools and injects 
 - **Objectives tab:** Create objectives, view tasks, see generative research results, run/rerun/reset
 - **Actions tab:** View and handle ActionItems with intent routing
 - **Context tab:** Edit LifeContext entries
-- **Log tab:** View AgentLog entries by phase
 - **Chat tab:** Conversational interface with family profile attribution
 - **Files tab:** Upload inbound files to the server
 - Family member profiles with per-device selection

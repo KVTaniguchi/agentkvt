@@ -36,7 +36,7 @@ public func makeWriteResearchSnapshotTool(modelContext: ModelContext) -> ToolReg
     ToolRegistry.Tool(
         id: "write_research_snapshot",
         name: "write_research_snapshot",
-        description: "Persist the current observed value for a tracked research metric and detect meaningful change. Returns 'changed: ...' when a notable delta is found, 'unchanged: ...' otherwise. Only call write_action_item when the result starts with 'changed:'.",
+        description: "Persist the current observed value for a tracked research metric and detect meaningful change. Returns 'changed: ...' when a notable delta is found, 'unchanged: ...' otherwise.",
         parameters: .init(
             type: "object",
             properties: [

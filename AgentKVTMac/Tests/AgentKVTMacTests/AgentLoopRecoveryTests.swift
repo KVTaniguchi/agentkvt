@@ -12,11 +12,10 @@ struct AgentLoopRecoveryTests {
         let (context, _) = try createInMemoryContext()
         let request = createTestRequest()
         let registry = ToolRegistry()
-        registry.register(makeWriteActionItemTool(modelContext: context))
 
         let infiniteResponses = Array(
             repeating: OllamaClient.Message.assistantWithToolCalls([
-                .writeActionItem(title: "Loop", systemIntent: "loop")
+                .webSearch(query: "infinite loop test")
             ]),
             count: 15
         )
@@ -68,7 +67,7 @@ struct AgentLoopRecoveryTests {
     // MARK: - Helpers
 
     private func createInMemoryContext() throws -> (ModelContext, ModelContainer) {
-        let schema = Schema([LifeContext.self, ActionItem.self, AgentLog.self])
+        let schema = Schema([LifeContext.self, AgentLog.self])
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
         let container = try ModelContainer(for: schema, configurations: [config])
         return (ModelContext(container), container)
@@ -80,7 +79,7 @@ struct AgentLoopRecoveryTests {
             taskName: "Test Mission",
             systemPrompt: "You are testing.",
             triggerSchedule: "webhook",
-            allowedToolIds: ["write_action_item"],
+            allowedToolIds: [],
             ownerProfileId: nil
         )
     }

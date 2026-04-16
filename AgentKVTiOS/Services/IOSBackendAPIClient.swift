@@ -107,21 +107,6 @@ enum IOSBackendJSONValue: Codable, Sendable {
     }
 }
 
-struct IOSBackendActionItem: Codable, Sendable {
-    let id: UUID
-    let workspaceId: UUID
-    let ownerProfileId: UUID?
-    let title: String
-    let systemIntent: String
-    let payloadJson: [String: IOSBackendJSONValue]
-    let relevanceScore: Double
-    let isHandled: Bool
-    let handledAt: Date?
-    let timestamp: Date
-    let createdBy: String?
-    let createdAt: Date
-    let updatedAt: Date
-}
 
 struct IOSBackendAgentLog: Codable, Sendable {
     let id: UUID
@@ -615,11 +600,7 @@ struct ObjectiveGuidanceProvider {
 
 struct IOSBackendBootstrap: Codable, Sendable {
     let familyMembers: [IOSBackendFamilyMember]
-    let actionItems: [IOSBackendActionItem]
-    let agentLogs: [IOSBackendAgentLog]
     let lifeContextEntries: [IOSBackendLifeContextEntry]
-    let pendingActionItemsCount: Int
-    let recentAgentLogCount: Int
     let serverTime: Date?
 }
 
@@ -632,17 +613,6 @@ private struct IOSBackendFamilyMemberEnvelope: Codable {
 }
 
 
-private struct IOSBackendActionItemsEnvelope: Codable {
-    let actionItems: [IOSBackendActionItem]
-}
-
-private struct IOSBackendActionItemEnvelope: Codable {
-    let actionItem: IOSBackendActionItem
-}
-
-private struct IOSBackendAgentLogsEnvelope: Codable {
-    let agentLogs: [IOSBackendAgentLog]
-}
 
 private struct IOSBackendLifeContextEntriesEnvelope: Codable {
     let lifeContextEntries: [IOSBackendLifeContextEntry]
@@ -773,32 +743,6 @@ actor IOSBackendAPIClient {
         return try decoder.decode(IOSBackendFamilyMemberEnvelope.self, from: data).familyMember
     }
 
-    func fetchActionItems(limit: Int = 200, isHandled: Bool? = nil) async throws -> [IOSBackendActionItem] {
-        var path = "v1/action_items?limit=\(limit)"
-        if let isHandled {
-            path += "&is_handled=\(isHandled)"
-        }
-        let data = try await performRequest(path: path)
-        return try decoder.decode(IOSBackendActionItemsEnvelope.self, from: data).actionItems
-    }
-
-    func handleActionItem(id: UUID, handledAt: Date) async throws -> IOSBackendActionItem {
-        let data = try await performRequest(
-            path: "v1/action_items/\(id.uuidString)/handle",
-            method: "POST",
-            jsonBody: [
-                "action_item": [
-                    "handled_at": iso8601(handledAt)
-                ]
-            ]
-        )
-        return try decoder.decode(IOSBackendActionItemEnvelope.self, from: data).actionItem
-    }
-
-    func fetchAgentLogs(limit: Int = 200) async throws -> [IOSBackendAgentLog] {
-        let data = try await performRequest(path: "v1/agent_logs?limit=\(limit)")
-        return try decoder.decode(IOSBackendAgentLogsEnvelope.self, from: data).agentLogs
-    }
 
     func fetchLifeContextEntries() async throws -> [IOSBackendLifeContextEntry] {
         let data = try await performRequest(path: "v1/life_context")
@@ -1333,11 +1277,6 @@ final class IOSBackendSyncService {
         return remote
     }
 
-    func fetchAgentLogsRemote(limit: Int = 200) async throws -> [IOSBackendAgentLog] {
-        guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
-        return try await client.fetchAgentLogs(limit: limit)
-    }
-
     func fetchLifeContextEntriesRemote() async throws -> [IOSBackendLifeContextEntry] {
         guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
         return try await client.fetchLifeContextEntries()
@@ -1363,15 +1302,6 @@ final class IOSBackendSyncService {
 
     // MARK: - Remote passthrough (no SwiftData reconciliation)
 
-    func fetchActionItemsRemote(isHandled: Bool? = nil) async throws -> [IOSBackendActionItem] {
-        guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
-        return try await client.fetchActionItems(isHandled: isHandled)
-    }
-
-    func handleActionItemRemote(id: UUID) async throws {
-        guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
-        _ = try await client.handleActionItem(id: id, handledAt: Date())
-    }
 
     func fetchObjectivesRemote() async throws -> [IOSBackendObjective] {
         guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
@@ -1696,40 +1626,6 @@ final class LifeContextStore {
         entries.sort {
             $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending
         }
-    }
-}
-
-@Observable
-final class AgentLogsStore {
-    private(set) var logs: [IOSBackendAgentLog] = []
-    private(set) var isLoading = false
-    private(set) var errorMessage: String?
-
-    @ObservationIgnored private let sync: IOSBackendSyncService
-
-    init(sync: IOSBackendSyncService = IOSBackendSyncService()) {
-        self.sync = sync
-    }
-
-    @MainActor
-    func refresh(limit: Int = 200) async {
-        guard sync.isEnabled else { return }
-        isLoading = true
-        errorMessage = nil
-        defer { isLoading = false }
-
-        do {
-            replaceLogs(try await sync.fetchAgentLogsRemote(limit: limit))
-        } catch {
-            errorMessage = error.localizedDescription
-            IOSRuntimeLog.log("[AgentLogsStore] Refresh failed: \(error)")
-        }
-    }
-
-    @MainActor
-    func replaceLogs(_ logs: [IOSBackendAgentLog]) {
-        self.logs = logs
-        errorMessage = nil
     }
 }
 

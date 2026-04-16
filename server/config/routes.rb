@@ -18,9 +18,6 @@ Rails.application.routes.draw do
     resources :inbound_files, only: [:index, :create]
 
     resources :life_context, only: [:index, :update], controller: "life_context_entries", param: :key
-    resources :action_items, only: [:index] do
-      post :handle, on: :member
-    end
     resources :agent_logs, only: [:index]
     resources :objectives, only: [:index, :create, :show, :update, :destroy] do
       post :feedback, on: :member

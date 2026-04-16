@@ -1,11 +1,11 @@
 # AgentKVT Data Flow: iOS → Server → Mac Agent → Back to iOS
 
-This document describes how data moves from the moment a user creates an objective in the iOS app through the Rails backend, Mac agent execution, and back to the iOS app as research results, follow-up plans, actions, and logs.
+This document describes how data moves from the moment a user creates an objective in the iOS app through the Rails backend, Mac agent execution, and back to the iOS app as research results, follow-up plans, and logs.
 
 ## Architecture
 
 - **Rails API + Postgres** is the system of record for all shared data.
-- **iOS** reads and writes objectives, actions, logs, and context through the API.
+- **iOS** reads and writes objectives, logs, and context through the API.
 - **Mac Brain** polls the API for work, runs local LLM inference, and posts results back.
 - There is no shared iCloud account requirement. Sync is application-level via the Rails API.
 
@@ -28,7 +28,7 @@ This document describes how data moves from the moment a user creates an objecti
                                            +------------------------+
                                            |  PostgreSQL            |
                                            |  (objectives, tasks,   |
-                                           |   snapshots, actions,  |
+                                           |   snapshots, logs,     |
                                            |   logs, context, …)    |
                                            +------------------------+
                                                       ^
@@ -92,21 +92,18 @@ This document describes how data moves from the moment a user creates an objecti
 2. It sends the prompt to Ollama with the task's allowed tools.
 3. The LLM calls tools (e.g. `multi_step_search`, `web_search_and_fetch`) to gather information.
 4. After research, the LLM calls `write_objective_snapshot` to persist findings as a ResearchSnapshot via the Rails API.
-5. The runner calls `write_action_item` if there are concrete actions to surface.
-6. AgentLog entries are posted to Rails at each phase (start, tool_call, tool_result, outcome).
+5. AgentLog entries are posted to Rails at each phase (start, tool_call, tool_result, outcome).
 
 ---
 
 ### Step 5: Results flow back to iOS
 
-**Where:** iOS app — Objective Detail, Research, Actions, and Log tabs/views.
+**Where:** iOS app — Objective Detail, Research, Chat, and Files views.
 
 **What happens:**
 
 - **Objective Detail:** User taps an objective to see its tasks, research snapshots, follow-up history, and the current execution state. The top `Activity` section answers what the user should do next. If work is active, it can show `No action needed right now`, `Working On Now`, `Recently Finished`, and a `Likely next check-in` estimate derived from recent task pace.
 - **Research screen:** User can open the generative results view (server-rendered UI layout) and see `Latest Follow-up`, `Agent Activity`, `Follow-up Loop`, and finding-specific follow-up entry points.
-- **Actions tab:** Lists `ActionItem` entries created by the agent. Each is a tappable button (e.g. "Review hotel comparison", intent `url.open`).
-- **Log tab:** Shows `AgentLog` entries grouped by phase, so the user can audit what the agent did.
 - **Chat tab:** User can have conversational follow-ups with the agent via the chat interface.
 
 ### Step 5b: Follow-up feedback becomes the next pass
@@ -132,7 +129,6 @@ This document describes how data moves from the moment a user creates an objecti
 
 | Tool ID | What it does | Writes to server? |
 |--------|----------------|------------------|
-| **write_action_item** | Creates one ActionItem (title, systemIntent, payload). | Yes → ActionItem |
 | **write_objective_snapshot** | Persists research findings for an objective task. | Yes → ResearchSnapshot |
 | **read_objective_snapshot** | Reads existing snapshots for an objective/task. | No |
 | **web_search_and_fetch** | Ollama web search + page fetch; returns clean Markdown. | No |
@@ -149,7 +145,6 @@ This document describes how data moves from the moment a user creates an objecti
 | **pin_ephemeral_note** | Writes short-lived note with TTL. | Yes → EphemeralPin |
 | **list_resource_health** / **report_resource_failure** | Tracks cooldown/backoff for failing resources. | Yes → ResourceHealth |
 | **read_research_snapshot** / **write_research_snapshot** | Local delta-tracking for repeating research. | Yes → ResearchSnapshot |
-| **fetch_email_summaries** | Reads pre-summarized emails from CloudKit bridge. | No |
 
 ---
 
@@ -159,7 +154,7 @@ This document describes how data moves from the moment a user creates an objecti
 2. **Rails:** `TaskExecutorJob` POSTs webhooks to the Mac agent for each task.
 3. **Mac:** `ObjectiveExecutionPool` picks up tasks. Workers call `multi_step_search` to compare hotels across sites, then `write_objective_snapshot` to persist findings.
 4. **iOS:** User opens Objective Detail → sees whether action is required, the tasks currently being worked on, and a likely next check-in window. Opening Research shows the structured results layout plus the latest follow-up and its linked next-pass tasks.
-5. **Log tab:** Shows the agent's research steps, tool calls, and outcomes.
+5. **Objective Detail:** Shows recent objective-scoped agent activity alongside research and execution status.
 
 ---
 

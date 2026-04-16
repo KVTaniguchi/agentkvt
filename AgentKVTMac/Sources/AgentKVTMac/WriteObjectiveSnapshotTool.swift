@@ -5,7 +5,7 @@ import Foundation
 ///
 /// Use this after calling `multi_step_search` inside a webhook-triggered mission
 /// that was launched by the Rails `TaskExecutorJob`. The server upserts the snapshot,
-/// tracks the delta, and schedules an ActionItem for any meaningful change.
+/// tracks the delta, and records it as a research snapshot.
 public func makeWriteObjectiveSnapshotTool(backendClient: BackendAPIClient) -> ToolRegistry.Tool {
     ToolRegistry.Tool(
         id: "write_objective_snapshot",
@@ -13,7 +13,7 @@ public func makeWriteObjectiveSnapshotTool(backendClient: BackendAPIClient) -> T
         description: """
             Persist a research result for a Supervisor Objective to the Rails database.
             Call this after multi_step_search completes for a webhook-dispatched task.
-            The server detects value changes and raises an ActionItem automatically.
+            The server detects value changes and records delta notes automatically.
             """,
         parameters: .init(
             type: "object",
@@ -32,7 +32,23 @@ public func makeWriteObjectiveSnapshotTool(backendClient: BackendAPIClient) -> T
                 ),
                 "value": .init(
                     type: "string",
-                    description: "Plain-language research finding only. Do not paste JSON objects/arrays, tool-call payloads, or raw search argument blobs."
+                    description: "Plain-language research finding. Or if snapshot_kind=exudate, structural metadata like CSS selectors."
+                ),
+                "sentiment": .init(
+                    type: "string",
+                    description: "Optional. 'negative' if this branch is a permanent dead end (e.g. sold out). Defaults to 'neutral'."
+                ),
+                "repellent_reason": .init(
+                    type: "string",
+                    description: "Optional. Reason for dead end, if sentiment=negative."
+                ),
+                "repellent_scope": .init(
+                    type: "string",
+                    description: "Optional. Domain or entity that is a dead end, e.g. 'loews.com' or 'checkout', if sentiment=negative."
+                ),
+                "snapshot_kind": .init(
+                    type: "string",
+                    description: "Optional. 'result' for answers, 'exudate' for environmental metadata. Defaults to 'result'."
                 ),
                 "mark_task_completed": .init(
                     type: "boolean",
@@ -51,8 +67,13 @@ public func makeWriteObjectiveSnapshotTool(backendClient: BackendAPIClient) -> T
 
             let taskId: UUID? = (args["task_id"] as? String).flatMap { UUID(uuidString: $0) }
             let markTaskCompleted = (args["mark_task_completed"] as? Bool) ?? false
+            let sentiment = (args["sentiment"] as? String)?.lowercased() ?? "neutral"
+            let isRepellent = sentiment == "negative"
+            let repellentReason = args["repellent_reason"] as? String
+            let repellentScope = args["repellent_scope"] as? String
+            let snapshotKind = (args["snapshot_kind"] as? String)?.lowercased() ?? "result"
 
-            if let msg = ObjectiveResearchSnapshotPayload.clientRejectionMessageIfInvalid(value) {
+            if snapshotKind != "exudate", let msg = ObjectiveResearchSnapshotPayload.clientRejectionMessageIfInvalid(value) {
                 return "Error: \(msg)"
             }
 
@@ -62,6 +83,10 @@ public func makeWriteObjectiveSnapshotTool(backendClient: BackendAPIClient) -> T
                     taskId: taskId,
                     key: key,
                     value: value,
+                    isRepellent: isRepellent,
+                    repellentReason: repellentReason,
+                    repellentScope: repellentScope,
+                    snapshotKind: snapshotKind,
                     markTaskCompleted: markTaskCompleted
                 )
                 if let delta = snapshot.deltaNote {

@@ -1,7 +1,7 @@
 import Foundation
 import SwiftData
 
-/// Optional conversational thread that can be used from iPhone without replacing the main ActionItem UI.
+/// Optional conversational thread that can be used from iPhone for chat-based interactions.
 @Model
 public final class ChatThread {
     public var id: UUID = UUID()
@@ -38,14 +38,11 @@ public extension ChatThread {
         "fetch_work_units",
         "read_objective_snapshot",
         "fetch_agent_logs",
-        "write_action_item",
     ]
 
     static let defaultSystemPrompt = """
     You are AgentKVT's optional chat assistant. Be concise, helpful, and privacy-conscious. \
     When the user asks about objective progress, run status, queued work, or what the Mac agent is doing, \
-    use the available status tools instead of guessing. \
-    When a user asks you to create a concrete follow-up they can act on later, prefer using the \
-    write_action_item tool if it is available in this chat.
+    use the available status tools instead of guessing.
     """
 }

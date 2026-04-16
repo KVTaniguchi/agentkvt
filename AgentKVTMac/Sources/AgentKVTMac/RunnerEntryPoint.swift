@@ -1,10 +1,8 @@
-import CloudKit
 import Foundation
 import ManagerCore
 import SwiftData
 
-/// Shared CloudKit container used by both iOS and Mac app for SwiftData sync.
-public let cloudKitContainerIdentifier = "iCloud.AgentKVT"
+
 public let sharedAppGroupIdentifier = "group.com.agentkvt.shared"
 
 /// Runs the AgentKVT Mac runner (scheduler or single test). Use from the CLI executable or from the Mac app target.
@@ -14,21 +12,15 @@ public func runAgentKVTMacRunner() async {
     for message in settings.startupMessages {
         print(message)
     }
-    let shouldAttemptCloudKit = !settings.disableCloudKit && settings.isAppBundle && settings.backendBaseURL == nil
-    if shouldAttemptCloudKit {
-        logMacCloudKitDiagnostics()
-    } else {
-        print("[CloudKitDiagnostics] Skipped (CloudKit disabled or unavailable for this process mode).")
-    }
+
 
     let schema = Schema([
         LifeContext.self,
-        ActionItem.self,
         AgentLog.self,
         InboundFile.self,
         ChatThread.self,
         ChatMessage.self,
-        IncomingEmailSummary.self,
+
         WorkUnit.self,
         EphemeralPin.self,
         ResourceHealth.self,
@@ -41,16 +33,7 @@ public func runAgentKVTMacRunner() async {
         schema: schema,
         isStoredInMemoryOnly: false,
         allowsSave: true,
-        groupContainer: .identifier(sharedAppGroupIdentifier),
-        cloudKitDatabase: .private(cloudKitContainerIdentifier)
-    )
-    let cloudKitOnlyConfig = ModelConfiguration(
-        "default-cloudkit",
-        schema: schema,
-        isStoredInMemoryOnly: false,
-        allowsSave: true,
-        groupContainer: .none,
-        cloudKitDatabase: .private(cloudKitContainerIdentifier)
+        groupContainer: .identifier(sharedAppGroupIdentifier)
     )
     let localPersistentConfig = ModelConfiguration(
         "default-local",
@@ -58,21 +41,12 @@ public func runAgentKVTMacRunner() async {
         isStoredInMemoryOnly: false,
         allowsSave: true
     )
-    if shouldAttemptCloudKit,
-       let c = try? ModelContainer(for: schema, configurations: [sharedPersistentConfig]) {
+    if let c = try? ModelContainer(for: schema, configurations: [sharedPersistentConfig]) {
         container = c
-        print("SwiftData storage: app group + CloudKit")
-    } else if shouldAttemptCloudKit,
-              let c = try? ModelContainer(for: schema, configurations: [cloudKitOnlyConfig]) {
-        container = c
-        print("SwiftData storage: CloudKit only")
+        print("SwiftData storage: app group local disk")
     } else if let c = try? ModelContainer(for: schema, configurations: [localPersistentConfig]) {
         container = c
-        if shouldAttemptCloudKit {
-            print("SwiftData storage: local disk fallback")
-        } else {
-            print("SwiftData storage: local disk only (CloudKit disabled for CLI runner)")
-        }
+        print("SwiftData storage: local disk fallback")
     } else {
         let inMemoryConfig = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
         container = try? ModelContainer(for: schema, configurations: [inMemoryConfig])
@@ -116,9 +90,7 @@ public func runAgentKVTMacRunner() async {
     registry.register(makeListDropzoneFilesTool(directory: dropzoneDir))
     registry.register(makeReadDropzoneFileTool(directory: dropzoneDir))
 
-    // iOS edge-processing bridge: read pre-summarized emails that arrived via CloudKit.
-    registry.register(makeFetchEmailSummariesTool(modelContext: context))
-    registry.register(makeMarkEmailSummaryProcessedTool(modelContext: context))
+
 
     registry.register(makeFetchWorkUnitsTool(modelContext: context))
     registry.register(makeUpdateWorkUnitTool(modelContext: context))
@@ -155,12 +127,10 @@ public func runAgentKVTMacRunner() async {
 
     if settings.runScheduler {
         if let backendClient {
-            registry.register(makeWriteActionItemTool(backendClient: backendClient))
             registry.register(makeFetchAgentLogsTool(backendClient: backendClient))
             registry.register(makeReadObjectiveSnapshotTool(backendClient: backendClient))
             registry.register(makeWriteObjectiveSnapshotTool(backendClient: backendClient))
         } else {
-            registry.register(makeWriteActionItemTool(modelContext: context))
             registry.register(makeFetchAgentLogsTool(modelContext: context))
         }
         await runScheduler(
@@ -177,77 +147,15 @@ public func runAgentKVTMacRunner() async {
         )
     } else {
         if let backendClient {
-            registry.register(makeWriteActionItemTool(backendClient: backendClient))
             registry.register(makeFetchAgentLogsTool(backendClient: backendClient))
         } else {
-            registry.register(makeWriteActionItemTool(modelContext: context))
             registry.register(makeFetchAgentLogsTool(modelContext: context))
         }
-        await runSingleTest(registry: registry, client: client)
+        print("[Runner] No-action single-run mode. Exiting.")
     }
 }
 
-private func logMacCloudKitDiagnostics() {
-    let container = CKContainer(identifier: cloudKitContainerIdentifier)
-    print("[CloudKitDiagnostics] Container: \(cloudKitContainerIdentifier)")
-    container.accountStatus { status, error in
-        if let error {
-            print("[CloudKitDiagnostics] accountStatus error: \(error)")
-            return
-        }
-        print("[CloudKitDiagnostics] accountStatus: \(describeCloudKitAccountStatus(status))")
-    }
-    container.fetchUserRecordID { recordID, error in
-        if let error {
-            print("[CloudKitDiagnostics] userRecordID error: \(error)")
-            return
-        }
-        guard let recordID else {
-            print("[CloudKitDiagnostics] userRecordID: nil")
-            return
-        }
-        print("[CloudKitDiagnostics] userRecordID: \(recordID.recordName) zone=\(recordID.zoneID.zoneName)")
-    }
-}
 
-private func describeCloudKitAccountStatus(_ status: CKAccountStatus) -> String {
-    switch status {
-    case .available:
-        return "available"
-    case .couldNotDetermine:
-        return "couldNotDetermine"
-    case .noAccount:
-        return "noAccount"
-    case .restricted:
-        return "restricted"
-    case .temporarilyUnavailable:
-        return "temporarilyUnavailable"
-    @unknown default:
-        return "unknown(\(status.rawValue))"
-    }
-}
-
-// MARK: - Single test run (dev / smoke test)
-
-private func runSingleTest(registry: ToolRegistry, client: OllamaClient) async {
-    let allowedTools = ["write_action_item"]
-    let loop = AgentLoop(client: client, registry: registry, allowedToolIds: allowedTools)
-    let systemPrompt = """
-    You are a helpful assistant. When the user asks you to create an action for them, you must call the write_action_item tool exactly once.
-    Use one of these valid systemIntent values only: calendar.create, mail.reply, reminder.add, url.open.
-    """
-    let userMessage = """
-    Create one action item with title "Test Action from Runner" and systemIntent "url.open".
-    Do not explain anything before or after the tool call.
-    """
-    do {
-        let result = try await loop.run(systemPrompt: systemPrompt, userMessage: userMessage)
-        print("Agent result: \(result)")
-    } catch {
-        print("Error: \(error)")
-        exit(1)
-    }
-}
 
 // MARK: - Scheduler (production event-driven mode)
 
@@ -316,16 +224,7 @@ private func runScheduler(
     }
     webhookListener.start()
 
-    if backendClient == nil {
-        // ── CloudKit observer (reactive iOS→Mac bridge) ──────────────────────────
-        // Fires on any remote SwiftData change (chat messages, IncomingEmailSummary, etc.).
-        // High priority so pending chat is processed promptly instead of waiting behind the
-        // clock tick. No ModelContext access here — work runs in dispatch(.cloudKitSync).
-        let cloudKitObserver = CloudKitObserver {
-            executionQueue.enqueue(.cloudKitSync, priority: .high)
-        }
-        cloudKitObserver.start()
-    }
+
 
     // ── 60-second clock (lowest priority — background heartbeat) ─────────────────
     // Checks due CRON missions and pending chat messages. Arrives last in line when
@@ -362,7 +261,7 @@ private func runScheduler(
         let webhookURLString = settings.agentWebhookPublicURL ?? "http://127.0.0.1:\(webhookPort)"
         var agentCapabilities = [
             "web_search", "file_read", "objective_research",
-            "write_action_item", "life_context", "work_units",
+            "life_context", "work_units",
             "calendar", "reminders", "shell_diagnostics"
         ]
         if settings.notificationEmail != nil { agentCapabilities.append("email") }
@@ -391,7 +290,6 @@ private func runScheduler(
           Inbound:  \(dropzoneDir.path)
           Webhook:  port \(webhookPort) (chat wake: POST JSON {"agentkvt":"process_chat"})
           Clock:    every \(clockIntervalSeconds)s
-          CloudKit: \(backendClient == nil ? "listening for NSPersistentStoreRemoteChangeNotification" : "disabled (backend mode)")
         """)
     if backendClient != nil {
         print("  Remote:   backend chat queue, chat_wake long-poll, and inbound-file sync enabled")

@@ -117,12 +117,11 @@ private final class BackendStubState: @unchecked Sendable {
 private func makeContainer() throws -> (ModelContainer, ModelContext) {
     let schema = Schema([
         LifeContext.self,
-        ActionItem.self,
         AgentLog.self,
         InboundFile.self,
         ChatThread.self,
         ChatMessage.self,
-        IncomingEmailSummary.self,
+
         WorkUnit.self,
         EphemeralPin.self,
         ResourceHealth.self,
@@ -255,37 +254,6 @@ private func makeResearchSnapshotEnvelopeData(
     return Data(json.utf8)
 }
 
-@Test("Supervisor timeout creates visible stalled ActionItem")
-func supervisorTimeoutCreatesStallActionItem() async throws {
-    let (container, context) = try makeContainer()
-    let pool = makePool(
-        container: container,
-        context: context,
-        client: HangingOllamaClient(),
-        timeoutSeconds: 0.2
-    )
-
-    let tid = UUID()
-    let oid = UUID()
-    let json = taskSearchJSON(taskId: tid, objectiveId: oid, description: "Plan Tokyo trip")
-    let payload = try #require(TaskSearchPayload(json: json))
-    await pool.enqueue(payload)
-
-    // `waitForResearchToSettle` sleeps up to 2s before the first timeout check, then calls
-    // `handleResearchTimeout` which creates the ActionItem; allow enough wall time for the supervisor.
-    let deadline = Date().addingTimeInterval(12)
-    var found = false
-    while Date() < deadline {
-        let readContext = ModelContext(container)
-        let items = try readContext.fetch(FetchDescriptor<ActionItem>())
-        if items.contains(where: { $0.title.contains("Agent Stalled") }) {
-            found = true
-            break
-        }
-        try await Task.sleep(for: .milliseconds(150))
-    }
-    #expect(found, "Expected research settle timeout to create an 'Agent Stalled' ActionItem.")
-}
 
 /// Regression test for the April 2026 incident where `default-local.store`
 /// became corrupted (NSSQLiteErrorDomain=1), causing all worker loops to crash

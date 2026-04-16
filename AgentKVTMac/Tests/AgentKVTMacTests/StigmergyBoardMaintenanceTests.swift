@@ -10,12 +10,11 @@ struct StigmergyBoardMaintenanceTests {
         let schema = Schema([
             LifeContext.self,
             ResearchSnapshot.self,
-            ActionItem.self,
             AgentLog.self,
             InboundFile.self,
             ChatThread.self,
             ChatMessage.self,
-            IncomingEmailSummary.self,
+
             WorkUnit.self,
             EphemeralPin.self,
             ResourceHealth.self,

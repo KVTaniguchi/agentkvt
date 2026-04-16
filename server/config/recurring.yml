@@ -23,3 +23,13 @@ production:
     class: RssFeedPollerJob
     queue: background
     schedule: every 15 minutes
+
+  maintenance_monitor:
+    class: MaintenanceMonitorJob
+    queue: background
+    schedule: every day at 8am
+
+  health_scout:
+    class: HealthScoutJob
+    queue: background
+    schedule: every monday at 7am

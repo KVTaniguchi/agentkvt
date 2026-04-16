@@ -6,8 +6,8 @@ class V1AgentLogsTest < ActionDispatch::IntegrationTest
     @workspace = Workspace.create!(name: "Default Workspace", slug: "workspace-#{SecureRandom.hex(4)}")
     @workspace.agent_logs.create!(
       phase: "tool_result",
-      content: "Created ActionItem: Review Example Co role (url.open)",
-      metadata_json: { "tool_name" => "write_action_item" }
+      content: "Web search completed for: hotel rates",
+      metadata_json: { "tool_name" => "web_search_and_fetch" }
     )
   end
 
@@ -17,7 +17,7 @@ class V1AgentLogsTest < ActionDispatch::IntegrationTest
     assert_response :success
     body = JSON.parse(response.body)
     assert_equal 1, body.fetch("agent_logs").length
-    assert_equal "write_action_item", body.dig("agent_logs", 0, "tool_name")
+    assert_equal "web_search_and_fetch", body.dig("agent_logs", 0, "tool_name")
   end
 
   private

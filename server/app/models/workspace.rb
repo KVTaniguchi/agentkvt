@@ -6,7 +6,6 @@ class Workspace < ApplicationRecord
   has_many :chat_messages, through: :chat_threads
   has_many :inbound_files, dependent: :destroy
   has_many :life_context_entries, dependent: :destroy
-  has_many :action_items, dependent: :destroy
   has_many :agent_logs, dependent: :destroy
   has_many :objectives, dependent: :destroy
   has_many :objective_drafts, dependent: :destroy

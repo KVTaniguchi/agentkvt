@@ -86,23 +86,6 @@ module ApiSerialization
     }
   end
 
-  def serialize_action_item(action_item)
-    {
-      id: action_item.id,
-      workspace_id: action_item.workspace_id,
-      owner_profile_id: action_item.owner_profile_id,
-      title: action_item.title,
-      system_intent: action_item.system_intent,
-      payload_json: action_item.payload_json,
-      relevance_score: action_item.relevance_score,
-      is_handled: action_item.is_handled,
-      handled_at: iso8601(action_item.handled_at),
-      timestamp: iso8601(action_item.timestamp),
-      created_by: action_item.created_by,
-      created_at: iso8601(action_item.created_at),
-      updated_at: iso8601(action_item.updated_at)
-    }
-  end
 
   def serialize_agent_log(agent_log)
     {
@@ -225,6 +208,10 @@ module ApiSerialization
       value: snapshot.value,
       previous_value: snapshot.previous_value,
       delta_note: snapshot.delta_note,
+      is_repellent: snapshot.is_repellent,
+      repellent_reason: snapshot.repellent_reason,
+      repellent_scope: snapshot.repellent_scope,
+      snapshot_kind: snapshot.snapshot_kind,
       checked_at: iso8601(snapshot.checked_at),
       created_at: iso8601(snapshot.created_at),
       updated_at: iso8601(snapshot.updated_at)

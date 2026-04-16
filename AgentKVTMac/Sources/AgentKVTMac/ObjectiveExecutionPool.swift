@@ -1326,7 +1326,6 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         try context.save()
 
         let actionTitle = "Agent Stalled: \(objectiveName) timed out."
-        createLocalActionItem(title: actionTitle, detail: timeoutMessage)
         Task.detached(priority: .utility) { [weak self] in
             await self?.logEvent(
                 phase: "error",
@@ -1339,23 +1338,6 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         return actionTitle
     }
 
-    private func createLocalActionItem(title: String, detail: String) {
-        let context = freshContext()
-        let payloadData: Data? = try? JSONSerialization.data(
-            withJSONObject: [
-                "reminderTitle": title,
-                "notes": detail
-            ],
-            options: []
-        )
-        let item = ActionItem(
-            title: title,
-            systemIntent: SystemIntent.reminderAdd.rawValue,
-            payloadData: payloadData
-        )
-        context.insert(item)
-        try? context.save()
-    }
 
     private func waitForSynthesisToSettle(objectiveId: UUID, taskId: UUID) async throws {
         while true {
