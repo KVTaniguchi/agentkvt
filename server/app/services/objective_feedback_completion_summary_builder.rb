@@ -6,7 +6,7 @@ class ObjectiveFeedbackCompletionSummaryBuilder
     tasks_by_id = tasks.index_by(&:id)
     snapshots = feedback.objective.research_snapshots.where(task_id: tasks.map(&:id)).recent_first.limit(3)
     updates = snapshots.filter_map do |snapshot|
-      detail = snapshot.delta_note.presence || snapshot.value.presence
+      detail = sanitize_detail(snapshot.delta_note.presence || snapshot.value.presence)
       next if detail.blank?
 
       "#{snapshot_label(snapshot, tasks_by_id: tasks_by_id)}: #{detail.to_s.squish}"
@@ -42,5 +42,13 @@ class ObjectiveFeedbackCompletionSummaryBuilder
   def humanize_key(key)
     cleaned = key.to_s.tr("_-", " ").squish
     cleaned.present? ? cleaned.sub(/\A./, &:upcase) : "Finding"
+  end
+
+  def sanitize_detail(text)
+    return nil if text.blank?
+
+    normalized = text.to_s.gsub(/\r\n?/, "\n").strip
+    body = normalized.split(/\n\s*confidence options:\s*/i, 2).first.to_s.strip
+    body.presence
   end
 end

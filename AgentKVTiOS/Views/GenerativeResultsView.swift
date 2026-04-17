@@ -1188,7 +1188,8 @@ struct ObjectiveFeedbackPlanCard: View {
                 }
             }
 
-            if let completionSummary = model.completionSummary, !completionSummary.isEmpty {
+            if let completionSummary = ObjectiveFeedbackPresentation.displayText(model.completionSummary),
+               !completionSummary.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("What changed")
                         .font(.caption.weight(.semibold))

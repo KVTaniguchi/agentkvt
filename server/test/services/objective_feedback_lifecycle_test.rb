@@ -62,4 +62,35 @@ class ObjectiveFeedbackLifecycleTest < ActiveSupport::TestCase
     assert_includes summary, "\n"
     refute_match(/\.\.\.\z/, summary)
   end
+
+  test "completion summary strips confidence options appendix from snapshot detail" do
+    feedback = @objective.objective_feedbacks.create!(
+      content: "Double-check the park hours.",
+      feedback_kind: "follow_up",
+      status: "queued"
+    )
+    task = @objective.tasks.create!(
+      description: "Verify July park hours from official sources",
+      status: "completed",
+      source_feedback: feedback
+    )
+    @objective.research_snapshots.create!(
+      key: "task_summary_abcdef123456",
+      value: <<~TEXT.strip,
+        Epic Universe closes at 10:00 PM on July 12.
+        Confidence options:
+        - Verify July 11 separately.
+        - Compare against the backup plan.
+      TEXT
+      task: task,
+      checked_at: Time.current
+    )
+
+    ObjectiveFeedbackLifecycle.new.refresh!(feedback)
+
+    summary = feedback.reload.completion_summary
+    assert_includes summary, "Epic Universe closes at 10:00 PM on July 12."
+    refute_includes summary, "Confidence options:"
+    refute_includes summary, "Verify July 11 separately."
+  end
 end

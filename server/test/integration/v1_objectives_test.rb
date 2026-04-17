@@ -227,6 +227,42 @@ class V1ObjectivesTest < ActionDispatch::IntegrationTest
     assert_equal 1, serialized["bad_feedback_count"]
   end
 
+  test "show refreshes completed follow-up summaries to strip confidence options" do
+    objective = @workspace.objectives.create!(goal: "Check park hours", status: "active", priority: 0)
+    feedback = objective.objective_feedbacks.create!(
+      content: "Verify the latest closing time.",
+      feedback_kind: "follow_up",
+      status: "completed",
+      completion_summary: "Old truncated summary…",
+      completed_at: Time.current
+    )
+    task = objective.tasks.create!(
+      description: "Verify Epic Universe closing time from official sources",
+      status: "completed",
+      source_feedback: feedback
+    )
+    objective.research_snapshots.create!(
+      key: "task_summary_7BF5DE922620",
+      value: <<~TEXT.strip,
+        Epic Universe closes at 10:00 PM on July 12.
+        Confidence options:
+        - Verify July 11 separately.
+        - Compare against the strongest backup plan.
+      TEXT
+      task: task,
+      checked_at: Time.current
+    )
+
+    get "/v1/objectives/#{objective.id}", headers: workspace_headers
+    assert_response :success
+
+    summary = JSON.parse(response.body).fetch("objective_feedbacks").first.fetch("completion_summary")
+    assert_includes summary, "Verify Epic Universe closing time from official sources:"
+    assert_includes summary, "Epic Universe closes at 10:00 PM on July 12."
+    refute_includes summary, "Confidence options:"
+    refute_match(/\.\.\.\z/, summary)
+  end
+
   test "create and update research snapshot feedback" do
     objective = @workspace.objectives.create!(goal: "Book flights", status: "active", priority: 2)
     snapshot = objective.research_snapshots.create!(

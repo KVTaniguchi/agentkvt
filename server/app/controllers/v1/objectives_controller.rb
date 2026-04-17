@@ -16,6 +16,10 @@ module V1
 
     def show
       objective = current_workspace.objectives.find(params[:id])
+      lifecycle = ObjectiveFeedbackLifecycle.new
+      refreshed_feedbacks = objective.objective_feedbacks.includes(:follow_up_tasks).recent_first.map do |feedback|
+        lifecycle.refresh!(feedback)
+      end
       # Match Mac/client UUID casing (uppercase) vs DB lowercase by normalizing both sides.
       agent_logs = current_workspace.agent_logs
         .where("LOWER(metadata_json ->> 'objective_id') = LOWER(?)", objective.id.to_s)
@@ -26,7 +30,7 @@ module V1
         objective: serialize_objective(objective),
         tasks: objective.tasks.pending_first.map { |t| serialize_task(t) },
         research_snapshots: objective.research_snapshots.recent_first.map { |s| serialize_research_snapshot(s) },
-        objective_feedbacks: objective.objective_feedbacks.recent_first.map { |feedback| serialize_objective_feedback(feedback) },
+        objective_feedbacks: refreshed_feedbacks.map { |feedback| serialize_objective_feedback(feedback) },
         agent_logs: agent_logs.map { |log| serialize_agent_log(log) },
         online_agent_registrations_count: current_workspace.agent_registrations.online.count
       }
