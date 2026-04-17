@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_04_10_213000) do
+ActiveRecord::Schema[8.0].define(version: 2026_04_16_030000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -210,6 +210,22 @@ ActiveRecord::Schema[8.0].define(version: 2026_04_10_213000) do
     t.index ["task_id"], name: "index_objective_feedbacks_on_task_id"
   end
 
+  create_table "research_snapshot_feedbacks", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "workspace_id", null: false
+    t.uuid "objective_id", null: false
+    t.uuid "research_snapshot_id", null: false
+    t.uuid "created_by_profile_id"
+    t.string "role", default: "user", null: false
+    t.string "rating", null: false
+    t.text "reason"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["objective_id"], name: "index_research_snapshot_feedbacks_on_objective_id"
+    t.index ["research_snapshot_id"], name: "index_research_snapshot_feedbacks_on_research_snapshot_id"
+    t.index ["workspace_id"], name: "index_research_snapshot_feedbacks_on_workspace_id"
+    t.index "research_snapshot_id, role, COALESCE(created_by_profile_id::text, 'anonymous')", name: "index_research_snapshot_feedbacks_on_snapshot_viewer_role", unique: true
+  end
+
   create_table "research_snapshots", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.uuid "objective_id", null: false
     t.uuid "task_id"
@@ -357,6 +373,10 @@ ActiveRecord::Schema[8.0].define(version: 2026_04_10_213000) do
   add_foreign_key "objective_feedbacks", "research_snapshots"
   add_foreign_key "objective_feedbacks", "tasks"
   add_foreign_key "objectives", "workspaces"
+  add_foreign_key "research_snapshot_feedbacks", "family_members", column: "created_by_profile_id"
+  add_foreign_key "research_snapshot_feedbacks", "objectives"
+  add_foreign_key "research_snapshot_feedbacks", "research_snapshots"
+  add_foreign_key "research_snapshot_feedbacks", "workspaces"
   add_foreign_key "research_snapshots", "objectives"
   add_foreign_key "research_snapshots", "tasks"
   add_foreign_key "tasks", "objectives"

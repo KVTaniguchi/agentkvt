@@ -6,12 +6,14 @@ protocol ObjectivesRemoteSyncing: Sendable {
     var isEnabled: Bool { get }
     func fetchObjectivesRemote() async throws -> [IOSBackendObjective]
     func createObjectiveRemote(goal: String, status: String, priority: Int) async throws -> IOSBackendObjective
-    func fetchObjectiveDetailRemote(id: UUID) async throws -> IOSBackendObjectiveDetail
+    func fetchObjectiveDetailRemote(id: UUID, viewerProfileId: UUID?) async throws -> IOSBackendObjectiveDetail
     func updateObjectiveRemote(id: UUID, goal: String, status: String, priority: Int) async throws -> IOSBackendObjective
     func submitObjectiveFeedbackRemote(id: UUID, content: String, feedbackKind: String, taskId: UUID?, researchSnapshotId: UUID?) async throws -> IOSBackendSubmitObjectiveFeedbackResult
     func updateObjectiveFeedbackRemote(objectiveId: UUID, feedbackId: UUID, content: String, feedbackKind: String, taskId: UUID?, researchSnapshotId: UUID?) async throws -> IOSBackendSubmitObjectiveFeedbackResult
     func approveObjectiveFeedbackPlanRemote(objectiveId: UUID, feedbackId: UUID) async throws -> IOSBackendSubmitObjectiveFeedbackResult
     func regenerateObjectiveFeedbackPlanRemote(objectiveId: UUID, feedbackId: UUID) async throws -> IOSBackendSubmitObjectiveFeedbackResult
+    func submitResearchSnapshotFeedbackRemote(objectiveId: UUID, snapshotId: UUID, createdByProfileId: UUID?, rating: String, reason: String?) async throws -> IOSBackendResearchSnapshotFeedback
+    func updateResearchSnapshotFeedbackRemote(objectiveId: UUID, snapshotId: UUID, feedbackId: UUID, createdByProfileId: UUID?, rating: String, reason: String?) async throws -> IOSBackendResearchSnapshotFeedback
     func approveObjectivePlanRemote(id: UUID) async throws -> IOSBackendObjective
     func regenerateObjectivePlanRemote(id: UUID) async throws -> IOSBackendObjective
     func runObjectiveNowRemote(id: UUID) async throws -> IOSBackendObjective
@@ -57,8 +59,8 @@ final class ObjectivesStore {
     }
 
     /// Fetches the full detail (tasks + snapshots) for a single objective.
-    func fetchDetail(for id: UUID) async throws -> IOSBackendObjectiveDetail {
-        try await sync.fetchObjectiveDetailRemote(id: id)
+    func fetchDetail(for id: UUID, viewerProfileId: UUID? = nil) async throws -> IOSBackendObjectiveDetail {
+        try await sync.fetchObjectiveDetailRemote(id: id, viewerProfileId: viewerProfileId)
     }
 
     /// Updates an objective on the server and replaces the local list entry.
@@ -117,6 +119,40 @@ final class ObjectivesStore {
         let result = try await sync.approveObjectiveFeedbackPlanRemote(objectiveId: objectiveId, feedbackId: feedbackId)
         upsertObjective(result.objective)
         return result
+    }
+
+    func submitResearchSnapshotFeedback(
+        objectiveId: UUID,
+        snapshotId: UUID,
+        createdByProfileId: UUID?,
+        rating: String,
+        reason: String?
+    ) async throws -> IOSBackendResearchSnapshotFeedback {
+        try await sync.submitResearchSnapshotFeedbackRemote(
+            objectiveId: objectiveId,
+            snapshotId: snapshotId,
+            createdByProfileId: createdByProfileId,
+            rating: rating,
+            reason: reason
+        )
+    }
+
+    func updateResearchSnapshotFeedback(
+        objectiveId: UUID,
+        snapshotId: UUID,
+        feedbackId: UUID,
+        createdByProfileId: UUID?,
+        rating: String,
+        reason: String?
+    ) async throws -> IOSBackendResearchSnapshotFeedback {
+        try await sync.updateResearchSnapshotFeedbackRemote(
+            objectiveId: objectiveId,
+            snapshotId: snapshotId,
+            feedbackId: feedbackId,
+            createdByProfileId: createdByProfileId,
+            rating: rating,
+            reason: reason
+        )
     }
 
     @MainActor

@@ -60,6 +60,37 @@ private func makeObjectiveFeedback(
     return try decoder.decode(IOSBackendObjectiveFeedback.self, from: data)
 }
 
+private func makeResearchSnapshotFeedback(
+    id: UUID = UUID(uuidString: "abababab-abab-abab-abab-abababababab")!,
+    objectiveId: UUID,
+    snapshotId: UUID,
+    createdByProfileId: UUID?,
+    rating: String,
+    reason: String?
+) throws -> IOSBackendResearchSnapshotFeedback {
+    let profileValue = createdByProfileId.map { "\"\($0.uuidString)\"" } ?? "null"
+    let reasonValue = reason.map { "\"\($0.replacingOccurrences(of: "\"", with: "\\\""))\"" } ?? "null"
+    let json = """
+    {
+      "id": "\(id.uuidString)",
+      "workspace_id": "22222222-2222-2222-2222-222222222222",
+      "objective_id": "\(objectiveId.uuidString)",
+      "research_snapshot_id": "\(snapshotId.uuidString)",
+      "created_by_profile_id": \(profileValue),
+      "role": "user",
+      "rating": "\(rating)",
+      "reason": \(reasonValue),
+      "created_at": "2026-04-10T10:00:00Z",
+      "updated_at": "2026-04-10T10:01:00Z"
+    }
+    """
+    let data = json.data(using: .utf8)!
+    let decoder = JSONDecoder()
+    decoder.keyDecodingStrategy = .convertFromSnakeCase
+    decoder.dateDecodingStrategy = .iso8601
+    return try decoder.decode(IOSBackendResearchSnapshotFeedback.self, from: data)
+}
+
 private final class MockObjectivesSync: ObjectivesRemoteSyncing, @unchecked Sendable {
     var isEnabled = true
     var objectives: [IOSBackendObjective] = []
@@ -68,6 +99,8 @@ private final class MockObjectivesSync: ObjectivesRemoteSyncing, @unchecked Send
     var feedbackUpdates: [(UUID, UUID, String, String, UUID?, UUID?)] = []
     var approveFeedbackPlanCalls: [(UUID, UUID)] = []
     var regenerateFeedbackPlanCalls: [(UUID, UUID)] = []
+    var snapshotFeedbackSubmissions: [(UUID, UUID, UUID?, String, String?)] = []
+    var snapshotFeedbackUpdates: [(UUID, UUID, UUID, UUID?, String, String?)] = []
     var approvePlanIds: [UUID] = []
     var regeneratePlanIds: [UUID] = []
     var runNowIds: [UUID] = []
@@ -81,7 +114,7 @@ private final class MockObjectivesSync: ObjectivesRemoteSyncing, @unchecked Send
         fatalError("unused in these tests")
     }
 
-    func fetchObjectiveDetailRemote(id: UUID) async throws -> IOSBackendObjectiveDetail {
+    func fetchObjectiveDetailRemote(id: UUID, viewerProfileId: UUID?) async throws -> IOSBackendObjectiveDetail {
         fatalError("unused in these tests")
     }
 
@@ -162,6 +195,42 @@ private final class MockObjectivesSync: ObjectivesRemoteSyncing, @unchecked Send
                 status: "review_required"
             ),
             followUpTasks: []
+        )
+    }
+
+    func submitResearchSnapshotFeedbackRemote(
+        objectiveId: UUID,
+        snapshotId: UUID,
+        createdByProfileId: UUID?,
+        rating: String,
+        reason: String?
+    ) async throws -> IOSBackendResearchSnapshotFeedback {
+        snapshotFeedbackSubmissions.append((objectiveId, snapshotId, createdByProfileId, rating, reason))
+        return try makeResearchSnapshotFeedback(
+            objectiveId: objectiveId,
+            snapshotId: snapshotId,
+            createdByProfileId: createdByProfileId,
+            rating: rating,
+            reason: reason
+        )
+    }
+
+    func updateResearchSnapshotFeedbackRemote(
+        objectiveId: UUID,
+        snapshotId: UUID,
+        feedbackId: UUID,
+        createdByProfileId: UUID?,
+        rating: String,
+        reason: String?
+    ) async throws -> IOSBackendResearchSnapshotFeedback {
+        snapshotFeedbackUpdates.append((objectiveId, snapshotId, feedbackId, createdByProfileId, rating, reason))
+        return try makeResearchSnapshotFeedback(
+            id: feedbackId,
+            objectiveId: objectiveId,
+            snapshotId: snapshotId,
+            createdByProfileId: createdByProfileId,
+            rating: rating,
+            reason: reason
         )
     }
 

@@ -1,0 +1,11 @@
+{
+  "name": "agentkvt-scouts",
+  "version": "1.0.0",
+  "description": "Browser automation helpers for AgentKVT",
+  "main": "site-scout.js",
+  "dependencies": {
+    "playwright": "^1.42.1"
+  },
+  "author": "AgentKVT",
+  "license": "MIT"
+}

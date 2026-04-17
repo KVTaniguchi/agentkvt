@@ -469,6 +469,53 @@ struct IOSBackendAPIClientTests {
         #expect(result.objectiveFeedback.id == feedbackID)
     }
 
+    @Test("submitResearchSnapshotFeedback posts the rating payload")
+    func submitResearchSnapshotFeedbackPostsPayload() async throws {
+        let objectiveID = UUID(uuidString: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")!
+        let snapshotID = UUID(uuidString: "cccccccc-cccc-cccc-cccc-cccccccccccc")!
+        let profileID = UUID(uuidString: "dddddddd-dddd-dddd-dddd-dddddddddddd")!
+        let host = "snapshot-feedback-\(UUID().uuidString.lowercased()).example.test"
+        let path = "/v1/objectives/\(objectiveID.uuidString)/research_snapshots/\(snapshotID.uuidString)/feedback"
+        let key = BackendRequestCaptureURLProtocol.requestKey(host: host, path: path)
+        let responseJSON = """
+        {
+          "research_snapshot_feedback": {
+            "id": "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+            "workspace_id": "11111111-1111-1111-1111-111111111111",
+            "objective_id": "\(objectiveID.uuidString)",
+            "research_snapshot_id": "\(snapshotID.uuidString)",
+            "created_by_profile_id": "\(profileID.uuidString)",
+            "role": "user",
+            "rating": "bad",
+            "reason": "Outdated",
+            "created_at": "2026-04-10T10:00:00Z",
+            "updated_at": "2026-04-10T10:01:00Z"
+          }
+        }
+        """
+        BackendRequestCaptureURLProtocol.setRequestHandler(
+            for: key,
+            handler: makeResponse(path: path, data: Data(responseJSON.utf8))
+        )
+
+        let client = makeClient(host: host)
+        let feedback = try await client.submitResearchSnapshotFeedback(
+            objectiveId: objectiveID,
+            snapshotId: snapshotID,
+            createdByProfileId: profileID,
+            rating: "bad",
+            reason: "Outdated"
+        )
+
+        let request = try #require(BackendRequestCaptureURLProtocol.recordedRequest(for: key))
+        let body = try JSONSerialization.jsonObject(with: try requestBodyData(from: request)) as? [String: Any]
+        let payload = try #require(body?["research_snapshot_feedback"] as? [String: Any])
+        #expect(payload["rating"] as? String == "bad")
+        #expect(payload["reason"] as? String == "Outdated")
+        #expect(payload["created_by_profile_id"] as? String == profileID.uuidString)
+        #expect(feedback.rating == "bad")
+    }
+
     @Test("approveObjectiveFeedbackPlan posts to the feedback approval endpoint")
     func approveObjectiveFeedbackPlanPostsToApprovalEndpoint() async throws {
         let objectiveID = UUID(uuidString: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")!

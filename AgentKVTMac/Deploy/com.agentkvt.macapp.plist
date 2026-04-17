@@ -53,6 +53,8 @@
 
     <key>ProgramArguments</key>
     <array>
+        <string>/Users/YOURUSERNAME/Development/agentkvt/bin/agentkvt_launch_single_instance.sh</string>
+        <string>macapp</string>
         <string>/usr/bin/open</string>
         <string>-W</string>
         <string>-a</string>

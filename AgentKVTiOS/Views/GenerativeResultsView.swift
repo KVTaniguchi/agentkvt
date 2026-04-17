@@ -612,6 +612,107 @@ private struct LinkNodeView: View {
     }
 }
 
+private struct ExpandableLinkText: View {
+    let text: String
+    var textStyle: UIFont.TextStyle = .body
+    var foregroundStyle: Color = .primary
+    var collapsedLineLimit = 6
+
+    @State private var isExpanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(attributedText)
+                .font(swiftUIFont)
+                .foregroundStyle(foregroundStyle)
+                .tint(.blue)
+                .lineLimit(isExpanded ? nil : collapsedLineLimit)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if shouldOfferExpansion {
+                Button(isExpanded ? "Show less" : "Show more") {
+                    isExpanded.toggle()
+                }
+                .buttonStyle(.plain)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.blue)
+            }
+        }
+    }
+
+    private var shouldOfferExpansion: Bool {
+        text.count > 260 || text.components(separatedBy: .newlines).count > 5
+    }
+
+    private var attributedText: AttributedString {
+        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else {
+            return AttributedString(text)
+        }
+
+        let nsRange = NSRange(text.startIndex..., in: text)
+        let mutable = NSMutableAttributedString(string: text)
+        let baseFont = UIFont.preferredFont(forTextStyle: textStyle)
+
+        mutable.addAttributes([
+            .font: baseFont,
+            .foregroundColor: UIColor.label
+        ], range: nsRange)
+
+        detector.enumerateMatches(in: text, options: [], range: nsRange) { match, _, _ in
+            guard let match, let url = match.url else { return }
+            mutable.addAttribute(.link, value: url, range: match.range)
+        }
+
+        return (try? AttributedString(mutable, including: \.uiKit)) ?? AttributedString(text)
+    }
+
+    private var swiftUIFont: Font {
+        switch textStyle {
+        case .caption1:
+            return .caption
+        case .headline:
+            return .headline
+        case .subheadline:
+            return .subheadline
+        default:
+            return .body
+        }
+    }
+}
+
+#if os(iOS)
+private struct VerticalScrollLockConfigurationView: UIViewRepresentable {
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView(frame: .zero)
+        configureScrollView(from: view)
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        configureScrollView(from: uiView)
+    }
+
+    private func configureScrollView(from view: UIView) {
+        DispatchQueue.main.async {
+            guard let scrollView = sequence(first: view.superview, next: { $0?.superview })
+                .first(where: { $0 is UIScrollView }) as? UIScrollView else {
+                return
+            }
+
+            scrollView.alwaysBounceHorizontal = false
+            scrollView.showsHorizontalScrollIndicator = false
+            scrollView.isDirectionalLockEnabled = true
+        }
+    }
+}
+
+private extension View {
+    func lockPrimaryScrollToVerticalAxis() -> some View {
+        background(VerticalScrollLockConfigurationView())
+    }
+}
+#endif
+
 struct ObjectiveFeedbackComposerSheet: View {
     let objectiveId: UUID
     let objectiveGoal: String
@@ -1092,10 +1193,12 @@ struct ObjectiveFeedbackPlanCard: View {
                     Text("What changed")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
-                    Text(completionSummary)
-                        .font(.subheadline)
-                        .foregroundStyle(.primary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    ExpandableLinkText(
+                        text: completionSummary,
+                        textStyle: .subheadline,
+                        foregroundStyle: .primary,
+                        collapsedLineLimit: 7
+                    )
                 }
             }
 
@@ -1199,14 +1302,14 @@ struct ObjectiveFeedbackPlanCard: View {
         }
 
         if prominent {
-            let styledButton = button.buttonStyle(.borderedProminent)
+            let styledButton = button.buttonStyle(BorderedProminentButtonStyle())
             if let tint {
                 styledButton.tint(tint)
             } else {
                 styledButton
             }
         } else {
-            let styledButton = button.buttonStyle(.bordered)
+            let styledButton = button.buttonStyle(BorderedButtonStyle())
             if let tint {
                 styledButton.tint(tint)
             } else {
@@ -1333,16 +1436,40 @@ private struct FeedbackComposerStatusHeader: View {
 private struct ResultsFindingFollowUpCard: View {
     let snapshot: IOSBackendResearchSnapshot
     var submittingOptionID: String? = nil
+    var isSubmittingRating = false
     var onSelectAction: (ObjectiveFeedbackComposerContext) -> Void
     var onSelectConfidenceOption: ((IOSBackendResearchSnapshot, ObjectiveConfidenceOption) -> Void)? = nil
+    var onRateResult: ((IOSBackendResearchSnapshot, String) -> Void)? = nil
 
     private var confidenceOptions: [ObjectiveConfidenceOption] {
         ObjectiveConfidenceOptionBuilder.options(for: snapshot)
     }
 
+    private var selectedRating: String? {
+        snapshot.viewerFeedbackRating
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             SnapshotRow(snapshot: snapshot)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Result quality")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+
+                HStack(spacing: 8) {
+                    ratingButton(label: "Good result", rating: "good", systemImage: "hand.thumbsup.fill", tint: .green)
+                    ratingButton(label: "Bad result", rating: "bad", systemImage: "hand.thumbsdown.fill", tint: .orange)
+                }
+
+                if let rating = selectedRating {
+                    Text(ratingSummaryText(for: rating))
+                        .font(.caption)
+                        .foregroundStyle(rating == "good" ? .green : .orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
 
             if !confidenceOptions.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
@@ -1383,6 +1510,15 @@ private struct ResultsFindingFollowUpCard: View {
         .padding()
         .background(Color(uiColor: .secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+
+    private func ratingSummaryText(for rating: String) -> String {
+        let prefix = rating == "good" ? "Marked good" : "Marked bad"
+        if let reason = snapshot.viewerFeedbackReason,
+           !reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return "\(prefix): \(reason)"
+        }
+        return prefix
     }
 
     private func context(kind: ObjectiveFeedbackKindOption, draft: String) -> ObjectiveFeedbackComposerContext {
@@ -1435,6 +1571,97 @@ private struct ResultsFindingFollowUpCard: View {
         .tint(tint)
         .disabled(submittingOptionID != nil)
     }
+
+    @ViewBuilder
+    private func ratingButton(label: String, rating: String, systemImage: String, tint: Color) -> some View {
+        let button = Button {
+            onRateResult?(snapshot, rating)
+        } label: {
+            Label(label, systemImage: systemImage)
+                .font(.caption.weight(.medium))
+                .frame(maxWidth: .infinity)
+        }
+        .tint(tint)
+        .disabled(submittingOptionID != nil || isSubmittingRating)
+        .overlay(alignment: .trailing) {
+            if isSubmittingRating {
+                ProgressView()
+                    .controlSize(.small)
+                    .padding(.trailing, 8)
+            }
+        }
+
+        if selectedRating == rating {
+            button.buttonStyle(BorderedProminentButtonStyle())
+        } else {
+            button.buttonStyle(BorderedButtonStyle())
+        }
+    }
+}
+
+private struct SnapshotFeedbackState: Sendable {
+    let viewerFeedbackId: UUID?
+    let viewerFeedbackRating: String?
+    let viewerFeedbackReason: String?
+    let goodFeedbackCount: Int
+    let badFeedbackCount: Int
+}
+
+private struct SnapshotFeedbackEditorContext: Identifiable {
+    let snapshotId: UUID
+    let snapshotTitle: String
+    let feedbackId: UUID?
+    let rating: String
+    var reason: String
+
+    var id: UUID { snapshotId }
+}
+
+private struct SnapshotFeedbackEditorSheet: View {
+    let title: String
+    let rating: String
+    @State var reason: String
+    var onSave: (String) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    private var prompt: String {
+        rating == "good"
+            ? "Optional: note why this result was useful."
+            : "Optional: note what was weak, stale, or incorrect."
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Text(title)
+                        .font(.subheadline.weight(.semibold))
+                    Text(prompt)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("Reason") {
+                    TextEditor(text: $reason)
+                        .frame(minHeight: 140)
+                }
+            }
+            .navigationTitle(rating == "good" ? "Good Result" : "Bad Result")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        onSave(reason.trimmingCharacters(in: .whitespacesAndNewlines))
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
 }
 
 // MARK: - Generative results view
@@ -1449,6 +1676,7 @@ struct GenerativeResultsView: View {
     var onFeedbackMutated: (() -> Void)? = nil
 
     @Environment(ObjectivesStore.self) private var store
+    @EnvironmentObject private var profileStore: FamilyProfileStore
     @State private var layout: UINode?
     @State private var isLoading = false
     @State private var useFallback = false
@@ -1464,9 +1692,16 @@ struct GenerativeResultsView: View {
     @State private var activityPollUntil: Date?
     @State private var isDispatchingNow = false
     @State private var dispatchError: String?
+    @State private var snapshotFeedbackOverrides: [UUID: SnapshotFeedbackState] = [:]
+    @State private var activeRatingSnapshotID: UUID?
+    @State private var snapshotFeedbackEditor: SnapshotFeedbackEditorContext?
 
     private var canContinueResearch: Bool {
         objectiveStatus == "pending" || objectiveStatus == "active"
+    }
+
+    private var displayedSnapshots: [IOSBackendResearchSnapshot] {
+        snapshots.map(applyingFeedbackOverride)
     }
 
     private var quickFeedbackKinds: [ObjectiveFeedbackKindOption] {
@@ -1653,21 +1888,28 @@ struct GenerativeResultsView: View {
                             VStack(alignment: .leading, spacing: 12) {
                                 Text("Continue from a finding")
                                     .font(.headline)
-                                ForEach(snapshots) { snapshot in
+                                ForEach(displayedSnapshots) { snapshot in
                                     ResultsFindingFollowUpCard(
                                         snapshot: snapshot,
-                                        submittingOptionID: activeConfidenceOptionID
+                                        submittingOptionID: activeConfidenceOptionID,
+                                        isSubmittingRating: activeRatingSnapshotID == snapshot.id
                                     ) { context in
                                         composerContext = context
                                     } onSelectConfidenceOption: { snapshot, option in
                                         Task { await submitConfidenceOption(for: snapshot, option: option) }
+                                    } onRateResult: { snapshot, rating in
+                                        Task { await submitSnapshotRating(for: snapshot, rating: rating) }
                                     }
                                 }
                             }
                         }
                     }
                     .padding()
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
+#if os(iOS)
+                .lockPrimaryScrollToVerticalAxis()
+#endif
                 .background(Color(.systemGroupedBackground))
             } else {
                 List {
@@ -1706,20 +1948,23 @@ struct GenerativeResultsView: View {
                     }
 
                     Section("Research Snapshots") {
-                        if snapshots.isEmpty {
+                        if displayedSnapshots.isEmpty {
                             Text("No research data yet.")
                                 .foregroundStyle(.secondary)
                                 .font(.subheadline)
                         } else {
-                            ForEach(snapshots) { snapshot in
+                            ForEach(displayedSnapshots) { snapshot in
                                 if canContinueResearch {
                                     ResultsFindingFollowUpCard(
                                         snapshot: snapshot,
-                                        submittingOptionID: activeConfidenceOptionID
+                                        submittingOptionID: activeConfidenceOptionID,
+                                        isSubmittingRating: activeRatingSnapshotID == snapshot.id
                                     ) { context in
                                         composerContext = context
                                     } onSelectConfidenceOption: { snapshot, option in
                                         Task { await submitConfidenceOption(for: snapshot, option: option) }
+                                    } onRateResult: { snapshot, rating in
+                                        Task { await submitSnapshotRating(for: snapshot, rating: rating) }
                                     }
                                 } else {
                                     SnapshotRow(snapshot: snapshot)
@@ -1803,7 +2048,7 @@ struct GenerativeResultsView: View {
                 objectiveGoal: objectiveGoal,
                 objectiveStatus: objectiveStatus,
                 tasks: tasks,
-                snapshots: snapshots,
+                snapshots: displayedSnapshots,
                 editingFeedback: context.existingFeedback,
                 initialFeedbackKind: context.feedbackKind,
                 initialFeedbackTargetID: context.targetID,
@@ -1816,6 +2061,24 @@ struct GenerativeResultsView: View {
                 }
             )
             .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
+        .sheet(item: $snapshotFeedbackEditor) { editor in
+            SnapshotFeedbackEditorSheet(
+                title: editor.snapshotTitle,
+                rating: editor.rating,
+                reason: editor.reason
+            ) { updatedReason in
+                Task {
+                    await saveSnapshotFeedbackReason(
+                        snapshotId: editor.snapshotId,
+                        feedbackId: editor.feedbackId,
+                        rating: editor.rating,
+                        reason: updatedReason
+                    )
+                }
+            }
+            .presentationDetents([.medium])
             .presentationDragIndicator(.visible)
         }
         .alert("Could Not Update Follow-up Plan", isPresented: Binding(
@@ -1842,7 +2105,7 @@ struct GenerativeResultsView: View {
 
     private func feedbackTargetLabel(for feedback: IOSBackendObjectiveFeedback) -> String {
         if let snapshotId = feedback.researchSnapshotId,
-           let snapshot = snapshots.first(where: { $0.id == snapshotId }) {
+           let snapshot = displayedSnapshots.first(where: { $0.id == snapshotId }) {
             return ObjectiveFeedbackPresentation.targetLabel(for: snapshot, tasks: activityTasks + tasks)
         }
         if let taskId = feedback.taskId,
@@ -1854,7 +2117,7 @@ struct GenerativeResultsView: View {
 
     private func feedbackTargetPreview(for feedback: IOSBackendObjectiveFeedback) -> String? {
         if let snapshotId = feedback.researchSnapshotId,
-           let snapshot = snapshots.first(where: { $0.id == snapshotId }) {
+           let snapshot = displayedSnapshots.first(where: { $0.id == snapshotId }) {
             return ObjectiveFeedbackPresentation.previewText(snapshot.value)
         }
         if let taskId = feedback.taskId,
@@ -1940,6 +2203,152 @@ struct GenerativeResultsView: View {
             targetLabel: ObjectiveFeedbackPresentation.targetLabel(for: snapshot, tasks: activityTasks + tasks),
             targetPreview: ObjectiveFeedbackPresentation.previewText(snapshot.value)
         )
+    }
+
+    private func applyingFeedbackOverride(_ snapshot: IOSBackendResearchSnapshot) -> IOSBackendResearchSnapshot {
+        guard let override = snapshotFeedbackOverrides[snapshot.id] else { return snapshot }
+        return IOSBackendResearchSnapshot(
+            id: snapshot.id,
+            objectiveId: snapshot.objectiveId,
+            taskId: snapshot.taskId,
+            key: snapshot.key,
+            value: snapshot.value,
+            previousValue: snapshot.previousValue,
+            deltaNote: snapshot.deltaNote,
+            viewerFeedbackId: override.viewerFeedbackId,
+            viewerFeedbackRating: override.viewerFeedbackRating,
+            viewerFeedbackReason: override.viewerFeedbackReason,
+            goodFeedbackCount: override.goodFeedbackCount,
+            badFeedbackCount: override.badFeedbackCount,
+            checkedAt: snapshot.checkedAt,
+            createdAt: snapshot.createdAt,
+            updatedAt: snapshot.updatedAt
+        )
+    }
+
+    private func feedbackState(for snapshot: IOSBackendResearchSnapshot) -> SnapshotFeedbackState {
+        snapshotFeedbackOverrides[snapshot.id] ?? SnapshotFeedbackState(
+            viewerFeedbackId: snapshot.viewerFeedbackId,
+            viewerFeedbackRating: snapshot.viewerFeedbackRating,
+            viewerFeedbackReason: snapshot.viewerFeedbackReason,
+            goodFeedbackCount: snapshot.goodFeedbackCount,
+            badFeedbackCount: snapshot.badFeedbackCount
+        )
+    }
+
+    private func overrideState(
+        for snapshot: IOSBackendResearchSnapshot,
+        feedback: IOSBackendResearchSnapshotFeedback,
+        reason: String?
+    ) -> SnapshotFeedbackState {
+        let current = feedbackState(for: snapshot)
+        var goodCount = current.goodFeedbackCount
+        var badCount = current.badFeedbackCount
+
+        if current.viewerFeedbackRating != feedback.rating {
+            if current.viewerFeedbackRating == "good" {
+                goodCount = max(0, goodCount - 1)
+            } else if current.viewerFeedbackRating == "bad" {
+                badCount = max(0, badCount - 1)
+            }
+
+            if feedback.rating == "good" {
+                goodCount += 1
+            } else if feedback.rating == "bad" {
+                badCount += 1
+            }
+        }
+
+        return SnapshotFeedbackState(
+            viewerFeedbackId: feedback.id,
+            viewerFeedbackRating: feedback.rating,
+            viewerFeedbackReason: reason,
+            goodFeedbackCount: goodCount,
+            badFeedbackCount: badCount
+        )
+    }
+
+    @MainActor
+    private func submitSnapshotRating(
+        for snapshot: IOSBackendResearchSnapshot,
+        rating: String
+    ) async {
+        feedbackErrorMessage = nil
+        activeRatingSnapshotID = snapshot.id
+        defer { activeRatingSnapshotID = nil }
+
+        let effectiveSnapshot = applyingFeedbackOverride(snapshot)
+
+        do {
+            let feedback = try await store.submitResearchSnapshotFeedback(
+                objectiveId: objectiveId,
+                snapshotId: snapshot.id,
+                createdByProfileId: profileStore.currentProfileId,
+                rating: rating,
+                reason: nil
+            )
+            snapshotFeedbackOverrides[snapshot.id] = overrideState(
+                for: effectiveSnapshot,
+                feedback: feedback,
+                reason: feedback.reason
+            )
+            snapshotFeedbackEditor = SnapshotFeedbackEditorContext(
+                snapshotId: snapshot.id,
+                snapshotTitle: ObjectiveFeedbackPresentation.findingTitle(for: snapshot.key),
+                feedbackId: feedback.id,
+                rating: rating,
+                reason: feedback.reason ?? ""
+            )
+            onFeedbackMutated?()
+            await loadPresentation()
+        } catch {
+            feedbackErrorMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func saveSnapshotFeedbackReason(
+        snapshotId: UUID,
+        feedbackId: UUID?,
+        rating: String,
+        reason: String
+    ) async {
+        guard let snapshot = displayedSnapshots.first(where: { $0.id == snapshotId }) else { return }
+
+        activeRatingSnapshotID = snapshotId
+        defer { activeRatingSnapshotID = nil }
+
+        do {
+            let feedback: IOSBackendResearchSnapshotFeedback
+            if let feedbackId {
+                feedback = try await store.updateResearchSnapshotFeedback(
+                    objectiveId: objectiveId,
+                    snapshotId: snapshotId,
+                    feedbackId: feedbackId,
+                    createdByProfileId: profileStore.currentProfileId,
+                    rating: rating,
+                    reason: reason.isEmpty ? nil : reason
+                )
+            } else {
+                feedback = try await store.submitResearchSnapshotFeedback(
+                    objectiveId: objectiveId,
+                    snapshotId: snapshotId,
+                    createdByProfileId: profileStore.currentProfileId,
+                    rating: rating,
+                    reason: reason.isEmpty ? nil : reason
+                )
+            }
+
+            snapshotFeedbackOverrides[snapshotId] = overrideState(
+                for: snapshot,
+                feedback: feedback,
+                reason: feedback.reason
+            )
+            onFeedbackMutated?()
+            await loadPresentation()
+        } catch {
+            feedbackErrorMessage = error.localizedDescription
+        }
     }
 
     @MainActor
@@ -2088,7 +2497,7 @@ struct GenerativeResultsView: View {
     @MainActor
     private func refreshActivityStatus() async {
         do {
-            let detail = try await store.fetchDetail(for: objectiveId)
+            let detail = try await store.fetchDetail(for: objectiveId, viewerProfileId: profileStore.currentProfileId)
             activityDetail = detail
             reconcileFeedbackState(with: detail)
         } catch {

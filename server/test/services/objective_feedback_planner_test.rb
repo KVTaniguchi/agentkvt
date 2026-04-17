@@ -117,6 +117,38 @@ class ObjectiveFeedbackPlannerTest < ActiveSupport::TestCase
     assert_includes planning_input, @snapshot.key
   end
 
+  test "planner prompt includes rated findings guidance" do
+    member = @workspace.family_members.create!(display_name: "Kevin", symbol: "K", source: "ios")
+    @objective.research_snapshot_feedbacks.create!(
+      workspace: @workspace,
+      research_snapshot: @snapshot,
+      created_by_profile: member,
+      role: "user",
+      rating: "bad",
+      reason: "Outdated and too vague"
+    )
+
+    captured_messages = nil
+    feedback = @objective.objective_feedbacks.create!(
+      content: "Keep going and tighten the recommendation.",
+      feedback_kind: "follow_up",
+      status: "received"
+    )
+
+    client = Object.new
+    client.define_singleton_method(:chat) do |messages:, **_kwargs|
+      captured_messages = messages
+      JSON.generate([{ "description" => "Refresh the weak findings and compare the latest options" }])
+    end
+
+    ObjectiveFeedbackPlanner.new(client: client).call(feedback)
+
+    planning_input = captured_messages.last.fetch(:content)
+    assert_includes planning_input, "Negatively rated findings to avoid or re-check:"
+    assert_includes planning_input, @snapshot.key
+    assert_includes planning_input, "Outdated and too vague"
+  end
+
   test "creates fallback follow-up tasks when the client raises" do
     feedback = @objective.objective_feedbacks.create!(
       content: "Turn the findings into a recommendation with a backup option.",

@@ -33,6 +33,12 @@ actor IMAPEmailPoller {
         print("[IMAPEmailPoller] Started — host=\(settings.imapHost ?? "?") mailbox=\(settings.imapMailbox) interval=\(interval)s")
     }
 
+    func stop() {
+        timer?.cancel()
+        timer = nil
+        print("[IMAPEmailPoller] Stopped")
+    }
+
     // MARK: - Poll
 
     private func poll() async {

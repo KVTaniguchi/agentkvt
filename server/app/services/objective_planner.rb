@@ -25,10 +25,12 @@ class ObjectivePlanner
     - Trip planning → Timing/Crowds Specialist, Logistics Coordinator, Budget Auditor, Dining/Experience Researcher
     - Product comparison → Feature Analyst, Pricing Auditor, User Reviews Specialist, Compatibility Checker
     - Event planning → Venue Researcher, Catering/Food Specialist, Cost Auditor, Scheduling Coordinator
+    - Shopping → Product Researcher, Price Auditor, Stock Checker, Cart/Checkout Coordinator
 
     SEARCH GROUNDING: Each task description must embed a specific directive, not a vague mandate.
     BAD: "Research Epic Universe theme park"
     GOOD: "Search for 'Epic Universe 2026 crowd calendar' and extract per-land recommended visit durations and average wait times for headliner rides. Flag any estimate under 3 hours per land as suspicious."
+    GOOD: "Use the `site_scout` tool to navigate to Target.com, search for '16x25x1 HVAC filter', and extract the availability and price for the 3-pack. If available for pickup, add it to the cart and confirm the cart subtotal."
 
     REJECTION CRITERIA: Include explicit minimum thresholds or sanity checks in task descriptions when relevant (e.g. minimum group size, minimum time blocks, budget caps).
 

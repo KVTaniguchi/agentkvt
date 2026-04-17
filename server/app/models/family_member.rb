@@ -6,6 +6,8 @@ class FamilyMember < ApplicationRecord
   has_many :chat_messages, foreign_key: :author_profile_id, dependent: :nullify, inverse_of: :author_profile
   has_many :uploaded_inbound_files, class_name: "InboundFile", foreign_key: :uploaded_by_profile_id,
                                     dependent: :nullify, inverse_of: :uploaded_by_profile
+  has_many :research_snapshot_feedbacks, foreign_key: :created_by_profile_id, dependent: :nullify,
+                                         inverse_of: :created_by_profile
 
   validates :display_name, presence: true
   validates :source, presence: true

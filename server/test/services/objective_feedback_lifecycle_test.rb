@@ -33,4 +33,33 @@ class ObjectiveFeedbackLifecycleTest < ActiveSupport::TestCase
     assert_includes feedback.completion_summary, "What changed"
     assert_includes feedback.completion_summary, "beach_access"
   end
+
+  test "completion summary keeps multiline detail and uses task description for task summaries" do
+    feedback = @objective.objective_feedbacks.create!(
+      content: "Double-check the latest park closing time.",
+      feedback_kind: "follow_up",
+      status: "queued"
+    )
+    task = @objective.tasks.create!(
+      description: "Verify Epic Universe closing time from official sources",
+      status: "completed",
+      result_summary: "Official site now shows a 10:00 PM close on July 12.",
+      source_feedback: feedback
+    )
+    @objective.research_snapshots.create!(
+      key: "task_summary_7bf5de922620",
+      value: "Epic Universe closes at 10:00 PM on July 12. Source: https://www.universalorlando.com/web/en/us/theme-parks/epic-universe",
+      task: task,
+      checked_at: Time.current
+    )
+
+    ObjectiveFeedbackLifecycle.new.refresh!(feedback)
+
+    summary = feedback.reload.completion_summary
+    assert_includes summary, "What changed:"
+    assert_includes summary, "- Verify Epic Universe closing time from official sources:"
+    assert_includes summary, "https://www.universalorlando.com/web/en/us/theme-parks/epic-universe"
+    assert_includes summary, "\n"
+    refute_match(/\.\.\.\z/, summary)
+  end
 end

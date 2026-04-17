@@ -5,6 +5,7 @@ class Objective < ApplicationRecord
   has_many :tasks, dependent: :destroy
   has_many :research_snapshots, dependent: :destroy
   has_many :objective_feedbacks, dependent: :destroy
+  has_many :research_snapshot_feedbacks, dependent: :destroy
 
   STATUSES = %w[pending active completed archived].freeze
 

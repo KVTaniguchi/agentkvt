@@ -5,6 +5,7 @@ struct ObjectiveDetailView: View {
     let objective: IOSBackendObjective
 
     @Environment(ObjectivesStore.self) private var store
+    @EnvironmentObject private var profileStore: FamilyProfileStore
     @State private var displayedObjective: IOSBackendObjective
     @State private var detail: IOSBackendObjectiveDetail?
     @State private var pollTask: Task<Void, Never>?
@@ -998,7 +999,7 @@ struct ObjectiveDetailView: View {
         }
 
         do {
-            detail = try await store.fetchDetail(for: displayedObjective.id)
+            detail = try await store.fetchDetail(for: displayedObjective.id, viewerProfileId: profileStore.currentProfileId)
             if let o = detail?.objective {
                 displayedObjective = o
             }

@@ -117,4 +117,10 @@ actor AgentQueue {
 
     /// Number of items currently waiting in the buffer.
     var bufferCount: Int { buffer.count }
+
+    /// Finishes the wake stream so long-running drain loops can exit during shutdown.
+    func finish() {
+        signalContinuation?.finish()
+        signalContinuation = nil
+    }
 }

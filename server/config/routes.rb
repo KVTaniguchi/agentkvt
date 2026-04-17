@@ -27,6 +27,9 @@ Rails.application.routes.draw do
       post :reset_stuck_tasks_and_run, on: :member
       post :rerun, on: :member
       get :presentation, on: :member
+      resources :research_snapshots, only: [] do
+        resources :feedback, only: [:create, :update], controller: "research_snapshot_feedbacks"
+      end
       resources :objective_feedbacks, only: [:update] do
         post :approve_plan, on: :member
         post :regenerate_plan, on: :member

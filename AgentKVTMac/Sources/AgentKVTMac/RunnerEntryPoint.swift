@@ -112,6 +112,7 @@ public func runAgentKVTMacRunner() async {
     registry.register(makeReadCalendarTool())
     registry.register(makeWriteReminderTool())
     registry.register(makeShellCommandTool())
+    registry.register(makePlaywrightScoutTool())
 
     let client = OllamaClient(
         baseURL: settings.ollamaBaseURL,
@@ -191,9 +192,13 @@ private func runScheduler(
     emailIngestor.ensureDirectory()
 
     // ── IMAP poller (optional — only when credentials are configured) ────────────
+    let imapPoller: IMAPEmailPoller?
     if settings.imapEnabled {
-        let imapPoller = IMAPEmailPoller(settings: settings, inboxDir: emailIngestor.directory)
-        await imapPoller.start()
+        let poller = IMAPEmailPoller(settings: settings, inboxDir: emailIngestor.directory)
+        await poller.start()
+        imapPoller = poller
+    } else {
+        imapPoller = nil
     }
 
     // ── FSEvents: inbox (.eml files) ─────────────────────────────────────────────
@@ -239,8 +244,9 @@ private func runScheduler(
     // Off-LAN: iOS POSTs `/v1/chat_wake` to the deployed API. The agent calls the long-poll
     // endpoint which blocks on a Postgres NOTIFY for up to 30s — events arrive sub-100ms
     // on a real wake, 30s on silence. No sleep loop needed.
+    var backgroundTasks: [Task<Void, Never>] = []
     if let backendClient {
-        Task(priority: .utility) {
+        backgroundTasks.append(Task(priority: .utility) {
             while !Task.isCancelled {
                 do {
                     let pending = try await backendClient.consumeChatWakeBlocking()
@@ -253,7 +259,7 @@ private func runScheduler(
                     try? await Task.sleep(nanoseconds: 5_000_000_000)
                 }
             }
-        }
+        })
 
         // Agent registration + heartbeat: registers capabilities on startup, then heartbeats
         // every 15s so TaskExecutorJob can route tasks to this agent by capability.
@@ -262,13 +268,14 @@ private func runScheduler(
         var agentCapabilities = [
             "web_search", "file_read", "objective_research",
             "life_context", "work_units",
-            "calendar", "reminders", "shell_diagnostics"
+            "calendar", "reminders", "shell_diagnostics",
+            "site_scout"
         ]
         if settings.notificationEmail != nil { agentCapabilities.append("email") }
         if settings.githubPAT != nil { agentCapabilities.append("github") }
         if !settings.localFileAllowedDirectories.isEmpty { agentCapabilities.append("local_file_read") }
 
-        Task(priority: .utility) {
+        backgroundTasks.append(Task(priority: .utility) {
             while !Task.isCancelled {
                 do {
                     try await backendClient.registerAgent(
@@ -281,7 +288,7 @@ private func runScheduler(
                 }
                 try? await Task.sleep(nanoseconds: 15_000_000_000)
             }
-        }
+        })
     }
 
     print("""
@@ -294,7 +301,23 @@ private func runScheduler(
     if backendClient != nil {
         print("  Remote:   backend chat queue, chat_wake long-poll, and inbound-file sync enabled")
     }
+    let shutdownBackgroundTasks = backgroundTasks
 
     // ── Run forever — drain loop blocks (async suspends) until the process exits ──
-    await executionQueue.run()
+    await withTaskCancellationHandler {
+        await executionQueue.run()
+    } onCancel: {
+        print("[Scheduler] Cancellation received — stopping watchers, timers, and webhook listener.")
+        webhookListener.stop()
+        inboxWatcher.stop()
+        inboundWatcher.stop()
+        clockTimer.cancel()
+        shutdownBackgroundTasks.forEach { $0.cancel() }
+        Task {
+            if let imapPoller {
+                await imapPoller.stop()
+            }
+            await executionQueue.stop()
+        }
+    }
 }

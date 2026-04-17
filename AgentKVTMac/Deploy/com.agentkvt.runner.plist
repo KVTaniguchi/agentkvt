@@ -78,6 +78,8 @@
     -->
     <key>ProgramArguments</key>
     <array>
+        <string>/Users/YOURUSERNAME/Development/agentkvt/bin/agentkvt_launch_single_instance.sh</string>
+        <string>runner</string>
         <string>/usr/bin/caffeinate</string>
         <string>-s</string>
         <string>-i</string>
@@ -97,6 +99,7 @@
         <!-- <key>AGENTKVT_INBOX_DIR</key><string>/Users/YOURUSERNAME/.agentkvt/inbox</string> -->
         <!-- <key>AGENTKVT_INBOUND_DIR</key><string>/Users/YOURUSERNAME/.agentkvt/inbound</string> -->
         <!-- <key>WEBHOOK_PORT</key><string>8765</string> -->
+        <!-- <key>AGENTKVT_PORT_WAIT_SECONDS</key><string>30</string> -->
     </dict>
 
     <!-- Auto-start on login, auto-restart on crash or clean exit -->

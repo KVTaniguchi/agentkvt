@@ -202,6 +202,69 @@ class V1ObjectivesTest < ActionDispatch::IntegrationTest
     assert_equal 0,                 body["online_agent_registrations_count"]
   end
 
+  test "show includes viewer-specific snapshot feedback fields and aggregate counts" do
+    objective = @workspace.objectives.create!(goal: "Book flights", status: "active", priority: 2)
+    snapshot = objective.research_snapshots.create!(
+      key: "cheapest_fare", value: "$299", checked_at: Time.current
+    )
+    member = @workspace.family_members.create!(display_name: "Kevin", symbol: "K", source: "ios")
+    objective.research_snapshot_feedbacks.create!(
+      workspace: @workspace,
+      research_snapshot: snapshot,
+      created_by_profile: member,
+      role: "user",
+      rating: "bad",
+      reason: "Stale price"
+    )
+
+    get "/v1/objectives/#{objective.id}", params: { viewer_profile_id: member.id }, headers: workspace_headers
+    assert_response :success
+
+    serialized = JSON.parse(response.body).fetch("research_snapshots").first
+    assert_equal "bad", serialized["viewer_feedback_rating"]
+    assert_equal "Stale price", serialized["viewer_feedback_reason"]
+    assert_equal 0, serialized["good_feedback_count"]
+    assert_equal 1, serialized["bad_feedback_count"]
+  end
+
+  test "create and update research snapshot feedback" do
+    objective = @workspace.objectives.create!(goal: "Book flights", status: "active", priority: 2)
+    snapshot = objective.research_snapshots.create!(
+      key: "cheapest_fare", value: "$299", checked_at: Time.current
+    )
+    member = @workspace.family_members.create!(display_name: "Kevin", symbol: "K", source: "ios")
+
+    post "/v1/objectives/#{objective.id}/research_snapshots/#{snapshot.id}/feedback",
+         params: {
+           research_snapshot_feedback: {
+             created_by_profile_id: member.id,
+             rating: "bad",
+             reason: "Outdated"
+           }
+         },
+         as: :json,
+         headers: workspace_headers
+    assert_response :created
+
+    feedback_id = JSON.parse(response.body).dig("research_snapshot_feedback", "id")
+    assert_equal 1, objective.reload.research_snapshot_feedbacks.count
+
+    patch "/v1/objectives/#{objective.id}/research_snapshots/#{snapshot.id}/feedback/#{feedback_id}",
+          params: {
+            research_snapshot_feedback: {
+              rating: "good",
+              reason: "Looks verified now"
+            }
+          },
+          as: :json,
+          headers: workspace_headers
+    assert_response :success
+
+    feedback = objective.reload.research_snapshot_feedbacks.first
+    assert_equal "good", feedback.rating
+    assert_equal "Looks verified now", feedback.reason
+  end
+
   test "show returns 404 for unknown objective" do
     get "/v1/objectives/#{SecureRandom.uuid}", headers: workspace_headers
     assert_response :not_found

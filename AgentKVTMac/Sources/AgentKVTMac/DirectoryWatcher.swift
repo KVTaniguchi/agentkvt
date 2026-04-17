@@ -3,7 +3,7 @@ import Foundation
 /// Watches a single directory for new files using DispatchSourceFileSystemObject (.write on the
 /// directory fd). Fires `onNewFile` for each file that appears after `start()` is called.
 /// Does NOT re-fire for files that already existed at start time.
-final class DirectoryWatcher {
+final class DirectoryWatcher: @unchecked Sendable {
     private let url: URL
     let onNewFile: (URL) -> Void
 

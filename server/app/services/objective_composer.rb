@@ -163,6 +163,8 @@ class ObjectiveComposer
       "Where are you planning to go, who is traveling, and what dates or budget constraints matter most?"
     when "household_planning"
       "What household project or responsibility are you trying to plan, and what deadline or constraints should I optimize for?"
+    when "shopping"
+      "What items are you looking to buy, and are there specific retailers (like Target) or price limits I should keep in mind?"
     else
       "What are you trying to accomplish, and what would make the result feel successful?"
     end

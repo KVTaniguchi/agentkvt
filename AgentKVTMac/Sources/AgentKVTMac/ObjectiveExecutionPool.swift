@@ -80,7 +80,7 @@ actor ObjectiveExecutionPool {
     func enqueue(_ payload: TaskSearchPayload) {
         start()
         print("[ObjectiveExecutionPool] enqueueing task \(payload.taskId)")
-        guard supervisorTaskIds.insert(payload.taskId).inserted else { 
+        guard supervisorTaskIds.insert(payload.taskId).inserted else {
             print("[ObjectiveExecutionPool] ignoring task \(payload.taskId) because it is already supervised")
             return 
         }
@@ -93,6 +93,15 @@ actor ObjectiveExecutionPool {
 
     private func finishSupervision(taskId: String) {
         supervisorTaskIds.remove(taskId)
+    }
+
+    func stop() {
+        for task in workerTasks {
+            task.cancel()
+        }
+        workerTasks.removeAll()
+        supervisorTaskIds.removeAll()
+        started = false
     }
 }
 
@@ -1379,11 +1388,40 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             if snapshots.isEmpty {
                 return "No snapshots stored yet for this objective/task scope."
             }
+            let preferred = snapshots.filter { ($0.goodFeedbackCount ?? 0) > 0 }
+            let weak = snapshots.filter { ($0.badFeedbackCount ?? 0) > 0 }
             let lines = snapshots.prefix(50).map { snap in
                 let scope = snap.taskId.map { " [task: \(String($0.uuidString.prefix(8)))…]" } ?? " [objective-wide]"
-                return "- \(snap.key)\(scope): \(snap.value)"
+                var line = "- \(snap.key)\(scope): \(snap.value)"
+                if let goodCount = snap.goodFeedbackCount, goodCount > 0 {
+                    line += " [good ratings: \(goodCount)]"
+                }
+                if let badCount = snap.badFeedbackCount, badCount > 0 {
+                    line += " [bad ratings: \(badCount)]"
+                }
+                if let reason = snap.viewerFeedbackReason, !reason.isEmpty {
+                    line += " [feedback note: \(reason)]"
+                }
+                return line
             }
-            var text = lines.joined(separator: "\n")
+            var sections: [String] = []
+            if !preferred.isEmpty {
+                sections.append("Preferred findings to build on:")
+                sections.append(contentsOf: preferred.prefix(8).map { "- \($0.key): \($0.value)" })
+            }
+            if !weak.isEmpty {
+                sections.append("Avoid repeating these weak findings without re-verifying:")
+                sections.append(contentsOf: weak.prefix(8).map { snap in
+                    var line = "- \(snap.key): \(snap.value)"
+                    if let reason = snap.viewerFeedbackReason, !reason.isEmpty {
+                        line += " [reason: \(reason)]"
+                    }
+                    return line
+                })
+            }
+            sections.append("Stored snapshots:")
+            sections.append(contentsOf: lines)
+            var text = sections.joined(separator: "\n")
             if text.count > 12_000 {
                 text = String(text.prefix(12_000)) + "\n… (truncated)"
             }

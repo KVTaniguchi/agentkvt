@@ -5,6 +5,7 @@ module ObjectiveComposerTemplates
     date_night
     trip_planning
     household_planning
+    shopping
   ].freeze
 
   FIELD_KEYS = %w[
@@ -21,7 +22,8 @@ module ObjectiveComposerTemplates
     "budget" => "Budget",
     "date_night" => "Date Night",
     "trip_planning" => "Trip Planning",
-    "household_planning" => "Household Planning"
+    "household_planning" => "Household Planning",
+    "shopping" => "Shopping"
   }.freeze
 
   TEMPLATE_GUIDANCE = {
@@ -29,7 +31,8 @@ module ObjectiveComposerTemplates
     "budget" => "Clarify the time horizon, target savings or spending outcome, important categories, hard limits, and the budget format the user wants back.",
     "date_night" => "Clarify the occasion, timing, budget, location, preferences, and the kind of plan or recommendations the user wants back.",
     "trip_planning" => "Clarify the destination, timing, travelers, budget, logistics constraints, and the itinerary or comparison deliverable the user wants.",
-    "household_planning" => "Clarify the household project, deadline, budget, constraints, participants, and the checklist or plan the user wants."
+    "household_planning" => "Clarify the household project, deadline, budget, constraints, participants, and the checklist or plan the user wants.",
+    "shopping" => "Clarify the items needed, the preferred retailers (e.g. Target), any price thresholds, delivery/pickup preferences, and the final deliverable (e.g. cart ready for checkout)."
   }.freeze
 
   REQUIRED_FIELDS = {
@@ -37,7 +40,8 @@ module ObjectiveComposerTemplates
     "budget" => %w[context constraints success_criteria deliverable],
     "date_night" => %w[context constraints preferences success_criteria],
     "trip_planning" => %w[context constraints preferences success_criteria deliverable],
-    "household_planning" => %w[context constraints success_criteria deliverable]
+    "household_planning" => %w[context constraints success_criteria deliverable],
+    "shopping" => %w[context constraints preferences success_criteria deliverable]
   }.freeze
 
   def self.normalize_template_key(value)

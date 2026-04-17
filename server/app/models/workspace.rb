@@ -9,6 +9,7 @@ class Workspace < ApplicationRecord
   has_many :agent_logs, dependent: :destroy
   has_many :objectives, dependent: :destroy
   has_many :objective_drafts, dependent: :destroy
+  has_many :research_snapshot_feedbacks, dependent: :destroy
   has_many :agent_registrations, dependent: :destroy
   has_many :slack_workspace_links, dependent: :destroy
   has_one :agent_identity, dependent: :destroy

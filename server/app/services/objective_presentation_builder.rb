@@ -72,16 +72,40 @@ class ObjectivePresentationBuilder
       lines << ""
     end
 
-    snapshots = objective.research_snapshots.recent_first
+    snapshots = ranked_snapshots(objective)
     if snapshots.any?
       lines << "Research findings:"
       snapshots.each do |snap|
         line = "#{snap.key}: #{snap.value}"
         line += " (change: #{snap.delta_note})" if snap.delta_note.present?
+        if snap.negative_feedback_count.positive?
+          line += " (needs verification due to negative feedback)"
+        end
+        lines << line
+      end
+    end
+
+    rated_feedback = objective.research_snapshot_feedbacks.includes(:research_snapshot).recent_first.limit(8)
+    if rated_feedback.any?
+      lines << ""
+      lines << "Rated findings:"
+      rated_feedback.each do |entry|
+        snapshot = entry.research_snapshot
+        next unless snapshot
+
+        line = "- #{entry.rating.upcase}: #{snapshot.key}: #{snapshot.value}"
+        line += " [reason: #{entry.reason}]" if entry.reason.present?
         lines << line
       end
     end
 
     lines.join("\n")
+  end
+
+  def ranked_snapshots(objective)
+    objective.research_snapshots.includes(:feedback_entries).sort_by do |snap|
+      score = (snap.positive_feedback_count * 10) - (snap.negative_feedback_count * 10)
+      [-score, -(snap.checked_at.to_i)]
+    end
   end
 end

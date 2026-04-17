@@ -10,6 +10,10 @@ class ObjectiveFeedbackPlanner
     Rules:
     - Focus on what the user wants to happen next.
     - Avoid repeating already completed work unless the user is explicitly challenging or revisiting it.
+    - Preserve or build on positively rated findings when they are still relevant.
+    - Do not trust negatively rated findings as strong evidence without re-verifying them.
+    - If a negative rating says a finding is wrong, stale, or outdated, prefer verification or refresh tasks.
+    - If a negative rating says a finding is vague, weak, or irrelevant, prefer narrower comparison or gap-closing tasks.
     - Prefer specific comparison, verification, synthesis, or gap-closing tasks.
     - If the user wants a final recommendation or next move, prefer exactly 1 synthesis task that turns the current findings into a decision.
     - Only add a second task for a recommendation-style request if one specific missing fact clearly blocks the decision.
@@ -183,6 +187,35 @@ class ObjectiveFeedbackPlanner
       end
     end
 
+    rated_feedback = objective.research_snapshot_feedbacks.includes(:research_snapshot).recent_first.limit(8)
+    if rated_feedback.any?
+      positives = rated_feedback.select { |entry| entry.rating == "good" }
+      negatives = rated_feedback.select { |entry| entry.rating == "bad" }
+
+      if positives.any?
+        lines << ""
+        lines << "Positively rated findings to preserve or build on:"
+        positives.each do |entry|
+          lines << format_rated_finding(entry)
+        end
+      end
+
+      if negatives.any?
+        lines << ""
+        lines << "Negatively rated findings to avoid or re-check:"
+        negatives.each do |entry|
+          lines << format_rated_finding(entry)
+        end
+      end
+    end
+
     lines.join("\n")
+  end
+
+  def format_rated_finding(entry)
+    snapshot = entry.research_snapshot
+    line = "- #{snapshot.key}: #{snapshot.value}"
+    line += " [reason: #{entry.reason}]" if entry.reason.present?
+    line
   end
 end

@@ -73,7 +73,11 @@ public func makeMultiStepSearchTool(apiKey: String? = nil) -> ToolRegistry.Tool 
                         sections.append("### Step \(stepNum): browse\n\nError: missing or empty url.")
                         continue
                     }
-                    result = await HeadlessBrowserScout.run(url: url, actionsJson: step["actions_json"])
+                    result = await HeadlessBrowserScout.run(
+                        url: url,
+                        actionsJson: step["actions_json"],
+                        extractSelector: step["extract_selector"]
+                    )
                     let capped = cap(result, chars: 6000)
                     sections.append("### Step \(stepNum): browse — \(url)\n\n\(capped)")
 

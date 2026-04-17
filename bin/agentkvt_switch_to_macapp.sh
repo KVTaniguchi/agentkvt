@@ -9,8 +9,7 @@
 
 set -euo pipefail
 
-pkill -f 'AgentKVTMacRunner' 2>/dev/null || true
-sleep 1
+"$(dirname "$0")/agentkvt_cleanup_webhook_owner.sh" 8765
 
 APP="/Applications/AgentKVTMacApp.app"
 if [[ ! -d "$APP" ]]; then
@@ -19,7 +18,7 @@ if [[ ! -d "$APP" ]]; then
 fi
 
 # open(1) needs a logged-in GUI session; it may no-op over plain SSH.
-if open -a "$APP" 2>/dev/null; then
+if "$(dirname "$0")/agentkvt_launch_single_instance.sh" macapp open -a "$APP" 2>/dev/null; then
   echo "OK: launched $APP (runner stopped if it was running)."
 else
   echo "Runner stopped. Port 8765 should be free — open AgentKVTMacApp from the Dock, or run in Terminal.app on the Mac:"

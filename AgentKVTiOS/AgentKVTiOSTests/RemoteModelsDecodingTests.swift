@@ -184,6 +184,34 @@ struct IOSBackendResearchSnapshotDecodingTests {
         #expect(snap.deltaNote == "Changed from 6.85% to 7.10%")
         #expect(snap.taskId == UUID(uuidString: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"))
     }
+
+    @Test("Decodes snapshot feedback fields when present")
+    func decodesSnapshotFeedbackFields() throws {
+        let json = """
+        {
+          "id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+          "objective_id": "11111111-1111-1111-1111-111111111111",
+          "task_id": null,
+          "key": "hotel_shortlist",
+          "value": "Hotel del Coronado looks strongest.",
+          "previous_value": null,
+          "delta_note": null,
+          "viewer_feedback_id": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+          "viewer_feedback_rating": "good",
+          "viewer_feedback_reason": "Useful summary",
+          "good_feedback_count": 2,
+          "bad_feedback_count": 1,
+          "checked_at": "2026-03-28T11:00:00Z",
+          "created_at": "2026-03-28T11:00:00Z",
+          "updated_at": "2026-03-28T11:00:00Z"
+        }
+        """
+        let snap = try decode(IOSBackendResearchSnapshot.self, from: json)
+        #expect(snap.viewerFeedbackRating == "good")
+        #expect(snap.viewerFeedbackReason == "Useful summary")
+        #expect(snap.goodFeedbackCount == 2)
+        #expect(snap.badFeedbackCount == 1)
+    }
 }
 
 // MARK: - IOSBackendObjectiveDetail

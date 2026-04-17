@@ -135,6 +135,11 @@ public struct BackendResearchSnapshot: Codable, Sendable {
     public let repellentReason: String?
     public let repellentScope: String?
     public let snapshotKind: String?
+    public let viewerFeedbackId: UUID?
+    public let viewerFeedbackRating: String?
+    public let viewerFeedbackReason: String?
+    public let goodFeedbackCount: Int?
+    public let badFeedbackCount: Int?
     public let checkedAt: Date
     public let createdAt: Date
     public let updatedAt: Date

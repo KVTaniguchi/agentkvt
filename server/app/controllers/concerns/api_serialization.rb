@@ -199,7 +199,23 @@ module ApiSerialization
     }
   end
 
+  def serialize_research_snapshot_feedback(feedback)
+    {
+      id: feedback.id,
+      workspace_id: feedback.workspace_id,
+      objective_id: feedback.objective_id,
+      research_snapshot_id: feedback.research_snapshot_id,
+      created_by_profile_id: feedback.created_by_profile_id,
+      role: feedback.role,
+      rating: feedback.rating,
+      reason: feedback.reason,
+      created_at: iso8601(feedback.created_at),
+      updated_at: iso8601(feedback.updated_at)
+    }
+  end
+
   def serialize_research_snapshot(snapshot)
+    viewer_feedback = viewer_feedback_for(snapshot)
     {
       id: snapshot.id,
       objective_id: snapshot.objective_id,
@@ -212,6 +228,11 @@ module ApiSerialization
       repellent_reason: snapshot.repellent_reason,
       repellent_scope: snapshot.repellent_scope,
       snapshot_kind: snapshot.snapshot_kind,
+      viewer_feedback_id: viewer_feedback&.id,
+      viewer_feedback_rating: viewer_feedback&.rating,
+      viewer_feedback_reason: viewer_feedback&.reason,
+      good_feedback_count: snapshot.feedback_entries.where(rating: "good").count,
+      bad_feedback_count: snapshot.feedback_entries.where(rating: "bad").count,
       checked_at: iso8601(snapshot.checked_at),
       created_at: iso8601(snapshot.created_at),
       updated_at: iso8601(snapshot.updated_at)
@@ -238,5 +259,19 @@ module ApiSerialization
 
   def iso8601(value)
     value&.iso8601
+  end
+
+  def current_viewer_profile_id
+    raw_id = params[:viewer_profile_id].presence || params.dig(:research_snapshot_feedback, :created_by_profile_id).presence
+    return nil if raw_id.blank?
+
+    current_workspace.family_members.find_by(id: raw_id)&.id
+  end
+
+  def viewer_feedback_for(snapshot)
+    viewer_profile_id = current_viewer_profile_id
+    scope = snapshot.feedback_entries.where(role: "user")
+    scope = scope.where(created_by_profile_id: viewer_profile_id) if viewer_profile_id.present?
+    scope.order(updated_at: :desc).first
   end
 end

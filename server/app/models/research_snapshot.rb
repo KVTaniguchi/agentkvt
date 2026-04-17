@@ -2,6 +2,7 @@ class ResearchSnapshot < ApplicationRecord
   belongs_to :objective
   belongs_to :task, optional: true
   has_many :anchored_objective_feedbacks, class_name: "ObjectiveFeedback", dependent: :nullify
+  has_many :feedback_entries, class_name: "ResearchSnapshotFeedback", dependent: :destroy, inverse_of: :research_snapshot
 
   SNAPSHOT_KINDS = %w[result exudate].freeze
 
@@ -64,6 +65,14 @@ class ResearchSnapshot < ApplicationRecord
   validate :value_must_be_plain_language
 
   scope :recent_first, -> { order(checked_at: :desc) }
+
+  def positive_feedback_count
+    feedback_entries.where(rating: "good").count
+  end
+
+  def negative_feedback_count
+    feedback_entries.where(rating: "bad").count
+  end
 
   private
 

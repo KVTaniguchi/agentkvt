@@ -357,7 +357,96 @@ struct IOSBackendResearchSnapshot: Codable, Sendable, Identifiable {
     let value: String
     let previousValue: String?
     let deltaNote: String?
+    let viewerFeedbackId: UUID?
+    let viewerFeedbackRating: String?
+    let viewerFeedbackReason: String?
+    let goodFeedbackCount: Int
+    let badFeedbackCount: Int
     let checkedAt: Date
+    let createdAt: Date
+    let updatedAt: Date
+
+    init(
+        id: UUID,
+        objectiveId: UUID,
+        taskId: UUID?,
+        key: String,
+        value: String,
+        previousValue: String?,
+        deltaNote: String?,
+        viewerFeedbackId: UUID? = nil,
+        viewerFeedbackRating: String? = nil,
+        viewerFeedbackReason: String? = nil,
+        goodFeedbackCount: Int = 0,
+        badFeedbackCount: Int = 0,
+        checkedAt: Date,
+        createdAt: Date,
+        updatedAt: Date
+    ) {
+        self.id = id
+        self.objectiveId = objectiveId
+        self.taskId = taskId
+        self.key = key
+        self.value = value
+        self.previousValue = previousValue
+        self.deltaNote = deltaNote
+        self.viewerFeedbackId = viewerFeedbackId
+        self.viewerFeedbackRating = viewerFeedbackRating
+        self.viewerFeedbackReason = viewerFeedbackReason
+        self.goodFeedbackCount = goodFeedbackCount
+        self.badFeedbackCount = badFeedbackCount
+        self.checkedAt = checkedAt
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case objectiveId
+        case taskId
+        case key
+        case value
+        case previousValue
+        case deltaNote
+        case viewerFeedbackId
+        case viewerFeedbackRating
+        case viewerFeedbackReason
+        case goodFeedbackCount
+        case badFeedbackCount
+        case checkedAt
+        case createdAt
+        case updatedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        objectiveId = try container.decode(UUID.self, forKey: .objectiveId)
+        taskId = try container.decodeIfPresent(UUID.self, forKey: .taskId)
+        key = try container.decode(String.self, forKey: .key)
+        value = try container.decode(String.self, forKey: .value)
+        previousValue = try container.decodeIfPresent(String.self, forKey: .previousValue)
+        deltaNote = try container.decodeIfPresent(String.self, forKey: .deltaNote)
+        viewerFeedbackId = try container.decodeIfPresent(UUID.self, forKey: .viewerFeedbackId)
+        viewerFeedbackRating = try container.decodeIfPresent(String.self, forKey: .viewerFeedbackRating)
+        viewerFeedbackReason = try container.decodeIfPresent(String.self, forKey: .viewerFeedbackReason)
+        goodFeedbackCount = try container.decodeIfPresent(Int.self, forKey: .goodFeedbackCount) ?? 0
+        badFeedbackCount = try container.decodeIfPresent(Int.self, forKey: .badFeedbackCount) ?? 0
+        checkedAt = try container.decode(Date.self, forKey: .checkedAt)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+    }
+}
+
+struct IOSBackendResearchSnapshotFeedback: Codable, Sendable, Identifiable {
+    let id: UUID
+    let workspaceId: UUID
+    let objectiveId: UUID
+    let researchSnapshotId: UUID
+    let createdByProfileId: UUID?
+    let role: String
+    let rating: String
+    let reason: String?
     let createdAt: Date
     let updatedAt: Date
 }
@@ -381,6 +470,10 @@ struct IOSBackendSubmitObjectiveFeedbackResult: Sendable {
     let objective: IOSBackendObjective
     let objectiveFeedback: IOSBackendObjectiveFeedback
     let followUpTasks: [IOSBackendTask]
+}
+
+private struct IOSBackendResearchSnapshotFeedbackEnvelope: Codable {
+    let researchSnapshotFeedback: IOSBackendResearchSnapshotFeedback
 }
 
 struct IOSBackendObjectiveDetail: Decodable, Sendable {
@@ -919,8 +1012,15 @@ actor IOSBackendAPIClient {
         return try decoder.decode(IOSBackendObjectiveEnvelope.self, from: data).objective
     }
 
-    func fetchObjectiveDetail(id: UUID) async throws -> IOSBackendObjectiveDetail {
-        let data = try await performRequest(path: "v1/objectives/\(id.uuidString)")
+    func fetchObjectiveDetail(id: UUID, viewerProfileId: UUID? = nil) async throws -> IOSBackendObjectiveDetail {
+        var queryItems: [URLQueryItem] = []
+        if let viewerProfileId {
+            queryItems.append(URLQueryItem(name: "viewer_profile_id", value: viewerProfileId.uuidString))
+        }
+        let data = try await performRequest(
+            path: "v1/objectives/\(id.uuidString)",
+            queryItems: queryItems
+        )
         return try decoder.decode(IOSBackendObjectiveDetail.self, from: data)
     }
 
@@ -1049,6 +1149,57 @@ actor IOSBackendAPIClient {
             objectiveFeedback: decoded.objectiveFeedback,
             followUpTasks: decoded.followUpTasks
         )
+    }
+
+    func submitResearchSnapshotFeedback(
+        objectiveId: UUID,
+        snapshotId: UUID,
+        createdByProfileId: UUID?,
+        rating: String,
+        reason: String?
+    ) async throws -> IOSBackendResearchSnapshotFeedback {
+        var feedback: [String: Any] = [
+            "rating": rating
+        ]
+        if let createdByProfileId {
+            feedback["created_by_profile_id"] = createdByProfileId.uuidString
+        }
+        if let reason {
+            feedback["reason"] = reason
+        }
+
+        let data = try await performRequest(
+            path: "v1/objectives/\(objectiveId.uuidString)/research_snapshots/\(snapshotId.uuidString)/feedback",
+            method: "POST",
+            jsonBody: ["research_snapshot_feedback": feedback]
+        )
+        return try decoder.decode(IOSBackendResearchSnapshotFeedbackEnvelope.self, from: data).researchSnapshotFeedback
+    }
+
+    func updateResearchSnapshotFeedback(
+        objectiveId: UUID,
+        snapshotId: UUID,
+        feedbackId: UUID,
+        createdByProfileId: UUID?,
+        rating: String,
+        reason: String?
+    ) async throws -> IOSBackendResearchSnapshotFeedback {
+        var feedback: [String: Any] = [
+            "rating": rating
+        ]
+        if let createdByProfileId {
+            feedback["created_by_profile_id"] = createdByProfileId.uuidString
+        }
+        if let reason {
+            feedback["reason"] = reason
+        }
+
+        let data = try await performRequest(
+            path: "v1/objectives/\(objectiveId.uuidString)/research_snapshots/\(snapshotId.uuidString)/feedback/\(feedbackId.uuidString)",
+            method: "PATCH",
+            jsonBody: ["research_snapshot_feedback": feedback]
+        )
+        return try decoder.decode(IOSBackendResearchSnapshotFeedbackEnvelope.self, from: data).researchSnapshotFeedback
     }
 
     func approveObjectivePlan(id: UUID) async throws -> IOSBackendObjective {
@@ -1183,9 +1334,10 @@ actor IOSBackendAPIClient {
         path: String,
         method: String = "GET",
         jsonBody: [String: Any]? = nil,
+        queryItems: [URLQueryItem] = [],
         timeoutInterval: TimeInterval = 60
     ) async throws -> Data {
-        var request = URLRequest(url: try url(for: path))
+        var request = URLRequest(url: try url(for: path, queryItems: queryItems))
         request.httpMethod = method
         request.timeoutInterval = timeoutInterval
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -1207,10 +1359,22 @@ actor IOSBackendAPIClient {
         return data
     }
 
-    private func url(for path: String) throws -> URL {
+    private func url(for path: String, queryItems: [URLQueryItem] = []) throws -> URL {
         let trimmedPath = path.hasPrefix("/") ? String(path.dropFirst()) : path
-        guard let url = URL(string: trimmedPath, relativeTo: baseURL)?.absoluteURL else {
+        guard var url = URL(string: trimmedPath, relativeTo: baseURL)?.absoluteURL else {
             throw IOSBackendAPIError.invalidBaseURL(path)
+        }
+        if !queryItems.isEmpty {
+            guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+                throw IOSBackendAPIError.invalidBaseURL(path)
+            }
+            var mergedQueryItems = components.queryItems ?? []
+            mergedQueryItems.append(contentsOf: queryItems)
+            components.queryItems = mergedQueryItems
+            guard let resolvedURL = components.url else {
+                throw IOSBackendAPIError.invalidBaseURL(path)
+            }
+            url = resolvedURL
         }
         return url
     }
@@ -1313,9 +1477,9 @@ final class IOSBackendSyncService {
         return try await client.createObjective(goal: goal, status: status, priority: priority)
     }
 
-    func fetchObjectiveDetailRemote(id: UUID) async throws -> IOSBackendObjectiveDetail {
+    func fetchObjectiveDetailRemote(id: UUID, viewerProfileId: UUID?) async throws -> IOSBackendObjectiveDetail {
         guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
-        return try await client.fetchObjectiveDetail(id: id)
+        return try await client.fetchObjectiveDetail(id: id, viewerProfileId: viewerProfileId)
     }
 
     func updateObjectiveRemote(id: UUID, goal: String, status: String, priority: Int) async throws -> IOSBackendObjective {
@@ -1378,6 +1542,42 @@ final class IOSBackendSyncService {
         return try await client.regenerateObjectiveFeedbackPlan(
             objectiveId: objectiveId,
             feedbackId: feedbackId
+        )
+    }
+
+    func submitResearchSnapshotFeedbackRemote(
+        objectiveId: UUID,
+        snapshotId: UUID,
+        createdByProfileId: UUID?,
+        rating: String,
+        reason: String?
+    ) async throws -> IOSBackendResearchSnapshotFeedback {
+        guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
+        return try await client.submitResearchSnapshotFeedback(
+            objectiveId: objectiveId,
+            snapshotId: snapshotId,
+            createdByProfileId: createdByProfileId,
+            rating: rating,
+            reason: reason
+        )
+    }
+
+    func updateResearchSnapshotFeedbackRemote(
+        objectiveId: UUID,
+        snapshotId: UUID,
+        feedbackId: UUID,
+        createdByProfileId: UUID?,
+        rating: String,
+        reason: String?
+    ) async throws -> IOSBackendResearchSnapshotFeedback {
+        guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
+        return try await client.updateResearchSnapshotFeedback(
+            objectiveId: objectiveId,
+            snapshotId: snapshotId,
+            feedbackId: feedbackId,
+            createdByProfileId: createdByProfileId,
+            rating: rating,
+            reason: reason
         )
     }
 

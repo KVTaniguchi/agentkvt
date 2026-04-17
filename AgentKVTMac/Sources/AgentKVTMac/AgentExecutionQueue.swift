@@ -98,6 +98,11 @@ actor AgentExecutionQueue {
         }
     }
 
+    func stop() async {
+        await objectiveExecutionPool.stop()
+        await agentQueue.finish()
+    }
+
     // MARK: - Dispatch
 
     private func dispatch(_ item: AgentQueue.WorkItem) async throws {
