@@ -35,6 +35,10 @@
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>AgentKVT uses the local network to reach your Mac (Ollama, optional API) on LAN or Tailscale.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>AgentKVT uses your location telemetry to help your agent coordinate local tasks and weather planning.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>AgentKVT uses your schedule to avoid interrupting busy periods and schedule tasks without conflicting.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

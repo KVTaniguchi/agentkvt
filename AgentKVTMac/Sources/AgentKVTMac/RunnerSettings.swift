@@ -39,6 +39,14 @@ struct RunnerSettings: Sendable {
     let backendWorkspaceSlug: String?
     let backendAgentToken: String?
     let notificationEmail: String?
+    let agentMailAPIKey: String?
+    let agentMailInboxId: String?
+    let agentMailDisplayName: String?
+    let agentMailUsername: String?
+    let agentMailDomain: String?
+    let agentMailInboxClientId: String?
+    let agentMailPythonExecutable: String
+    let agentMailPollSeconds: Int
     let githubPAT: String?
     let githubAllowedRepos: [String]
     let inboxDirectory: URL?
@@ -55,6 +63,7 @@ struct RunnerSettings: Sendable {
     let imapMailbox: String
     let imapPollSeconds: Int
 
+    var agentMailEnabled: Bool { agentMailAPIKey != nil }
     var imapEnabled: Bool { imapHost != nil && imapUsername != nil && imapPassword != nil }
 
     var isAppBundle: Bool {
@@ -96,6 +105,24 @@ struct RunnerSettings: Sendable {
                 "[Config] WARNING: No AGENTKVT_API_BASE_URL. iPhone chat uses the server-backed queue; messages stay “Queued” until this runner is configured with the same API URL and AGENTKVT_AGENT_TOKEN as your backend (see group-container or ~/.agentkvt/agentkvt-runner.plist)."
             )
         }
+        if agentMailEnabled {
+            let inboxHint: String
+            if let agentMailInboxId, !agentMailInboxId.isEmpty {
+                inboxHint = agentMailInboxId
+            } else if let agentMailUsername, !agentMailUsername.isEmpty {
+                inboxHint = "\(agentMailUsername)@\(agentMailDomain ?? "agentmail.to")"
+            } else {
+                inboxHint = "auto-create"
+            }
+            messages.append(
+                "[Config] AgentMail enabled | Inbox: \(inboxHint) | Poll: \(agentMailPollSeconds)s | Python: \(agentMailPythonExecutable)"
+            )
+        } else if imapEnabled {
+            let username = imapUsername ?? "?"
+            messages.append(
+                "[Config] IMAP inbox polling enabled | Inbox: \(username) @ \(imapHost ?? "?") | Poll: \(imapPollSeconds)s"
+            )
+        }
         return messages
     }
 
@@ -117,6 +144,14 @@ struct RunnerSettings: Sendable {
         let backendWorkspaceSlug = resolver.string(for: "AGENTKVT_WORKSPACE_SLUG") ?? (backendBaseURL == nil ? nil : "default")
         let backendAgentToken = resolver.string(for: "AGENTKVT_AGENT_TOKEN")
         let notificationEmail = resolver.string(for: "NOTIFICATION_EMAIL")
+        let agentMailAPIKey = resolver.string(for: "AGENTMAIL_API_KEY")
+        let agentMailInboxId = resolver.string(for: "AGENTMAIL_INBOX_ID")
+        let agentMailDisplayName = resolver.string(for: "AGENTMAIL_DISPLAY_NAME")
+        let agentMailUsername = resolver.string(for: "AGENTMAIL_USERNAME")
+        let agentMailDomain = resolver.string(for: "AGENTMAIL_DOMAIN")
+        let agentMailInboxClientId = resolver.string(for: "AGENTMAIL_INBOX_CLIENT_ID")
+        let agentMailPythonExecutable = resolver.string(for: "AGENTMAIL_PYTHON_EXECUTABLE") ?? "/usr/bin/python3"
+        let agentMailPollSeconds = max(30, resolver.int(for: "AGENTMAIL_POLL_SECONDS") ?? 60)
         let githubPAT = resolver.string(for: "GITHUB_AGENT_PAT")
         let githubAllowedRepos = resolver.stringArray(for: "GITHUB_AGENT_REPOS")
         let inboxDirectory = resolver.expandedURL(for: "AGENTKVT_INBOX_DIR")
@@ -153,6 +188,14 @@ struct RunnerSettings: Sendable {
             backendWorkspaceSlug: backendWorkspaceSlug,
             backendAgentToken: backendAgentToken,
             notificationEmail: notificationEmail,
+            agentMailAPIKey: agentMailAPIKey,
+            agentMailInboxId: agentMailInboxId,
+            agentMailDisplayName: agentMailDisplayName,
+            agentMailUsername: agentMailUsername,
+            agentMailDomain: agentMailDomain,
+            agentMailInboxClientId: agentMailInboxClientId,
+            agentMailPythonExecutable: agentMailPythonExecutable,
+            agentMailPollSeconds: agentMailPollSeconds,
             githubPAT: githubPAT,
             githubAllowedRepos: githubAllowedRepos,
             inboxDirectory: inboxDirectory,

@@ -70,6 +70,7 @@ To dive deeper into the project, consult our comprehensive and freshly-consolida
 
 ### 📥 Data Ingestion
 - [Docs/EMAIL_INGESTION.md](Docs/EMAIL_INGESTION.md) — Handling IMAP email polling, sanitization, and the Agent Inbox.
+- [Docs/AGENTMAIL_INTEGRATION.md](Docs/AGENTMAIL_INTEGRATION.md) — Using AgentMail as the agent's inbox and sending platform.
 - [Docs/DROPZONE.md](Docs/DROPZONE.md) — Secure, local file inbound directory tracking.
 - [Docs/BEE_AI_INTEGRATION_PLAN.md](Docs/BEE_AI_INTEGRATION_PLAN.md) — Integration plan for utilizing Bee personal context over local HTTP.
 

@@ -16,6 +16,7 @@ Rails.application.routes.draw do
       resources :messages, only: [:create], controller: "objective_draft_messages"
     end
     resources :inbound_files, only: [:index, :create]
+    resources :client_telemetry_snapshots, only: [:create]
 
     resources :life_context, only: [:index, :update], controller: "life_context_entries", param: :key
     resources :agent_logs, only: [:index]

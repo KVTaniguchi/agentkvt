@@ -106,6 +106,37 @@ struct RunnerSettingsTests {
         #expect(settings.backendWorkspaceSlug == "override-workspace")
     }
 
+    @Test("AgentMail settings load from environment")
+    func agentMailSettingsFromEnvironment() {
+        let source = RunnerSettingsSource(
+            environment: [
+                "AGENTMAIL_API_KEY": "am_test_key",
+                "AGENTMAIL_INBOX_ID": "agent@example.com",
+                "AGENTMAIL_DISPLAY_NAME": "Agent KVT",
+                "AGENTMAIL_USERNAME": "agent",
+                "AGENTMAIL_DOMAIN": "example.com",
+                "AGENTMAIL_INBOX_CLIENT_ID": "agentkvt-email-v1",
+                "AGENTMAIL_PYTHON_EXECUTABLE": "/tmp/agentmail-venv/bin/python3",
+                "AGENTMAIL_POLL_SECONDS": "45"
+            ],
+            bundleIdentifier: "com.agentkvt.app",
+            groupContainerURL: nil,
+            homeDirectory: URL(fileURLWithPath: "/tmp/agentkvt-runner-settings-home")
+        )
+
+        let settings = RunnerSettings.load(from: source)
+
+        #expect(settings.agentMailEnabled)
+        #expect(settings.agentMailAPIKey == "am_test_key")
+        #expect(settings.agentMailInboxId == "agent@example.com")
+        #expect(settings.agentMailDisplayName == "Agent KVT")
+        #expect(settings.agentMailUsername == "agent")
+        #expect(settings.agentMailDomain == "example.com")
+        #expect(settings.agentMailInboxClientId == "agentkvt-email-v1")
+        #expect(settings.agentMailPythonExecutable == "/tmp/agentmail-venv/bin/python3")
+        #expect(settings.agentMailPollSeconds == 45)
+    }
+
     @Test("AGENTKVT_AGENT_WEBHOOK_PUBLIC_URL trims trailing slashes")
     func agentWebhookPublicURLFromEnvironment() {
         let source = RunnerSettingsSource(

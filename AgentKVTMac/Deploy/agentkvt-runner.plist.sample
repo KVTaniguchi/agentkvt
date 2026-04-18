@@ -33,6 +33,18 @@
 
     <!-- Optional integrations -->
     <!-- <key>NOTIFICATION_EMAIL</key><string>you@example.com</string> -->
+    <!-- AgentMail inbox backend -->
+    <!-- <key>AGENTMAIL_API_KEY</key><string>am_...</string> -->
+    <!-- Optional fixed inbox id. If omitted, AgentKVT will create or reuse one via AgentMail and remember it locally. -->
+    <!-- <key>AGENTMAIL_INBOX_ID</key><string>agent@agentmail.to</string> -->
+    <!-- Optional inbox creation hints -->
+    <!-- <key>AGENTMAIL_DISPLAY_NAME</key><string>Agent KVT</string> -->
+    <!-- <key>AGENTMAIL_USERNAME</key><string>agentkvt</string> -->
+    <!-- <key>AGENTMAIL_DOMAIN</key><string>agentmail.to</string> -->
+    <!-- <key>AGENTMAIL_INBOX_CLIENT_ID</key><string>agentkvt-email-v1</string> -->
+    <!-- Python interpreter that has `pip install agentmail` available -->
+    <!-- <key>AGENTMAIL_PYTHON_EXECUTABLE</key><string>/Users/familyagent/.venvs/agentmail/bin/python3</string> -->
+    <!-- <key>AGENTMAIL_POLL_SECONDS</key><integer>60</integer> -->
     <!-- <key>GITHUB_AGENT_PAT</key><string>ghp_...</string> -->
     <!-- <key>GITHUB_AGENT_REPOS</key><array><string>owner/repo-one</string><string>owner/repo-two</string></array> -->
 </dict>

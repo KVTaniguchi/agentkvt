@@ -23,7 +23,7 @@ public func makeSendNotificationEmailTool(
                 return "Error: subject is required and must be non-empty."
             }
             let body = (args["body"] as? String) ?? ""
-            return SendNotificationEmailTool.send(
+            return await SendNotificationEmailTool.send(
                 to: destinationEmail,
                 subject: subject.trimmingCharacters(in: .whitespacesAndNewlines),
                 body: body,
@@ -35,16 +35,17 @@ public func makeSendNotificationEmailTool(
 
 public enum SendNotificationEmailTool {
     /// How to deliver the email: outbox file (user forwards via script) or system mail command.
-    public enum SendMethod {
+    public enum SendMethod: Sendable {
         case outbox(directory: URL)
         case mailCommand
+        case agentMail(client: AgentMailBridge)
 
         public static var defaultOutbox: SendMethod {
             .outbox(directory: FileManager.default.homeDirectoryForCurrentUser.appending(path: ".agentkvt/outbox", directoryHint: .isDirectory))
         }
     }
 
-    static func send(to destination: String, subject: String, body: String, via: SendMethod) -> String {
+    static func send(to destination: String, subject: String, body: String, via: SendMethod) async -> String {
         guard !destination.isEmpty else {
             return "Error: NOTIFICATION_EMAIL not configured; cannot send."
         }
@@ -79,6 +80,13 @@ public enum SendNotificationEmailTool {
                 return "mail command exited with status \(process.terminationStatus)."
             } catch {
                 return "Error sending mail: \(error)"
+            }
+        case .agentMail(let client):
+            do {
+                let result = try await client.sendMessage(to: [destination], subject: subject, text: body)
+                return "Notification email sent via AgentMail to \(destination). Thread: \(result.threadId)"
+            } catch {
+                return "Error sending via AgentMail: \(error.localizedDescription)"
             }
         }
     }

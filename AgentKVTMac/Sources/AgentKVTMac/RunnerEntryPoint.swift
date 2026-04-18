@@ -62,8 +62,24 @@ public func runAgentKVTMacRunner() async {
     registry.register(makeWebSearchAndFetchTool(apiKey: settings.ollamaAPIKey))
     registry.register(makeHeadlessBrowserScoutTool())
     registry.register(makeFetchBeeAIContextTool(modelContext: context))
+    let inboxDir: URL
+    if let configuredInboxDir = settings.inboxDirectory {
+        inboxDir = configuredInboxDir
+    } else {
+        inboxDir = EmailIngestor.defaultInboxDirectory
+    }
+    let agentMailBridge = settings.agentMailEnabled ? AgentMailBridge(settings: settings, inboxDir: inboxDir) : nil
     if let email = settings.notificationEmail, !email.isEmpty {
-        registry.register(makeSendNotificationEmailTool(destinationEmail: email))
+        if let agentMailBridge {
+            registry.register(
+                makeSendNotificationEmailTool(
+                    destinationEmail: email,
+                    sendVia: .agentMail(client: agentMailBridge)
+                )
+            )
+        } else {
+            registry.register(makeSendNotificationEmailTool(destinationEmail: email))
+        }
     }
     registry.register(makeGetLifeContextTool(modelContext: context))
     if let pat = settings.githubPAT, !pat.isEmpty {
@@ -71,12 +87,6 @@ public func runAgentKVTMacRunner() async {
         if !repos.isEmpty {
             registry.register(makeGitHubTool(pat: pat, allowedRepos: repos))
         }
-    }
-    let inboxDir: URL
-    if let configuredInboxDir = settings.inboxDirectory {
-        inboxDir = configuredInboxDir
-    } else {
-        inboxDir = EmailIngestor.defaultInboxDirectory
     }
     let emailIngestor = EmailIngestor(directory: inboxDir)
     registry.register(makeIncomingEmailTriggerTool(ingestor: emailIngestor))
@@ -141,6 +151,7 @@ public func runAgentKVTMacRunner() async {
             registry: registry,
             backendClient: backendClient,
             emailIngestor: emailIngestor,
+            agentMailBridge: agentMailBridge,
             dropzoneDir: dropzoneDir,
             webhookPort: settings.webhookPort,
             clockIntervalSeconds: settings.schedulerIntervalSeconds,
@@ -167,6 +178,7 @@ private func runScheduler(
     registry: ToolRegistry,
     backendClient: BackendAPIClient?,
     emailIngestor: EmailIngestor,
+    agentMailBridge: AgentMailBridge?,
     dropzoneDir: URL,
     webhookPort: UInt16,
     clockIntervalSeconds: Int,
@@ -193,12 +205,20 @@ private func runScheduler(
 
     // ── IMAP poller (optional — only when credentials are configured) ────────────
     let imapPoller: IMAPEmailPoller?
-    if settings.imapEnabled {
+    let agentMailPoller: AgentMailPoller?
+    if let agentMailBridge {
+        let poller = AgentMailPoller(bridge: agentMailBridge, interval: settings.agentMailPollSeconds)
+        await poller.start()
+        agentMailPoller = poller
+        imapPoller = nil
+    } else if settings.imapEnabled {
         let poller = IMAPEmailPoller(settings: settings, inboxDir: emailIngestor.directory)
         await poller.start()
         imapPoller = poller
+        agentMailPoller = nil
     } else {
         imapPoller = nil
+        agentMailPoller = nil
     }
 
     // ── FSEvents: inbox (.eml files) ─────────────────────────────────────────────
@@ -271,7 +291,9 @@ private func runScheduler(
             "calendar", "reminders", "shell_diagnostics",
             "site_scout"
         ]
-        if settings.notificationEmail != nil { agentCapabilities.append("email") }
+        if settings.notificationEmail != nil || settings.imapEnabled || settings.agentMailEnabled {
+            agentCapabilities.append("email")
+        }
         if settings.githubPAT != nil { agentCapabilities.append("github") }
         if !settings.localFileAllowedDirectories.isEmpty { agentCapabilities.append("local_file_read") }
 
@@ -316,6 +338,9 @@ private func runScheduler(
         Task {
             if let imapPoller {
                 await imapPoller.stop()
+            }
+            if let agentMailPoller {
+                await agentMailPoller.stop()
             }
             await executionQueue.stop()
         }
