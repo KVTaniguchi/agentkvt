@@ -1,4 +1,4 @@
-class AddBioSignalsToAgentKVT < ActiveRecord::Migration[8.0]
+class AddBioSignalsToAgentKvt < ActiveRecord::Migration[8.0]
   def change
     add_column :objectives, :nutrient_density, :integer, default: 0, null: false
     
