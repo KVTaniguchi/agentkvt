@@ -5,6 +5,7 @@ class ResearchSnapshot < ApplicationRecord
   has_many :feedback_entries, class_name: "ResearchSnapshotFeedback", dependent: :destroy, inverse_of: :research_snapshot
 
   SNAPSHOT_KINDS = %w[result exudate].freeze
+  scope :repelling, -> { supports_is_repellent? ? where(is_repellent: true) : none }
 
   def self.supports_snapshot_kind?
     attribute_names.include?("snapshot_kind")
@@ -65,6 +66,24 @@ class ResearchSnapshot < ApplicationRecord
   validate :value_must_be_plain_language
 
   scope :recent_first, -> { order(checked_at: :desc) }
+
+  def is_repellent
+    has_attribute?("is_repellent") ? ActiveModel::Type::Boolean.new.cast(self[:is_repellent]) : false
+  end
+
+  def repellent_reason
+    has_attribute?("repellent_reason") ? self[:repellent_reason] : nil
+  end
+
+  def repellent_scope
+    has_attribute?("repellent_scope") ? self[:repellent_scope] : nil
+  end
+
+  def snapshot_kind
+    return "result" unless has_attribute?("snapshot_kind")
+
+    self[:snapshot_kind].presence || "result"
+  end
 
   def positive_feedback_count
     feedback_entries.where(rating: "good").count

@@ -1,3 +1,5 @@
+require "set"
+
 module Slack
   # Classifies an inbound SlackMessage using the local LLM and returns a
   # structured action descriptor.
@@ -10,6 +12,15 @@ module Slack
   #   }
   class MessageClassifier
     ACTIONS = %w[append_research ignore].freeze
+    SHORTLIST_LIMIT = 6
+    USER_TYPED_FALLBACK_LIMIT = 4
+    CLASSIFIER_NUM_CTX = 2048
+    DEFAULT_TIMEOUT_SECONDS = 25
+    FEED_BOT_TIMEOUT_SECONDS = 8
+    STOP_WORDS = %w[
+      a an and are at be but by for from has have if in into is it its of on or our so than that the their there
+      they this to was we were will with you your
+    ].to_set.freeze
 
     def self.call(slack_message, objectives: [])
       new(slack_message, objectives: objectives).call
@@ -21,24 +32,29 @@ module Slack
     end
 
     def call
+      candidate_objectives = shortlisted_objectives
+      return ignore_result if candidate_objectives.empty? && @message.intake_kind == "feed_bot"
+
       raw = OllamaClient.new.chat(
-        messages: build_messages,
+        messages: build_messages(candidate_objectives),
         format: "json",
         task: "slack_message_classify",
-        options: { num_ctx: 4096, think: false }
+        options: { num_ctx: CLASSIFIER_NUM_CTX, think: false },
+        open_timeout: 5,
+        read_timeout: classifier_timeout_seconds
       )
       parse(raw)
     rescue => e
       Rails.logger.warn("[Slack::MessageClassifier] LLM error: #{e.message}")
-      { "action" => "ignore", "summary" => "", "urgency" => "low", "objective_id" => nil }
+      ignore_result
     end
 
     private
 
-    def build_messages
+    def build_messages(objectives)
       objectives_block =
-        if @objectives.any?
-          list = @objectives.map { |o| "- [#{o.id}] #{o.goal}" }.join("\n")
+        if objectives.any?
+          list = objectives.map { |o| "- [#{o.id}] #{o.goal}" }.join("\n")
           "Active objectives:\n#{list}"
         else
           "No active objectives."
@@ -68,6 +84,52 @@ module Slack
         { role: "system", content: system_prompt },
         { role: "user",   content: "/no_think\n\nClassify this Slack message:\n\n#{@message.text}" }
       ]
+    end
+
+    def shortlisted_objectives
+      return [] if @objectives.empty?
+
+      message_tokens = significant_tokens(@message.text)
+      scored = @objectives.filter_map do |objective|
+        score = objective_relevance_score(objective.goal, message_tokens)
+        next unless score.positive?
+
+        [objective, score]
+      end
+      return scored.sort_by { |objective, score| [-score, -objective.created_at.to_i] }
+        .first(SHORTLIST_LIMIT)
+        .map(&:first) if scored.any?
+
+      @message.intake_kind == "user_typed" ? @objectives.first(USER_TYPED_FALLBACK_LIMIT) : []
+    end
+
+    def objective_relevance_score(goal, message_tokens)
+      return 0 if goal.blank? || message_tokens.empty?
+
+      goal_text = goal.to_s.downcase
+      goal_tokens = significant_tokens(goal_text)
+      overlap = (goal_tokens & message_tokens).size
+      phrase_hits = message_tokens.count { |token| goal_text.include?(token) }
+      (overlap * 10) + phrase_hits
+    end
+
+    def significant_tokens(text)
+      text.to_s.downcase.scan(/[a-z0-9][a-z0-9#+.-]*/)
+        .reject { |token| token.length < 2 || STOP_WORDS.include?(token) }
+        .uniq
+    end
+
+    def classifier_timeout_seconds
+      configured = Integer(ENV.fetch("SLACK_CLASSIFIER_TIMEOUT_SECONDS", DEFAULT_TIMEOUT_SECONDS.to_s))
+      return [configured, FEED_BOT_TIMEOUT_SECONDS].min if @message.intake_kind == "feed_bot"
+
+      configured
+    rescue ArgumentError
+      @message.intake_kind == "feed_bot" ? FEED_BOT_TIMEOUT_SECONDS : DEFAULT_TIMEOUT_SECONDS
+    end
+
+    def ignore_result
+      { "action" => "ignore", "summary" => "", "urgency" => "low", "objective_id" => nil }
     end
 
     def parse(raw)

@@ -1,16 +1,36 @@
 import Foundation
 
 /// Tool that executes up to 5 sequential search or browse sub-queries and returns a
-/// synthesized Markdown document. Calls the existing WebSearchTool and
-/// HeadlessBrowserScout static helpers directly — no nested AgentLoop.
-public func makeMultiStepSearchTool(apiKey: String? = nil) -> ToolRegistry.Tool {
-    ToolRegistry.Tool(
+/// synthesized Markdown document. Calls the existing WebSearchTool helpers directly
+/// so objective work stays on the stable network-fetch path — no nested AgentLoop.
+public func makeMultiStepSearchTool(
+    apiKey: String? = nil,
+    searchExecutor: (@Sendable (String, Int, String?) async -> String)? = nil,
+    browseExecutor: (@Sendable (String, String?, String?, String?) async -> String)? = nil
+) -> ToolRegistry.Tool {
+    let effectiveSearchExecutor = searchExecutor ?? { query, maxResults, apiKeyOverride in
+        await WebSearchTool.searchAndFetch(
+            query: query,
+            maxResults: maxResults,
+            apiKeyOverride: apiKeyOverride
+        )
+    }
+    let effectiveBrowseExecutor = browseExecutor ?? { url, actionsJson, extractSelector, apiKeyOverride in
+        await WebSearchTool.browseAndFetch(
+            url: url,
+            apiKeyOverride: apiKeyOverride,
+            actionsJson: actionsJson,
+            extractSelector: extractSelector
+        )
+    }
+
+    return ToolRegistry.Tool(
         id: "multi_step_search",
         name: "multi_step_search",
         description: """
             Run 2–5 related search or browse sub-queries in a single turn and receive one synthesized Markdown report.
             Use for comparison research (e.g. check hotel prices across multiple sites, compare flight options).
-            Each step is either a web search ("search") or a direct URL browse ("browse").
+            Each step is either a web search ("search") or a direct URL fetch ("browse").
             Results are capped per step to preserve context. Review the report before taking further action.
             """,
         parameters: .init(
@@ -60,11 +80,7 @@ public func makeMultiStepSearchTool(apiKey: String? = nil) -> ToolRegistry.Tool 
                         sections.append("### Step \(stepNum): search\n\nError: missing or empty query.")
                         continue
                     }
-                    result = await WebSearchTool.searchAndFetch(
-                        query: query,
-                        maxResults: 3,
-                        apiKeyOverride: apiKey
-                    )
+                    result = await effectiveSearchExecutor(query, 3, apiKey)
                     let capped = cap(result, chars: 6000)
                     sections.append("### Step \(stepNum): search — \(query)\n\n\(capped)")
 
@@ -73,10 +89,11 @@ public func makeMultiStepSearchTool(apiKey: String? = nil) -> ToolRegistry.Tool 
                         sections.append("### Step \(stepNum): browse\n\nError: missing or empty url.")
                         continue
                     }
-                    result = await HeadlessBrowserScout.run(
-                        url: url,
-                        actionsJson: step["actions_json"],
-                        extractSelector: step["extract_selector"]
+                    result = await effectiveBrowseExecutor(
+                        url,
+                        step["actions_json"],
+                        step["extract_selector"],
+                        apiKey
                     )
                     let capped = cap(result, chars: 6000)
                     sections.append("### Step \(stepNum): browse — \(url)\n\n\(capped)")

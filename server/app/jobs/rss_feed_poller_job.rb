@@ -1,4 +1,4 @@
-require "rss"
+require "set"
 require "open-uri"
 
 # Fetches configured RSS feeds and posts unseen items to the Slack feed channel.
@@ -16,6 +16,11 @@ class RssFeedPollerJob < ApplicationJob
   FETCH_BACKOFF_TTL      = 6.hours # how long to skip a feed after hitting the error limit
 
   def perform
+    unless rss_parser_available?
+      Rails.logger.warn("[RssFeedPollerJob] RSS parser unavailable — skipping feed poll")
+      return
+    end
+
     channel_id = feed_channel_id
     unless channel_id
       Rails.logger.warn("[RssFeedPollerJob] SLACK_FEED_CHANNEL_IDS not set — skipping")
@@ -33,6 +38,16 @@ class RssFeedPollerJob < ApplicationJob
   end
 
   private
+
+  def rss_parser_available?
+    return true if defined?(RSS::Parser)
+
+    require "rss"
+    true
+  rescue LoadError => e
+    Rails.logger.warn("[RssFeedPollerJob] RSS parser load failed: #{e.message}")
+    false
+  end
 
   def feed_channel_id
     ENV.fetch("SLACK_FEED_CHANNEL_IDS", "").split(",").map(&:strip).first.presence

@@ -16,7 +16,7 @@ class TaskExecutorJob < ApplicationJob
       return unless task
 
       # Check for repelling snapshots (circuit breaker)
-      repelling_snapshots = task.objective.research_snapshots.where(is_repellent: true)
+      repelling_snapshots = task.objective.research_snapshots.repelling
       if repelling_snapshots.exists?
         # Basic check: if the task description mentions any of the repellent scopes, bail out.
         task_desc_norm = task.description.downcase

@@ -43,9 +43,7 @@ enum WebSearchTool {
 
     /// Run web_search, then web_fetch for each result URL; return combined clean Markdown.
     static func searchAndFetch(query: String, maxResults: Int, apiKeyOverride: String? = nil) async -> String {
-        let resolvedAPIKey = apiKeyOverride?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let environmentAPIKey = ProcessInfo.processInfo.environment["OLLAMA_API_KEY"]?.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let apiKey = [resolvedAPIKey, environmentAPIKey].compactMap({ $0 }).first(where: { !$0.isEmpty }) else {
+        guard let apiKey = resolvedAPIKey(apiKeyOverride: apiKeyOverride) else {
             return "Error: OLLAMA_API_KEY must be set for web search. Get a key at https://ollama.com/settings/keys"
         }
 
@@ -88,6 +86,28 @@ enum WebSearchTool {
         return combined.joined(separator: "\n\n---\n\n")
     }
 
+    /// Directly fetch one URL via Ollama web_fetch and return cleaned page content.
+    /// This keeps `multi_step_search` browse steps off the AppKit/WebKit path.
+    static func browseAndFetch(
+        url: String,
+        apiKeyOverride: String? = nil,
+        actionsJson: String? = nil,
+        extractSelector: String? = nil
+    ) async -> String {
+        guard let parsed = URL(string: url), parsed.scheme == "https" || parsed.scheme == "http" else {
+            return "Error: invalid or unsupported URL (must be http/https)."
+        }
+        guard let apiKey = resolvedAPIKey(apiKeyOverride: apiKeyOverride) else {
+            return "Error: OLLAMA_API_KEY must be set for direct URL fetch. Get a key at https://ollama.com/settings/keys"
+        }
+
+        let fetched = await fetchPage(url: parsed.absoluteString, apiKey: apiKey, title: parsed.absoluteString)
+        let cleaned = cleanContent(fetched)
+        let note = directBrowseNote(actionsJson: actionsJson, extractSelector: extractSelector)
+        guard !note.isEmpty else { return cleaned }
+        return "\(note)\n\n\(cleaned)"
+    }
+
     /// Fetch one URL via Ollama web_fetch; returns content (Markdown or HTML).
     private static func fetchPage(url: String, apiKey: String, title: String) async -> String {
         var request = URLRequest(url: webFetchURL)
@@ -114,6 +134,23 @@ enum WebSearchTool {
             return "Title: \(fetchResponse.title ?? title)\n(No content returned.)"
         }
         return content
+    }
+
+    private static func resolvedAPIKey(apiKeyOverride: String?) -> String? {
+        let resolvedOverride = apiKeyOverride?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let environmentAPIKey = ProcessInfo.processInfo.environment["OLLAMA_API_KEY"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return [resolvedOverride, environmentAPIKey].compactMap { $0 }.first(where: { !$0.isEmpty })
+    }
+
+    private static func directBrowseNote(actionsJson: String?, extractSelector: String?) -> String {
+        var notes: [String] = []
+        if let actionsJson, !actionsJson.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            notes.append("Note: multi_step_search browse performs a direct fetch and does not execute browser actions.")
+        }
+        if let extractSelector, !extractSelector.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            notes.append("Note: multi_step_search browse returns fetched page content and does not apply extract_selector.")
+        }
+        return notes.joined(separator: "\n")
     }
 
     /// Strip ads, footers, scripts; normalize whitespace; cap length to save context.

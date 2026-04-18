@@ -16,7 +16,10 @@ import Foundation
 // into the MissionExecutionQueue's `for await` drain loop, which terminates at
 // the next suspension point.
 
-let logFile = await RuntimeLogCapture.configure(processLabel: "AgentKVTMacRunner")
+let logFile = await RuntimeLogCapture.configure(
+    processLabel: "AgentKVTMacRunner",
+    logFileURL: RuntimeLogCapture.defaultFileURL
+)
 print("[Logging] Writing logs to \(logFile.path)")
 
 let assertion = PowerAssertion(

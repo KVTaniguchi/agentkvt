@@ -41,13 +41,20 @@ public func runAgentKVTMacRunner() async {
         isStoredInMemoryOnly: false,
         allowsSave: true
     )
-    if let c = try? ModelContainer(for: schema, configurations: [sharedPersistentConfig]) {
-        container = c
-        print("SwiftData storage: app group local disk")
-    } else if let c = try? ModelContainer(for: schema, configurations: [localPersistentConfig]) {
-        container = c
-        print("SwiftData storage: local disk fallback")
-    } else {
+    let preferLocalPersistentStore = settings.disableCloudKit || settings.backendBaseURL != nil
+    let persistentConfigurations = preferLocalPersistentStore
+        ? [(localPersistentConfig, "local disk"), (sharedPersistentConfig, "app group local disk")]
+        : [(sharedPersistentConfig, "app group local disk"), (localPersistentConfig, "local disk fallback")]
+
+    for (configuration, label) in persistentConfigurations {
+        if let c = try? ModelContainer(for: schema, configurations: [configuration]) {
+            container = c
+            print("SwiftData storage: \(label)")
+            break
+        }
+    }
+
+    if container == nil {
         let inMemoryConfig = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
         container = try? ModelContainer(for: schema, configurations: [inMemoryConfig])
         print("SwiftData storage: in-memory fallback")

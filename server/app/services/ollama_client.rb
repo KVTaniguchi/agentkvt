@@ -9,14 +9,14 @@ class OllamaClient
   # Sends a chat request to the local Ollama instance.
   # Returns the assistant's reply as a plain string.
   # Raises on non-2xx HTTP or network errors.
-  def chat(messages:, model: DEFAULT_MODEL, format: nil, task: nil, options: {})
+  def chat(messages:, model: DEFAULT_MODEL, format: nil, task: nil, options: {}, open_timeout: 10, read_timeout: 300)
     uri = URI("#{BASE_URL}/api/chat")
     body = { model: model, messages: messages, stream: false }
     body[:format] = format if format
     body[:options] = options if options.any?
 
     t0 = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-    response = Net::HTTP.start(uri.host, uri.port, read_timeout: 300, open_timeout: 10) do |http|
+    response = Net::HTTP.start(uri.host, uri.port, read_timeout: read_timeout, open_timeout: open_timeout) do |http|
       http.post(uri.path, body.to_json, "Content-Type" => "application/json")
     end
     latency_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - t0) * 1000).round
