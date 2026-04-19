@@ -73,6 +73,21 @@ public struct BackendInboundFile: Codable, Sendable {
     public let fileBase64: String?
 }
 
+public struct BackendTask: Codable, Sendable {
+    public let id: UUID
+    public let objectiveId: UUID
+    public let sourceFeedbackId: UUID?
+    public let description: String
+    public let taskKind: String?
+    public let allowedToolIds: [String]?
+    public let requiredCapabilities: [String]?
+    public let doneWhen: String?
+    public let status: String
+    public let resultSummary: String?
+    public let createdAt: Date
+    public let updatedAt: Date
+}
+
 
 
 
@@ -166,6 +181,10 @@ private struct BackendResearchSnapshotsListEnvelope: Codable {
 
 private struct BackendObjectiveEnvelope: Codable {
     let objective: BackendObjective
+}
+
+private struct BackendTaskEnvelope: Codable {
+    let task: BackendTask
 }
 
 public actor BackendAPIClient {
@@ -301,6 +320,24 @@ public actor BackendAPIClient {
             requiresAgentAuth: true
         )
         return try decoder.decode(BackendResearchSnapshotEnvelope.self, from: data).researchSnapshot
+    }
+
+    public func failObjectiveTask(
+        objectiveId: UUID,
+        taskId: UUID,
+        errorMessage: String
+    ) async throws -> BackendTask {
+        let data = try await performRequest(
+            path: "v1/agent/objectives/\(objectiveId.uuidString)/tasks/\(taskId.uuidString)/fail",
+            method: "POST",
+            jsonBody: [
+                "task": [
+                    "error_message": errorMessage
+                ]
+            ],
+            requiresAgentAuth: true
+        )
+        return try decoder.decode(BackendTaskEnvelope.self, from: data).task
     }
 
     /// Registers this agent's capabilities and webhook URL with the backend.
