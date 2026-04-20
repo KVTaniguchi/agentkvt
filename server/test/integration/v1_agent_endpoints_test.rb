@@ -36,6 +36,30 @@ class V1AgentEndpointsTest < ActionDispatch::IntegrationTest
     assert_equal "outcome", @workspace.agent_logs.first.phase
   end
 
+  test "agent can fail an objective task and clear its claim" do
+    objective = @workspace.objectives.create!(goal: "Monitor retirement pacing", status: "active", priority: 0)
+    task = objective.tasks.create!(
+      description: "Investigate PA muni fund option",
+      status: "in_progress",
+      claimed_at: Time.current,
+      claimed_by_agent_id: "mac-agent-8765"
+    )
+
+    post "/v1/agent/objectives/#{objective.id}/tasks/#{task.id}/fail",
+         params: {
+           task: {
+             error_message: "Supervisor timed out waiting for research work units to settle."
+           }
+         },
+         as: :json, headers: agent_headers
+
+    assert_response :success
+    assert_equal "failed", task.reload.status
+    assert_equal "Supervisor timed out waiting for research work units to settle.", task.result_summary
+    assert_nil task.claimed_at
+    assert_nil task.claimed_by_agent_id
+  end
+
   private
 
   def workspace_headers

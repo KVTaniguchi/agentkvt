@@ -171,6 +171,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             return
         }
 
+        var rootWorkUnitId: UUID?
         do {
             let parentGoal = payload.objectiveGoal
             let root = try ensureRootWorkUnit(
@@ -179,6 +180,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                 title: payload.description,
                 parentObjectiveGoal: parentGoal
             )
+            rootWorkUnitId = root.id
 
             // If research already timed out in a prior supervisor run, skip straight to synthesis
             // with whatever snapshots were gathered rather than re-queueing research work units.
@@ -268,6 +270,30 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                 taskName: "Objective Supervisor"
             )
         } catch {
+            if let rootWorkUnitId {
+                try? updateRootState(
+                    rootId: rootWorkUnitId,
+                    state: WorkUnitState.blocked.rawValue,
+                    phase: "failed"
+                )
+            }
+            if let backendClient {
+                do {
+                    _ = try await backendClient.failObjectiveTask(
+                        objectiveId: objectiveId,
+                        taskId: taskId,
+                        errorMessage: String(describing: error)
+                    )
+                } catch {
+                    await logEvent(
+                        phase: "error",
+                        content: "Failed to transition backend task out of in_progress after supervisor error: \(error)",
+                        objectiveId: objectiveId,
+                        taskId: taskId,
+                        taskName: "Objective Supervisor"
+                    )
+                }
+            }
             await logEvent(
                 phase: "error",
                 content: "Objective supervisor failed: \(error)",

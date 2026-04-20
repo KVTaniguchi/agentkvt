@@ -53,6 +53,9 @@ Rails.application.routes.draw do
 
       resources :objectives, only: [] do
         resources :research_snapshots, only: [:index, :create]
+        resources :tasks, only: [] do
+          post :fail, on: :member
+        end
       end
     end
   end
