@@ -49,7 +49,15 @@ Rails.application.routes.draw do
         post :mark_processed, on: :member
       end
 
+      resources :work_units, only: [:index, :create, :update, :destroy]
 
+      resources :resource_healths, only: [:index, :destroy] do
+        post :upsert, on: :collection
+      end
+
+      resources :ephemeral_pins, only: [:index, :create, :destroy] do
+        post :purge_expired, on: :collection
+      end
 
       resources :objectives, only: [] do
         resources :research_snapshots, only: [:index, :create]

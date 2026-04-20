@@ -257,6 +257,56 @@ module ApiSerialization
     payload
   end
 
+  def serialize_work_unit(wu)
+    {
+      id: wu.id,
+      workspace_id: wu.workspace_id,
+      title: wu.title,
+      category: wu.category,
+      objective_id: wu.objective_id,
+      source_task_id: wu.source_task_id,
+      work_type: wu.work_type,
+      state: wu.state,
+      mound_payload: wu.mound_payload,
+      active_phase_hint: wu.active_phase_hint,
+      priority: wu.priority,
+      claimed_until: iso8601(wu.claimed_until),
+      worker_label: wu.worker_label,
+      last_heartbeat_at: iso8601(wu.last_heartbeat_at),
+      created_by_profile_id: wu.created_by_profile_id,
+      created_at: iso8601(wu.created_at),
+      updated_at: iso8601(wu.updated_at)
+    }
+  end
+
+  def serialize_resource_health(rh)
+    {
+      id: rh.id,
+      workspace_id: rh.workspace_id,
+      resource_key: rh.resource_key,
+      failure_count: rh.failure_count,
+      last_failure_at: iso8601(rh.last_failure_at),
+      cooldown_until: iso8601(rh.cooldown_until),
+      on_cooldown: rh.on_cooldown?,
+      last_error_message: rh.last_error_message,
+      created_at: iso8601(rh.created_at),
+      updated_at: iso8601(rh.updated_at)
+    }
+  end
+
+  def serialize_ephemeral_pin(pin)
+    {
+      id: pin.id,
+      workspace_id: pin.workspace_id,
+      content: pin.content,
+      category: pin.category,
+      strength: pin.strength,
+      expires_at: iso8601(pin.expires_at),
+      created_at: iso8601(pin.created_at),
+      updated_at: iso8601(pin.updated_at)
+    }
+  end
+
   def iso8601(value)
     value&.iso8601
   end
