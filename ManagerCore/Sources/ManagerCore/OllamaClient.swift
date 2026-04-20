@@ -18,7 +18,7 @@ public final class OllamaClient: @unchecked Sendable {
 
     public init(
         baseURL: URL = URL(string: "http://localhost:11434")!,
-        model: String = "llama4:latest",
+        model: String = "qwen3.6:35b",
         timeoutInterval: TimeInterval = 300,
         session: URLSession = .shared
     ) {

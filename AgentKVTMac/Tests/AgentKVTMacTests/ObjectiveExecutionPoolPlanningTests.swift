@@ -72,7 +72,11 @@ private func planningTaskSearchJSON(
     taskId: UUID,
     objectiveId: UUID,
     description: String,
-    objectiveGoal: String? = nil
+    objectiveGoal: String? = nil,
+    taskKind: String? = nil,
+    allowedToolIds: [String]? = nil,
+    requiredCapabilities: [String]? = nil,
+    doneWhen: String? = nil
 ) -> String {
     var payload: [String: Any] = [
         "agentkvt": "run_task_search",
@@ -83,8 +87,41 @@ private func planningTaskSearchJSON(
     if let objectiveGoal {
         payload["objective_goal"] = objectiveGoal
     }
+    if let taskKind {
+        payload["task_kind"] = taskKind
+    }
+    if let allowedToolIds {
+        payload["allowed_tool_ids"] = allowedToolIds
+    }
+    if let requiredCapabilities {
+        payload["required_capabilities"] = requiredCapabilities
+    }
+    if let doneWhen {
+        payload["done_when"] = doneWhen
+    }
     let data = try! JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
     return String(decoding: data, as: UTF8.self)
+}
+
+@Test("TaskSearchPayload parses execution contract fields")
+func taskSearchPayloadParsesExecutionContractFields() throws {
+    let taskId = UUID()
+    let objectiveId = UUID()
+    let payload = try #require(TaskSearchPayload(json: planningTaskSearchJSON(
+        taskId: taskId,
+        objectiveId: objectiveId,
+        description: "Use the site_scout tool to add the best in-stock filter pack to the cart.",
+        objectiveGoal: "Replace the HVAC filter this week.",
+        taskKind: "action",
+        allowedToolIds: ["site_scout", "send_notification_email"],
+        requiredCapabilities: ["objective_research", "site_scout", "email"],
+        doneWhen: "An objective snapshot records the cart subtotal or blocker."
+    )))
+
+    #expect(payload.taskKind == "action")
+    #expect(payload.allowedToolIds == ["site_scout", "send_notification_email"])
+    #expect(payload.requiredCapabilities == ["objective_research", "site_scout", "email"])
+    #expect(payload.doneWhen == "An objective snapshot records the cart subtotal or blocker.")
 }
 
 @Test("Recommendation-style objective tasks skip extra research decomposition")
@@ -167,4 +204,53 @@ func concreteResearchDirectivesAvoidGenericFallbackSubtasks() async throws {
     #expect(researchUnits.first?.title == description)
     #expect(!researchUnits.contains(where: { $0.title.contains("Research logistics and costs for:") }))
     #expect(!researchUnits.contains(where: { $0.title.contains("Identify risks, deadlines, and constraints for:") }))
+}
+
+@Test("Action tasks skip research fan-out and keep a single executable work unit")
+func actionTasksSkipResearchFanOut() async throws {
+    let (container, context) = try makePlanningContainer()
+    let client = InvalidPlanningThenSlowClient()
+    let pool = makePlanningPool(
+        container: container,
+        context: context,
+        client: client,
+        timeoutSeconds: 20
+    )
+
+    let taskId = UUID()
+    let objectiveId = UUID()
+    let description = "Use the site_scout tool to add the best in-stock filter 3-pack to the cart and confirm the subtotal"
+    let payload = try #require(TaskSearchPayload(json: planningTaskSearchJSON(
+        taskId: taskId,
+        objectiveId: objectiveId,
+        description: description,
+        objectiveGoal: "Replace the HVAC filter this week.",
+        taskKind: "action",
+        allowedToolIds: ["site_scout"],
+        requiredCapabilities: ["objective_research", "site_scout"],
+        doneWhen: "An objective snapshot records the subtotal or blocker."
+    )))
+
+    await pool.enqueue(payload)
+
+    let deadline = Date().addingTimeInterval(4)
+    var researchUnits: [WorkUnit] = []
+    while Date() < deadline {
+        let readContext = ModelContext(container)
+        let units = try readContext.fetch(FetchDescriptor<WorkUnit>())
+            .filter {
+                $0.objectiveId == objectiveId &&
+                $0.sourceTaskId == taskId &&
+                $0.workType == "objective_research"
+            }
+        if !units.isEmpty {
+            researchUnits = units
+            break
+        }
+        try await Task.sleep(for: .milliseconds(100))
+    }
+
+    #expect(researchUnits.count == 1)
+    #expect(researchUnits.first?.title == description)
+    #expect(researchUnits.first?.activePhaseHint == "action")
 }

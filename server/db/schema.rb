@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_04_16_030000) do
+ActiveRecord::Schema[8.0].define(version: 2026_04_18_110000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -249,13 +249,18 @@ ActiveRecord::Schema[8.0].define(version: 2026_04_16_030000) do
     t.datetime "claimed_at"
     t.string "claimed_by_agent_id"
     t.uuid "source_feedback_id"
+    t.string "task_kind", default: "research", null: false
+    t.jsonb "allowed_tool_ids", default: [], null: false
+    t.text "done_when"
     t.jsonb "required_capabilities", default: [], null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.index ["allowed_tool_ids"], name: "index_tasks_on_allowed_tool_ids", using: :gin
     t.index ["objective_id", "status"], name: "index_tasks_on_objective_id_and_status"
     t.index ["objective_id"], name: "index_tasks_on_objective_id"
     t.index ["required_capabilities"], name: "index_tasks_on_required_capabilities", using: :gin
     t.index ["source_feedback_id"], name: "index_tasks_on_source_feedback_id"
+    t.index ["task_kind"], name: "index_tasks_on_task_kind"
   end
 
   create_table "users", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|

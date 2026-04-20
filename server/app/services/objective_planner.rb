@@ -13,11 +13,16 @@ class ObjectivePlanner
   ].freeze
 
   SYSTEM_PROMPT = <<~PROMPT.freeze
-    You are a specialist research task planner. Given a goal, output a JSON array of concrete research tasks.
+    You are AgentKVT's Task Orchestrator. Given a goal, output a JSON array of executable task contracts.
     Return enough tasks to fully satisfy the objective:
     - Simple goals: at least 4 tasks
     - Multi-part or high-uncertainty goals: 6-10 tasks
-    Each element must be an object with a single key "description" whose value is a concise action string.
+    Each element must be an object with:
+    - "description" (required): concise execution-oriented task string
+    - "task_kind" (optional): one of "research", "action", or "synthesis"
+    - "allowed_tool_ids" (optional): array of the narrowest tool ids the task should use
+    - "required_capabilities" (optional): array of agent capabilities needed to run the task
+    - "done_when" (optional): one sentence completion condition
     Respond with ONLY valid JSON — no markdown fences, no prose, no explanation.
 
     SPECIALIST BREAKDOWN: For multi-part goals, assign distinct domain roles rather than generic "research X" tasks.
@@ -26,6 +31,12 @@ class ObjectivePlanner
     - Product comparison → Feature Analyst, Pricing Auditor, User Reviews Specialist, Compatibility Checker
     - Event planning → Venue Researcher, Catering/Food Specialist, Cost Auditor, Scheduling Coordinator
     - Shopping → Product Researcher, Price Auditor, Stock Checker, Cart/Checkout Coordinator
+
+    TASK KIND RULES:
+    - "research" = gather or verify facts.
+    - "action" = take an external step with tools like site_scout, send_notification_email, write_reminder, or read_calendar.
+    - "synthesis" = consolidate findings into a recommendation, working brief, or final closeout.
+    - Prefer "research" unless the task clearly requires taking an outside action or summarizing a completed body of work.
 
     SEARCH GROUNDING: Each task description must embed a specific directive, not a vague mandate.
     BAD: "Research Epic Universe theme park"
@@ -44,13 +55,17 @@ class ObjectivePlanner
     GOOD: "Search orlandoinformer.com for Epic Universe headliner wait times in July peak season. Assume 60-90+ minute waits for Dark Universe and Ministry of Magic. Flag any itinerary plan allocating less than 3 hours to either land as unrealistic given these crowd levels."
     For budget constraints: include the cap in each pricing task. For date/season constraints: include the crowd assumptions in each scheduling or timing task.
 
+    ACTION TASK RULES:
+    - If a task involves adding to cart, booking, sending an email, creating a reminder, scheduling, or filling a web form, mark it "action".
+    - Action tasks should name the narrowest allowed tools, for example ["site_scout"] or ["send_notification_email"].
+
     REJECTION CRITERIA: Include explicit minimum thresholds or sanity checks in task descriptions when relevant (e.g. minimum group size, minimum time blocks, budget caps).
 
     CRITIC TASK: For objectives with 6+ tasks, always add a final validation task as the last element.
     The critic task should read all prior findings and flag: unrealistic estimates, missing constraints, budget overruns, or logistical impossibilities.
-    Example critic task: "Review all draft findings for this objective. Flag any time estimate that seems too short for a group, any cost that exceeds stated budget, or any logistical gap (travel time, reservations needed, capacity limits)."
+    Example critic task: "Review all draft findings for this objective. Flag any time estimate that seems too short for a group, any cost that exceeds stated budget, or any logistical gap (travel time, reservations needed, capacity limits)." This should usually be "synthesis".
 
-    Example output: [{"description":"Search for hotel options near the convention center with prices and availability for the target dates"},{"description":"Compare flight prices from PHL to SAN — extract cheapest options and latest same-day booking cutoffs"},{"description":"Review all findings: flag any hotel that exceeds the stated budget or any flight with less than 90 minutes connection time"}]
+    Example output: [{"description":"Search for hotel options near the convention center with prices and availability for the target dates","task_kind":"research","allowed_tool_ids":["multi_step_search"],"done_when":"At least one snapshot captures current prices, dates, and cancellation policy details."},{"description":"Use the site_scout tool to add the best in-stock 16x25x1 HVAC filter 3-pack to the Target cart and confirm the subtotal.","task_kind":"action","allowed_tool_ids":["site_scout"],"required_capabilities":["objective_research","site_scout"],"done_when":"An objective snapshot records the cart subtotal or the blocker preventing checkout."},{"description":"Review all findings and produce the recommended next move with risks and immediate action items.","task_kind":"synthesis","done_when":"A final objective snapshot captures the recommendation and marks the task complete."}]
   PROMPT
 
   def initialize(client: OllamaClient.new)
@@ -75,23 +90,18 @@ class ObjectivePlanner
     )
 
     task_defs = normalize_task_defs(JSON.parse(raw))
-    llm_descriptions = task_defs.filter_map do |t|
-      next unless t.is_a?(Hash)
-      description = t["description"].to_s.strip
-      next if description.empty?
-      description
-    end.uniq
-    llm_descriptions = replace_generic_descriptions(objective, llm_descriptions)
+    llm_task_defs = dedupe_task_defs(task_defs.filter_map { |task_def| normalize_task_def(task_def) })
+    llm_task_defs = replace_generic_task_defs(objective, llm_task_defs)
 
-    if llm_descriptions.length < min_task_count
-      llm_descriptions += supplemental_descriptions(
+    if llm_task_defs.length < min_task_count
+      llm_task_defs += supplemental_task_defs(
         objective: objective,
-        existing: llm_descriptions,
-        needed: (min_task_count - llm_descriptions.length)
+        existing: llm_task_defs,
+        needed: (min_task_count - llm_task_defs.length)
       )
     end
 
-    created = persist_tasks(objective, llm_descriptions.first(MAX_TASKS))
+    created = persist_tasks(objective, llm_task_defs.first(MAX_TASKS))
 
     return created if created.any?
 
@@ -114,16 +124,16 @@ class ObjectivePlanner
   def fallback_tasks(objective, min_task_count:)
     return [] if objective.goal.to_s.strip.empty?
 
-    heuristic_descriptions(objective, min_task_count: min_task_count).filter_map do |description|
-      next if description.blank?
-      objective.tasks.create!(description: description, status: "proposed")
+    heuristic_task_defs(objective, min_task_count: min_task_count).filter_map do |attrs|
+      next if attrs[:description].blank?
+      objective.tasks.create!(attrs.merge(status: "proposed"))
     end
   end
 
-  def persist_tasks(objective, descriptions)
-    descriptions.filter_map do |description|
-      next if description.blank?
-      objective.tasks.create!(description: description.truncate(500), status: "proposed")
+  def persist_tasks(objective, task_defs)
+    task_defs.filter_map do |task_def|
+      next if task_def[:description].blank?
+      objective.tasks.create!(task_def.merge(description: task_def[:description].truncate(500), status: "proposed"))
     end
   end
 
@@ -171,38 +181,72 @@ class ObjectivePlanner
     tasks.map(&:strip).reject(&:blank?).uniq.first([min_task_count, MAX_TASKS].max)
   end
 
-  def supplemental_descriptions(objective:, existing:, needed:)
+  def heuristic_task_defs(objective, min_task_count:)
+    heuristic_descriptions(objective, min_task_count: min_task_count).map do |description|
+      normalize_task_def({ "description" => description })
+    end.compact
+  end
+
+  def supplemental_task_defs(objective:, existing:, needed:)
     return [] if needed <= 0
-    heuristic_descriptions(objective, min_task_count: needed + existing.length)
-      .reject { |desc| existing.include?(desc) }
+    heuristic_task_defs(objective, min_task_count: needed + existing.length)
+      .reject { |task_def| existing.any? { |existing_def| existing_def[:description].casecmp?(task_def[:description]) } }
       .first(needed)
   end
 
-  def replace_generic_descriptions(objective, descriptions)
-    return descriptions if descriptions.empty?
+  def replace_generic_task_defs(objective, task_defs)
+    return task_defs if task_defs.empty?
 
-    replacements = heuristic_descriptions(
+    replacements = heuristic_task_defs(
       objective,
-      min_task_count: [descriptions.length, minimum_task_count(objective.goal)].max
+      min_task_count: [task_defs.length, minimum_task_count(objective.goal)].max
     )
     replacement_index = 0
-    seen = descriptions.each_with_object(Set.new) { |description, acc| acc << description.downcase }
+    seen = task_defs.each_with_object(Set.new) { |task_def, acc| acc << task_def[:description].downcase }
 
-    descriptions.filter_map do |description|
-      next description unless generic_description?(description)
+    task_defs.filter_map do |task_def|
+      next task_def unless generic_description?(task_def[:description])
 
       replacement = nil
       while replacement.nil? && replacement_index < replacements.length
         candidate = replacements[replacement_index]
         replacement_index += 1
-        next if seen.include?(candidate.downcase)
+        next if seen.include?(candidate[:description].downcase)
 
-        seen << candidate.downcase
+        seen << candidate[:description].downcase
         replacement = candidate
       end
 
-      replacement || description
-    end.uniq
+      replacement || task_def
+    end
+  end
+
+  def normalize_task_def(task_def)
+    case task_def
+    when String
+      description = task_def.to_s.strip
+      return if description.empty?
+
+      Task.execution_contract(description: description).merge(description: description)
+    when Hash
+      description = task_def["description"].to_s.strip
+      return if description.empty?
+
+      Task.execution_contract(
+        description: description,
+        task_kind: task_def["task_kind"],
+        allowed_tool_ids: task_def["allowed_tool_ids"],
+        required_capabilities: task_def["required_capabilities"],
+        done_when: task_def["done_when"]
+      ).merge(description: description)
+    end
+  end
+
+  def dedupe_task_defs(task_defs)
+    seen = Set.new
+    task_defs.filter do |task_def|
+      seen.add?(task_def[:description].downcase)
+    end
   end
 
   def generic_description?(description)

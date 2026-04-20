@@ -8,12 +8,12 @@
 # plist is read and written with correct ownership.
 #
 # Usage:
-#   sudo ./set-ollama-model-in-group-plist.sh familyagent llama4:latest
+#   sudo ./set-ollama-model-in-group-plist.sh familyagent qwen3.6:35b
 
 set -euo pipefail
 
 TARGET_USER="${1:?usage: sudo $0 <macOS-user> [ollama-model]}"
-MODEL="${2:-llama4:latest}"
+MODEL="${2:-qwen3.6:35b}"
 PLIST="/Users/${TARGET_USER}/Library/Group Containers/group.com.agentkvt.shared/Library/Application Support/agentkvt-runner.plist"
 
 if [[ "$(id -u)" -ne 0 ]]; then

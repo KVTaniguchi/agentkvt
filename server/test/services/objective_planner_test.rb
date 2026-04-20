@@ -66,6 +66,26 @@ class ObjectivePlannerTest < ActiveSupport::TestCase
     assert_equal tasks.length, @objective.reload.tasks.count
   end
 
+  test "persists execution contract fields for action tasks" do
+    raw_json = JSON.generate([
+      {
+        "description" => "Use the site_scout tool to add the best in-stock filter 3-pack to the Target cart and confirm the subtotal.",
+        "task_kind" => "action",
+        "allowed_tool_ids" => ["site_scout"],
+        "required_capabilities" => ["objective_research", "site_scout"],
+        "done_when" => "An objective snapshot records the cart subtotal or the blocker preventing checkout."
+      }
+    ])
+
+    task = ObjectivePlanner.new(client: stub_client(raw_json)).call(@objective).first
+
+    assert_equal "action", task.task_kind
+    assert_includes task.allowed_tool_ids, "site_scout"
+    assert_includes task.allowed_tool_ids, "write_objective_snapshot"
+    assert_includes task.required_capabilities, "site_scout"
+    assert_equal "An objective snapshot records the cart subtotal or the blocker preventing checkout.", task.done_when
+  end
+
   test "tops up with heuristic tasks when llm returns too few for a complex objective" do
     objective = @workspace.objectives.create!(
       goal: "Plan a two-week Japan trip with flights, hotel lodging, city-to-city transit, day-by-day itinerary, and budget by category.",

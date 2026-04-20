@@ -5,6 +5,7 @@ struct RootView: View {
     @EnvironmentObject private var profileStore: FamilyProfileStore
     @Environment(FamilyMembersStore.self) private var familyMembersStore
     @Environment(LifeContextStore.self) private var lifeContextStore
+    @Environment(WorkspaceStore.self) private var workspaceStore
     @State private var bootstrapState: BackendBootstrapState = .idle
 
     @State private var backendSync = IOSBackendSyncService()
@@ -58,6 +59,7 @@ struct RootView: View {
             let snapshot = try await backendSync.fetchBootstrapRemote()
             familyMembersStore.replaceMembers(snapshot.familyMembers)
             lifeContextStore.replaceEntries(snapshot.lifeContextEntries)
+            workspaceStore.replaceWorkspace(snapshot.workspace)
             bootstrapState = .loaded
         } catch {
             IOSRuntimeLog.log("[RootView] Backend bootstrap failed: \(error)")

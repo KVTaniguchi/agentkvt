@@ -14,6 +14,10 @@ private struct OrphanedObjectiveGroup: Sendable {
     let taskId: UUID
     let rootTaskDescription: String
     let parentObjectiveGoal: String?
+    let taskKind: String
+    let allowedToolIds: [String]
+    let requiredCapabilities: [String]
+    let doneWhen: String?
 }
 
 actor ObjectiveExecutionPool {
@@ -111,6 +115,13 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         static let rootType = "objective_root"
         static let researchType = "objective_research"
         static let synthesisType = "objective_synthesis"
+        static let objectiveBaseToolIds = [
+            "read_objective_snapshot",
+            "write_objective_snapshot",
+            "list_dropzone_files",
+            "read_dropzone_file"
+        ]
+        static let researchToolIds = objectiveBaseToolIds + ["multi_step_search"]
     }
 
     private struct WorkPlan: Codable, Sendable {
@@ -123,6 +134,10 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         let rootTaskDescription: String
         /// Parent objective goal from Rails webhook (`objective_goal`); nil in older SwiftData payloads.
         let parentObjectiveGoal: String?
+        let taskKind: String?
+        let allowedToolIds: [String]?
+        let requiredCapabilities: [String]?
+        let doneWhen: String?
         let workDescription: String
         let planningRound: Int
         let workType: String
@@ -174,18 +189,33 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         var rootWorkUnitId: UUID?
         do {
             let parentGoal = payload.objectiveGoal
+            let taskKind = normalizedTaskKind(raw: payload.taskKind, description: payload.description)
+            let allowedToolIds = normalizedObjectiveToolIds(
+                explicit: payload.allowedToolIds,
+                taskKind: taskKind,
+                description: payload.description,
+                isSynthesis: false
+            )
+            let doneWhen = normalizedDoneWhen(
+                payload.doneWhen,
+                taskKind: taskKind
+            )
             let root = try ensureRootWorkUnit(
                 objectiveId: objectiveId,
                 taskId: taskId,
                 title: payload.description,
-                parentObjectiveGoal: parentGoal
+                parentObjectiveGoal: parentGoal,
+                taskKind: taskKind,
+                allowedToolIds: allowedToolIds,
+                requiredCapabilities: payload.requiredCapabilities,
+                doneWhen: doneWhen
             )
             rootWorkUnitId = root.id
 
             // If research already timed out in a prior supervisor run, skip straight to synthesis
             // with whatever snapshots were gathered rather than re-queueing research work units.
             let alreadyTimedOut = root.activePhaseHint == "timed_out"
-            let shouldSkipResearch = prefersDirectSynthesis(rootTaskDescription: payload.description)
+            let shouldSkipResearch = taskKind == "synthesis" || prefersDirectSynthesis(rootTaskDescription: payload.description)
 
             if alreadyTimedOut {
                 await logEvent(
@@ -195,6 +225,32 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                     taskId: taskId,
                     taskName: "Objective Supervisor"
                 )
+            } else if taskKind == "action" {
+                try updateRootState(rootId: root.id, state: WorkUnitState.inProgress.rawValue, phase: "acting")
+                await logEvent(
+                    phase: "objective_supervisor",
+                    content: "Task requests direct execution — skipping research fan-out for: \(payload.description)",
+                    objectiveId: objectiveId,
+                    taskId: taskId,
+                    taskName: "Objective Supervisor"
+                )
+
+                _ = try createWorkUnit(
+                    objectiveId: objectiveId,
+                    taskId: taskId,
+                    title: payload.description,
+                    workType: Constants.researchType,
+                    activePhaseHint: "action",
+                    planningRound: 1,
+                    rootTaskDescription: payload.description,
+                    parentObjectiveGoal: parentGoal,
+                    taskKind: taskKind,
+                    allowedToolIds: allowedToolIds,
+                    requiredCapabilities: payload.requiredCapabilities,
+                    doneWhen: doneWhen,
+                    priority: 1.1
+                )
+                try await waitForResearchToSettle(objectiveId: objectiveId, taskId: taskId)
             } else if shouldSkipResearch {
                 try updateRootState(rootId: root.id, state: WorkUnitState.inProgress.rawValue, phase: "synthesizing")
                 await logEvent(
@@ -219,6 +275,10 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                     taskId: taskId,
                     rootTaskDescription: payload.description,
                     parentObjectiveGoal: parentGoal,
+                    taskKind: taskKind,
+                    allowedToolIds: allowedToolIds,
+                    requiredCapabilities: payload.requiredCapabilities,
+                    doneWhen: doneWhen,
                     planningRound: 1,
                     completedSummaries: []
                 )
@@ -232,6 +292,10 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                         planningRound: 1,
                         rootTaskDescription: payload.description,
                         parentObjectiveGoal: parentGoal,
+                        taskKind: taskKind,
+                        allowedToolIds: allowedToolIds,
+                        requiredCapabilities: payload.requiredCapabilities,
+                        doneWhen: doneWhen,
                         priority: 1.0
                     )
                 }
@@ -243,6 +307,10 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                     taskId: taskId,
                     rootTaskDescription: payload.description,
                     parentObjectiveGoal: parentGoal,
+                    taskKind: taskKind,
+                    allowedToolIds: allowedToolIds,
+                    requiredCapabilities: payload.requiredCapabilities,
+                    doneWhen: doneWhen,
                     planningRound: 2,
                     completedSummaries: roundOneSummaries
                 )
@@ -256,7 +324,11 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                 objectiveId: objectiveId,
                 taskId: taskId,
                 rootTaskDescription: payload.description,
-                parentObjectiveGoal: parentGoal
+                parentObjectiveGoal: parentGoal,
+                taskKind: taskKind,
+                allowedToolIds: allowedToolIds,
+                requiredCapabilities: payload.requiredCapabilities,
+                doneWhen: doneWhen
             )
             try updateRootState(rootId: root.id, state: WorkUnitState.inProgress.rawValue, phase: "synthesizing")
             try await waitForSynthesisToSettle(objectiveId: objectiveId, taskId: taskId)
@@ -589,6 +661,17 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         serverSnapshotsContext: String,
         resolvedParentGoal: String?
     ) -> AgentTaskRunner.Request {
+        let taskKind = claimed.workType == Constants.synthesisType
+            ? "synthesis"
+            : normalizedTaskKind(raw: claimed.payload.taskKind, description: claimed.payload.rootTaskDescription)
+        let allowedToolIds = normalizedObjectiveToolIds(
+            explicit: claimed.payload.allowedToolIds,
+            taskKind: taskKind,
+            description: claimed.payload.rootTaskDescription,
+            isSynthesis: claimed.workType == Constants.synthesisType
+        )
+        let doneWhen = normalizedDoneWhen(claimed.payload.doneWhen, taskKind: taskKind)
+        let sideEffectToolIds = allowedToolIds.filter { !Constants.objectiveBaseToolIds.contains($0) && $0 != "multi_step_search" }
         // `resolveParentObjectiveGoal` already merges webhook payload + API; nil means no goal string anywhere.
         let effectiveGoal = resolvedParentGoal
         let userMessage = objectiveBoardUserMessage(
@@ -597,6 +680,9 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             workUnitDescription: claimed.payload.workDescription,
             objectiveId: claimed.objectiveId,
             taskId: claimed.taskId,
+            taskKind: taskKind,
+            allowedToolIds: allowedToolIds,
+            doneWhen: doneWhen,
             isSynthesis: claimed.workType == Constants.synthesisType
         )
         let systemPrompt: String
@@ -669,51 +755,99 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                 goal: effectiveGoal,
                 taskLine: claimed.payload.rootTaskDescription
             )
-            systemPrompt = """
-            AgentKVT objective-board mode (tools required). Do not reply with generic chat-assistant disclaimers; you already have the mission in the user message.
+            if taskKind == "action" {
+                let actionToolsLine = sideEffectToolIds.isEmpty ? "No side-effect tool ids were specified; prefer the most direct allowed tool." : sideEffectToolIds.joined(separator: ", ")
+                let doneWhenLine = doneWhen ?? "Attempt the requested action, verify what happened, and record a receipt or blocker."
+                systemPrompt = """
+                AgentKVT objective-board mode (tools required). Do not reply with generic chat-assistant disclaimers; you already have the mission in the user message.
 
-            You are \(workerLabel), one member of a parallel objective research team.
+                You are \(workerLabel), the execution agent for one objective task.
 
-            CRITICAL OUTPUT RULES (llama3.2 strict mode):
-            - NEVER write JSON, tool-call syntax, or any structured data as a snapshot value.
-            - NEVER output {"tool_calls": ...} or similar structures as text.
-            - Your final textual response MUST be plain English prose sentences. Do NOT begin your message with `{` or `[`.
-            - To call a tool, use the tool interface; do not write tool-call JSON in your response text.
+                CRITICAL OUTPUT RULES (llama3.2 strict mode):
+                - NEVER write JSON, tool-call syntax, or any structured data as a snapshot value.
+                - NEVER output {"tool_calls": ...} or similar structures as text.
+                - Your final textual response MUST be plain English prose sentences. Do NOT begin your message with `{` or `[`.
+                - To call a tool, use the tool interface; do not write tool-call JSON in your response text.
 
-            \(context)
+                \(context)
 
-            Focused work unit: \(claimed.payload.workDescription)
-            Objective ID: \(claimed.objectiveId.uuidString)
-            Task ID: \(claimed.taskId.uuidString)
-            Work Unit ID: \(claimed.workUnitId.uuidString)
+                Execution work unit: \(claimed.payload.workDescription)
+                Objective ID: \(claimed.objectiveId.uuidString)
+                Task ID: \(claimed.taskId.uuidString)
+                Work Unit ID: \(claimed.workUnitId.uuidString)
 
-            Shared knowledge on the server when this work unit started (avoid duplicating these findings):
-            \(serverSnapshotsContext)
+                Shared knowledge on the server when this work unit started:
+                \(serverSnapshotsContext)
 
-            Do not claim you lack missions or goals — this work unit is your assigned task.
+                Task contract:
+                - Task kind: action
+                - Preferred side-effect tools: \(actionToolsLine)
+                - Done when: \(doneWhenLine)
 
-            SPECIFICITY REQUIREMENT:
-            - Every snapshot value must contain at least one specific data point: a number, price, duration, date, name, or URL.
-            - Do NOT write generic advice like "it is recommended to arrive early" without a specific time, source, or attribution.
-            - If you cannot find a specific fact, write: "Confidence: low — [what you found and why it is uncertain]" rather than asserting it as fact.
-            - Include where you found each key fact (site name or URL) in the snapshot value.
-            - If a finding contradicts a threshold stated in the work unit (e.g. an estimate is shorter than the stated minimum), explicitly flag it: "FLAG: [finding] appears to violate the [threshold] constraint."
-            - If your finding remains low-confidence, append a final section exactly titled `Confidence options:` followed by 2-4 bullet options.
-            - Each confidence option must be a concrete next pass the agent can run immediately if the user selects it. Prefer verification, comparison, or gap-closing work over generic "do more research."
-            - Avoid confidence options that only ask the user to type more context unless that missing detail is absolutely essential.
+                ACTION EXECUTION REQUIREMENTS:
+                - Prefer taking the requested action with the allowed tools instead of only describing how someone else could do it.
+                - Verify outcomes with a concrete receipt, confirmation state, subtotal, timestamp, URL, or blocker.
+                - Do not claim success unless the tool results support it. If the action is blocked, say exactly where and why.
 
-            Instructions:
-            1. Call read_objective_snapshot with objective_id \(claimed.objectiveId.uuidString) (and task_id \(claimed.taskId.uuidString) if you need an updated list) before spending tokens on overlapping searches.
-            1a. Call list_dropzone_files — if any user-uploaded files are relevant to this work unit, read them with read_dropzone_file and treat their contents as authoritative user-provided context.
-            2. Use multi_step_search to research gaps or updates for this focused subproblem.
-            3. Write 1-3 objective snapshots that capture durable findings from this work unit. Each value must be human-readable prose sentences — NOT JSON, NOT tool-call format.
-            4. Every snapshot from this work unit must include:
-               - objective_id: \(claimed.objectiveId.uuidString)
-               - task_id: \(claimed.taskId.uuidString)
-               - mark_task_completed: false
-            5. Do not mark the overall task complete from this work unit.
-            6. Finish with a short summary of the strongest findings you gathered.
-            """
+                Instructions:
+                1. Call read_objective_snapshot with objective_id \(claimed.objectiveId.uuidString) (and task_id \(claimed.taskId.uuidString) if you need fresh context before acting).
+                1a. Call list_dropzone_files — if any user-uploaded files are relevant, read them with read_dropzone_file before acting.
+                2. Use the allowed action tools to attempt the task directly. Use multi_step_search only if you need one current fact before acting.
+                3. Write at least one objective snapshot that records the action receipt or blocker. The value must be plain-language prose, not JSON.
+                4. Every snapshot from this work unit must include:
+                   - objective_id: \(claimed.objectiveId.uuidString)
+                   - task_id: \(claimed.taskId.uuidString)
+                   - mark_task_completed: false
+                5. Do not mark the overall task complete from this work unit.
+                6. Finish with a short action receipt summary that states whether the action succeeded, partially succeeded, or was blocked.
+                """
+            } else {
+                systemPrompt = """
+                AgentKVT objective-board mode (tools required). Do not reply with generic chat-assistant disclaimers; you already have the mission in the user message.
+
+                You are \(workerLabel), one member of a parallel objective research team.
+
+                CRITICAL OUTPUT RULES (llama3.2 strict mode):
+                - NEVER write JSON, tool-call syntax, or any structured data as a snapshot value.
+                - NEVER output {"tool_calls": ...} or similar structures as text.
+                - Your final textual response MUST be plain English prose sentences. Do NOT begin your message with `{` or `[`.
+                - To call a tool, use the tool interface; do not write tool-call JSON in your response text.
+
+                \(context)
+
+                Focused work unit: \(claimed.payload.workDescription)
+                Objective ID: \(claimed.objectiveId.uuidString)
+                Task ID: \(claimed.taskId.uuidString)
+                Work Unit ID: \(claimed.workUnitId.uuidString)
+
+                Shared knowledge on the server when this work unit started (avoid duplicating these findings):
+                \(serverSnapshotsContext)
+
+                Do not claim you lack missions or goals — this work unit is your assigned task.
+
+                SPECIFICITY REQUIREMENT:
+                - Every snapshot value must contain at least one specific data point: a number, price, duration, date, name, or URL.
+                - Do NOT write generic advice like "it is recommended to arrive early" without a specific time, source, or attribution.
+                - If you cannot find a specific fact, write: "Confidence: low — [what you found and why it is uncertain]" rather than asserting it as fact.
+                - Include where you found each key fact (site name or URL) in the snapshot value.
+                - If a finding contradicts a threshold stated in the work unit (e.g. an estimate is shorter than the stated minimum), explicitly flag it: "FLAG: [finding] appears to violate the [threshold] constraint."
+                - If your finding remains low-confidence, append a final section exactly titled `Confidence options:` followed by 2-4 bullet options.
+                - Each confidence option must be a concrete next pass the agent can run immediately if the user selects it. Prefer verification, comparison, or gap-closing work over generic "do more research."
+                - Avoid confidence options that only ask the user to type more context unless that missing detail is absolutely essential.
+
+                Instructions:
+                1. Call read_objective_snapshot with objective_id \(claimed.objectiveId.uuidString) (and task_id \(claimed.taskId.uuidString) if you need an updated list) before spending tokens on overlapping searches.
+                1a. Call list_dropzone_files — if any user-uploaded files are relevant to this work unit, read them with read_dropzone_file and treat their contents as authoritative user-provided context.
+                2. Use multi_step_search to research gaps or updates for this focused subproblem.
+                3. Write 1-3 objective snapshots that capture durable findings from this work unit. Each value must be human-readable prose sentences — NOT JSON, NOT tool-call format.
+                4. Every snapshot from this work unit must include:
+                   - objective_id: \(claimed.objectiveId.uuidString)
+                   - task_id: \(claimed.taskId.uuidString)
+                   - mark_task_completed: false
+                5. Do not mark the overall task complete from this work unit.
+                6. Finish with a short summary of the strongest findings you gathered.
+                """
+            }
         }
 
         return AgentTaskRunner.Request(
@@ -721,7 +855,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             taskName: "Objective Work Unit: \(claimed.title.prefix(60))",
             systemPrompt: systemPrompt,
             triggerSchedule: "objective_board",
-            allowedToolIds: ["read_objective_snapshot", "multi_step_search", "write_objective_snapshot", "list_dropzone_files", "read_dropzone_file"],
+            allowedToolIds: allowedToolIds,
             ownerProfileId: nil,
             isEnabled: true,
             lastRunAt: nil,
@@ -756,6 +890,99 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         return t
     }
 
+    private func normalizedTaskKind(raw: String?, description: String) -> String {
+        let normalized = raw?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        if ["research", "action", "synthesis"].contains(normalized) {
+            return normalized
+        }
+        if looksLikeActionTask(description) {
+            return "action"
+        }
+        if prefersDirectSynthesis(rootTaskDescription: description) {
+            return "synthesis"
+        }
+        return "research"
+    }
+
+    private func normalizedObjectiveToolIds(
+        explicit: [String]?,
+        taskKind: String,
+        description: String,
+        isSynthesis: Bool
+    ) -> [String] {
+        if isSynthesis {
+            return Array(NSOrderedSet(array: Constants.researchToolIds)) as? [String] ?? Constants.researchToolIds
+        }
+
+        let base = Constants.objectiveBaseToolIds
+        let provided = (explicit ?? [])
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        let combined: [String]
+        if !provided.isEmpty {
+            combined = base + provided
+        } else if taskKind == "action" {
+            combined = base + inferredActionToolIds(from: description)
+        } else {
+            combined = Constants.researchToolIds
+        }
+
+        var normalized = Array(NSOrderedSet(array: combined)) as? [String] ?? combined
+        if taskKind == "action" && description.range(of: #"\b(verify|confirm|price|availability|hours|current|latest)\b"#, options: .regularExpression, range: nil, locale: nil) != nil {
+            normalized.append("multi_step_search")
+            normalized = Array(NSOrderedSet(array: normalized)) as? [String] ?? normalized
+        }
+        return normalized
+    }
+
+    private func inferredActionToolIds(from description: String) -> [String] {
+        let normalized = normalizedObjectiveText(description)
+        var ids: [String] = []
+
+        if normalized.range(of: #"\b(site_scout|site scout|browser|website|web site|web form|cart|checkout|pickup|reserve|reservation|book|buy|purchase|order|submit|fill out|click|navigate|log in|login)\b"#, options: .regularExpression) != nil {
+            ids.append("site_scout")
+        }
+        if normalized.range(of: #"\b(email|notify|notification|alert)\b"#, options: .regularExpression) != nil {
+            ids.append("send_notification_email")
+        }
+        if normalized.range(of: #"\b(remind|reminder|follow up later|follow-up later)\b"#, options: .regularExpression) != nil {
+            ids.append("write_reminder")
+        }
+        if normalized.range(of: #"\b(calendar|availability|schedule)\b"#, options: .regularExpression) != nil {
+            ids.append("read_calendar")
+        }
+        if normalized.range(of: #"\b(github|repository|repo|pull request|issue)\b"#, options: .regularExpression) != nil {
+            ids.append("github_agent")
+        }
+        if normalized.range(of: #"\b(local file|read file|document|pdf)\b"#, options: .regularExpression) != nil {
+            ids.append("read_local_file")
+        }
+        if normalized.range(of: #"\b(disk usage|disk space|uptime|memory usage|system diagnostic|brew outdated)\b"#, options: .regularExpression) != nil {
+            ids.append("run_shell_command")
+        }
+        if normalized.range(of: #"\b(life context|personal context|bee ai|bee)\b"#, options: .regularExpression) != nil {
+            ids.append("get_life_context")
+        }
+
+        return ids.isEmpty ? ["site_scout"] : ids
+    }
+
+    private func normalizedDoneWhen(_ raw: String?, taskKind: String) -> String? {
+        let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let trimmed, !trimmed.isEmpty {
+            return trimmed
+        }
+
+        switch taskKind {
+        case "action":
+            return "Attempt the requested action with the allowed tools, verify what happened, and record a receipt or blocker."
+        case "synthesis":
+            return "Write the final decision or recommendation into an objective snapshot and mark the task complete."
+        default:
+            return "Capture concrete findings for this task in objective snapshots with enough detail to guide the next move."
+        }
+    }
+
     private func prefersDirectSynthesis(rootTaskDescription: String) -> Bool {
         let normalized = normalizedObjectiveText(rootTaskDescription)
         guard !normalized.isEmpty else { return false }
@@ -783,6 +1010,13 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         ]
 
         return directSynthesisMarkers.contains { normalized.contains($0) }
+    }
+
+    private func looksLikeActionTask(_ description: String) -> Bool {
+        normalizedObjectiveText(description).range(
+            of: #"\b(site_scout|site scout|add to cart|checkout|pickup|reserve|reservation|book|buy|purchase|order|submit|fill out|click|navigate|log in|login|send email|notify|notification|alert|create reminder|reminder|schedule)\b"#,
+            options: .regularExpression
+        ) != nil
     }
 
     private func concreteResearchDirective(_ description: String) -> Bool {
@@ -843,6 +1077,9 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         workUnitDescription: String,
         objectiveId: UUID,
         taskId: UUID,
+        taskKind: String,
+        allowedToolIds: [String],
+        doneWhen: String?,
         isSynthesis: Bool
     ) -> String {
         let goalBlock: String = {
@@ -858,9 +1095,16 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             """
         }()
 
-        let synthesisNote = isSynthesis
-            ? "This is the SYNTHESIS step: merge findings, call write_objective_snapshot with mark_task_completed true on the final summary key, and write substantive traveler guidance."
-            : "This is a RESEARCH step: call read_objective_snapshot, multi_step_search as needed, write_objective_snapshot (mark_task_completed false)."
+        let executionNote: String
+        if isSynthesis {
+            executionNote = "This is the SYNTHESIS step: merge findings, call write_objective_snapshot with mark_task_completed true on the final summary key, and write substantive guidance."
+        } else if taskKind == "action" {
+            executionNote = "This is an ACTION step: use the allowed tools to attempt the requested action, verify the result, and write_objective_snapshot with mark_task_completed false."
+        } else {
+            executionNote = "This is a RESEARCH step: call read_objective_snapshot, multi_step_search as needed, write_objective_snapshot with mark_task_completed false."
+        }
+        let doneWhenBlock = doneWhen.map { "DONE WHEN:\n\($0)" } ?? "DONE WHEN:\nRecord concrete progress for this task in objective snapshots."
+        let toolsBlock = "ALLOWED TOOLS FOR THIS WORK UNIT:\n\(allowedToolIds.joined(separator: ", "))"
 
         return """
         \(goalBlock)
@@ -871,7 +1115,11 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         WORK UNIT YOU MUST EXECUTE NOW:
         \(workUnitDescription)
 
-        \(synthesisNote)
+        \(executionNote)
+
+        \(doneWhenBlock)
+
+        \(toolsBlock)
 
         objective_id=\(objectiveId.uuidString)
         task_id=\(taskId.uuidString)
@@ -885,6 +1133,10 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         taskId: UUID,
         rootTaskDescription: String,
         parentObjectiveGoal: String?,
+        taskKind: String,
+        allowedToolIds: [String],
+        requiredCapabilities: [String],
+        doneWhen: String?,
         planningRound: Int,
         completedSummaries: [String]
     ) async -> Int {
@@ -907,6 +1159,10 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                     planningRound: planningRound,
                     rootTaskDescription: rootTaskDescription,
                     parentObjectiveGoal: parentObjectiveGoal,
+                    taskKind: taskKind,
+                    allowedToolIds: allowedToolIds,
+                    requiredCapabilities: requiredCapabilities,
+                    doneWhen: doneWhen,
                     priority: planningRound == 1 ? 1.0 : 0.9
                 )
                 created += 1
@@ -1063,7 +1319,11 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         objectiveId: UUID,
         taskId: UUID,
         title: String,
-        parentObjectiveGoal: String?
+        parentObjectiveGoal: String?,
+        taskKind: String,
+        allowedToolIds: [String],
+        requiredCapabilities: [String],
+        doneWhen: String?
     ) throws -> WorkUnit {
         let context = freshContext()
         if let existing = try objectiveWorkUnits(in: context, objectiveId: objectiveId, taskId: taskId)
@@ -1076,6 +1336,10 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             taskId: taskId,
             rootTaskDescription: title,
             parentObjectiveGoal: parentObjectiveGoal,
+            taskKind: taskKind,
+            allowedToolIds: allowedToolIds,
+            requiredCapabilities: requiredCapabilities,
+            doneWhen: doneWhen,
             workDescription: title,
             planningRound: 0,
             workType: Constants.rootType,
@@ -1103,7 +1367,11 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         objectiveId: UUID,
         taskId: UUID,
         rootTaskDescription: String,
-        parentObjectiveGoal: String?
+        parentObjectiveGoal: String?,
+        taskKind: String,
+        allowedToolIds: [String],
+        requiredCapabilities: [String],
+        doneWhen: String?
     ) throws -> WorkUnit {
         let context = freshContext()
         if let existing = try objectiveWorkUnits(in: context, objectiveId: objectiveId, taskId: taskId)
@@ -1116,6 +1384,10 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             taskId: taskId,
             rootTaskDescription: rootTaskDescription,
             parentObjectiveGoal: parentObjectiveGoal,
+            taskKind: taskKind,
+            allowedToolIds: allowedToolIds,
+            requiredCapabilities: requiredCapabilities,
+            doneWhen: doneWhen,
             workDescription: title,
             planningRound: 99,
             workType: Constants.synthesisType,
@@ -1149,6 +1421,10 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         planningRound: Int,
         rootTaskDescription: String,
         parentObjectiveGoal: String?,
+        taskKind: String,
+        allowedToolIds: [String],
+        requiredCapabilities: [String],
+        doneWhen: String?,
         priority: Double
     ) throws -> WorkUnit {
         let context = freshContext()
@@ -1157,6 +1433,10 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             taskId: taskId,
             rootTaskDescription: rootTaskDescription,
             parentObjectiveGoal: parentObjectiveGoal,
+            taskKind: taskKind,
+            allowedToolIds: allowedToolIds,
+            requiredCapabilities: requiredCapabilities,
+            doneWhen: doneWhen,
             workDescription: title,
             planningRound: planningRound,
             workType: workType,
@@ -1207,6 +1487,10 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             taskId: unit.sourceTaskId ?? UUID(),
             rootTaskDescription: unit.title,
             parentObjectiveGoal: nil,
+            taskKind: nil,
+            allowedToolIds: nil,
+            requiredCapabilities: nil,
+            doneWhen: nil,
             workDescription: unit.title,
             planningRound: 0,
             workType: unit.workType,
@@ -1528,7 +1812,19 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                 objectiveId: objId,
                 taskId: taskId,
                 rootTaskDescription: payload.rootTaskDescription,
-                parentObjectiveGoal: payload.parentObjectiveGoal
+                parentObjectiveGoal: payload.parentObjectiveGoal,
+                taskKind: normalizedTaskKind(raw: payload.taskKind, description: payload.rootTaskDescription),
+                allowedToolIds: normalizedObjectiveToolIds(
+                    explicit: payload.allowedToolIds,
+                    taskKind: normalizedTaskKind(raw: payload.taskKind, description: payload.rootTaskDescription),
+                    description: payload.rootTaskDescription,
+                    isSynthesis: false
+                ),
+                requiredCapabilities: payload.requiredCapabilities ?? [],
+                doneWhen: normalizedDoneWhen(
+                    payload.doneWhen,
+                    taskKind: normalizedTaskKind(raw: payload.taskKind, description: payload.rootTaskDescription)
+                )
             ))
         }
         return orphans
@@ -1553,7 +1849,11 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                 objectiveId: orphan.objectiveId,
                 taskId: orphan.taskId,
                 rootTaskDescription: orphan.rootTaskDescription,
-                parentObjectiveGoal: orphan.parentObjectiveGoal
+                parentObjectiveGoal: orphan.parentObjectiveGoal,
+                taskKind: orphan.taskKind,
+                allowedToolIds: orphan.allowedToolIds,
+                requiredCapabilities: orphan.requiredCapabilities,
+                doneWhen: orphan.doneWhen
             )
             try await waitForSynthesisToSettle(objectiveId: orphan.objectiveId, taskId: orphan.taskId)
 

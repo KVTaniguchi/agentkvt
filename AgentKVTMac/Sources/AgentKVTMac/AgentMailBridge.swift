@@ -81,6 +81,10 @@ public actor AgentMailBridge {
         return envelope.result
     }
 
+    func getInboxId() async -> String? {
+        return try? await ensureInbox().inboxId
+    }
+
     func listUnreadMessages(limit: Int = 25) async throws -> [MessageSummary] {
         let inbox = try await ensureInbox()
         let payload: [String: Any] = [

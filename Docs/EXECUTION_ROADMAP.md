@@ -81,7 +81,7 @@ All major components are implemented with real business logic. The system runs i
 | Shared data model | Done | Core entities in ManagerCore + Rails schema. |
 | iOS objective UI | Done | Full objective lifecycle, research results, and chat. |
 | macOS brain | Done | Event-driven scheduler, ObjectiveExecutionPool, AgentTaskRunner. |
-| Local LLM usage | Done | Ollama with tool-calling (llama4:latest default). |
+| Local LLM usage | Done | Ollama with tool-calling (qwen3.6:35b default). |
 | Rails backend | Done | Full API surface; objective planning + task dispatch. |
 | Structured audit logging | Done | Phase-based AgentLog in backend; exposed in iOS. |
 | Research pipeline | Done | multi_step_search, objective snapshots, research delta tracking. |

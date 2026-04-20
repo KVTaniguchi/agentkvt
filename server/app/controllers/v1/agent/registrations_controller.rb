@@ -18,24 +18,20 @@ module V1
         )
         reg.save!
 
+        if registration_params[:email_address].present?
+          identity = current_workspace.agent_identity || current_workspace.create_agent_identity!(display_name: "AgentKVT")
+          identity.update!(from_email: registration_params[:email_address])
+        end
+
         render json: { agent_registration: serialize_registration(reg) }, status: reg.previously_new_record? ? :created : :ok
       end
 
       private
 
       def registration_params
-        params.require(:agent_registration).permit(:agent_id, :webhook_url, capabilities: [])
+        params.require(:agent_registration).permit(:agent_id, :webhook_url, :email_address, capabilities: [])
       end
 
-      def serialize_registration(reg)
-        {
-          id: reg.id,
-          agent_id: reg.agent_id,
-          capabilities: reg.capabilities,
-          webhook_url: reg.webhook_url,
-          status: reg.status,
-          last_seen_at: reg.last_seen_at&.iso8601
-        }
       end
     end
   end

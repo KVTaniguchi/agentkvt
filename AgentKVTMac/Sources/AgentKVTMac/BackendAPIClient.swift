@@ -90,7 +90,6 @@ public struct BackendTask: Codable, Sendable {
 
 
 
-
 public struct BackendAgentLog: Codable, Sendable {
     public let id: UUID
     public let workspaceId: UUID
@@ -136,6 +135,26 @@ private struct BackendAgentLogEnvelope: Codable {
 
 private struct BackendAgentLogsEnvelope: Codable {
     let agentLogs: [BackendAgentLog]
+}
+
+public struct BackendAgentLogDigestError: Codable, Sendable {
+    public let phase: String
+    public let content: String
+    public let count: Int
+    public let latestAt: String?
+}
+
+public struct BackendAgentLogDigest: Codable, Sendable {
+    public let windowMinutes: Int
+    public let totalEntries: Int
+    public let byPhase: [String: Int]
+    public let errors: [BackendAgentLogDigestError]
+    public let activeObjectiveIds: [String]
+    public let toolUsage: [String: Int]
+}
+
+private struct BackendAgentLogDigestEnvelope: Codable {
+    let digest: BackendAgentLogDigest
 }
 
 public struct BackendResearchSnapshot: Codable, Sendable {
@@ -230,12 +249,44 @@ public actor BackendAPIClient {
     }
 
     /// Fetch recent agent logs from the workspace-wide log endpoint.
-    public func fetchAgentLogs(limit: Int = 100) async throws -> [BackendAgentLog] {
+    public func fetchAgentLogs(
+        limit: Int = 100,
+        phases: [String]? = nil,
+        sinceMinutes: Int? = nil,
+        objectiveId: UUID? = nil,
+        taskId: UUID? = nil,
+        toolName: String? = nil
+    ) async throws -> [BackendAgentLog] {
+        var queryItems = [URLQueryItem(name: "limit", value: "\(min(limit, 500))")]
+        if let phases, !phases.isEmpty {
+            queryItems.append(URLQueryItem(name: "phases", value: phases.joined(separator: ",")))
+        }
+        if let sinceMinutes, sinceMinutes > 0 {
+            queryItems.append(URLQueryItem(name: "since_minutes", value: "\(sinceMinutes)"))
+        }
+        if let objectiveId {
+            queryItems.append(URLQueryItem(name: "objective_id", value: objectiveId.uuidString))
+        }
+        if let taskId {
+            queryItems.append(URLQueryItem(name: "task_id", value: taskId.uuidString))
+        }
+        if let toolName, !toolName.isEmpty {
+            queryItems.append(URLQueryItem(name: "tool_name", value: toolName))
+        }
         let data = try await performRequest(
             path: "v1/agent_logs",
-            queryItems: [URLQueryItem(name: "limit", value: "\(min(limit, 500))")]
+            queryItems: queryItems
         )
         return try decoder.decode(BackendAgentLogsEnvelope.self, from: data).agentLogs
+    }
+
+    /// Fetch a pre-aggregated digest of recent agent logs.
+    public func fetchAgentLogDigest(sinceMinutes: Int = 120) async throws -> BackendAgentLogDigest {
+        let data = try await performRequest(
+            path: "v1/agent_logs/digest",
+            queryItems: [URLQueryItem(name: "since_minutes", value: "\(sinceMinutes)")]
+        )
+        return try decoder.decode(BackendAgentLogDigestEnvelope.self, from: data).digest
     }
 
     public func createAgentLog(
@@ -345,12 +396,14 @@ public actor BackendAPIClient {
     public func registerAgent(
         agentId: String,
         capabilities: [String],
-        webhookURL: String?
+        webhookURL: String?,
+        emailAddress: String? = nil
     ) async throws {
         var body: [String: Any] = [
             "agent_registration": [
                 "agent_id": agentId,
-                "capabilities": capabilities
+                "capabilities": capabilities,
+                "email_address": emailAddress as Any
             ] as [String: Any]
         ]
         if let webhookURL {

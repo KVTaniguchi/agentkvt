@@ -138,7 +138,7 @@ public final class ChatRunner: @unchecked Sendable {
                     }
                     _ = try? await backendClient.createAgentLog(
                         phase: payload.phase,
-                        content: payload.content,
+                        content: ChatRunner.truncateLogContent(payload.content, phase: payload.phase),
                         metadata: eventMetadata
                     )
                 }
@@ -150,7 +150,7 @@ public final class ChatRunner: @unchecked Sendable {
             )
             _ = try? await backendClient.createAgentLog(
                 phase: "chat_outcome",
-                content: result,
+                content: ChatRunner.truncateLogContent(result, phase: "chat_outcome"),
                 metadata: metadata
             )
             return true
@@ -204,6 +204,17 @@ public final class ChatRunner: @unchecked Sendable {
             content: payload.content,
             toolName: payload.toolName
         )
+    }
+
+    /// Phases whose log content is preserved in full (never truncated).
+    private static let fullContentPhases: Set<String> = ["error", "warning", "start", "outcome"]
+
+    /// Caps log content for high-volume phases to keep the agent_logs table lean.
+    static func truncateLogContent(_ content: String, phase: String, maxLength: Int = 500) -> String {
+        guard !fullContentPhases.contains(phase) else { return content }
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count > maxLength else { return trimmed }
+        return String(trimmed.prefix(maxLength - 1)) + "…"
     }
 
     private static func logPayload(for event: AgentLoop.Event) -> (phase: String, content: String, toolName: String?)? {

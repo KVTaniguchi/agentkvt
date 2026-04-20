@@ -34,6 +34,16 @@ struct IOSBackendFamilyMember: Codable, Sendable {
     let updatedAt: Date
 }
 
+struct IOSBackendWorkspace: Codable, Sendable {
+    let id: UUID
+    let name: String
+    let slug: String
+    let serverMode: String
+    let agentEmail: String?
+    let createdAt: Date
+    let updatedAt: Date
+}
+
 
 enum IOSBackendJSONValue: Codable, Sendable {
     case string(String)
@@ -692,6 +702,7 @@ struct ObjectiveGuidanceProvider {
 }
 
 struct IOSBackendBootstrap: Codable, Sendable {
+    let workspace: IOSBackendWorkspace?
     let familyMembers: [IOSBackendFamilyMember]
     let lifeContextEntries: [IOSBackendLifeContextEntry]
     let serverTime: Date?

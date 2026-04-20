@@ -19,7 +19,9 @@ Rails.application.routes.draw do
     resources :client_telemetry_snapshots, only: [:create]
 
     resources :life_context, only: [:index, :update], controller: "life_context_entries", param: :key
-    resources :agent_logs, only: [:index]
+    resources :agent_logs, only: [:index] do
+      get :digest, on: :collection
+    end
     resources :objectives, only: [:index, :create, :show, :update, :destroy] do
       post :feedback, on: :member
       post :approve_plan, on: :member

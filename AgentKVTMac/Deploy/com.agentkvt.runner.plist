@@ -93,7 +93,7 @@
         <key>RUN_SCHEDULER</key>
         <string>1</string>
         <!-- Override model and endpoint if needed -->
-        <!-- <key>OLLAMA_MODEL</key><string>llama3.1:70b</string> -->
+        <!-- <key>OLLAMA_MODEL</key><string>qwen3.6:35b</string> -->
         <!-- <key>OLLAMA_BASE_URL</key><string>http://localhost:11434</string> -->
         <!-- <key>NOTIFICATION_EMAIL</key><string>you@example.com</string> -->
         <!-- <key>AGENTKVT_INBOX_DIR</key><string>/Users/YOURUSERNAME/.agentkvt/inbox</string> -->

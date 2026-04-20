@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct AgentSensesView: View {
+    @Environment(WorkspaceStore.self) private var workspaceStore
     @State private var shareLocation: Bool = false
     @State private var shareCalendar: Bool = false
     @State private var isSyncing: Bool = false
@@ -8,10 +9,23 @@ struct AgentSensesView: View {
 
     var body: some View {
         Form {
-            Section(header: Text("Agent Identity (Email)")) {
-                Text("Placeholder for Agent Email configuration.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+            Section(
+                header: Text("Agent Identity (Email)"),
+                footer: Text("Send mailing lists, newsletters, or requests here. The agent will process and summarize them in the Log.")
+            ) {
+                if let email = workspaceStore.workspace?.agentEmail {
+                    HStack {
+                        Image(systemName: "envelope.fill")
+                            .foregroundStyle(.blue)
+                        Text(email)
+                            .font(.body)
+                            .textSelection(.enabled)
+                    }
+                } else {
+                    Text("No agent email configured.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Section(
@@ -76,6 +90,9 @@ struct AgentSensesView: View {
             }
         }
         .navigationTitle("Agent Configuration")
+        .task {
+            await workspaceStore.refresh()
+        }
     }
 
     private func syncSnapshot() async {

@@ -11,6 +11,7 @@ module ApiSerialization
       name: workspace.name,
       slug: workspace.slug,
       server_mode: workspace.server_mode,
+      agent_email: workspace.agent_identity&.from_email,
       created_at: iso8601(workspace.created_at),
       updated_at: iso8601(workspace.updated_at)
     }
@@ -167,6 +168,10 @@ module ApiSerialization
       objective_id: task.objective_id,
       source_feedback_id: task.source_feedback_id,
       description: task.description,
+      task_kind: task.task_kind,
+      allowed_tool_ids: task.allowed_tool_ids,
+      required_capabilities: task.required_capabilities,
+      done_when: task.done_when,
       status: task.status,
       result_summary: task.result_summary,
       created_at: iso8601(task.created_at),
@@ -255,6 +260,17 @@ module ApiSerialization
     }
     payload[:file_base64] = Base64.strict_encode64(inbound_file.file_data) if include_data
     payload
+  end
+
+  def serialize_registration(reg)
+    {
+      id: reg.id,
+      agent_id: reg.agent_id,
+      capabilities: reg.capabilities,
+      webhook_url: reg.webhook_url,
+      status: reg.status,
+      last_seen_at: iso8601(reg.last_seen_at)
+    }
   end
 
   def iso8601(value)

@@ -37,13 +37,13 @@ struct IOSBackendSettingsTests {
         let src = IOSBackendSettingsSource(
             environment: [
                 "OLLAMA_BASE_URL": "http://10.0.0.2:11434",
-                "OLLAMA_MODEL": "llama4"
+                "OLLAMA_MODEL": "qwen3.6"
             ],
             groupContainerURL: nil
         )
         let s = IOSBackendSettings.load(from: src)
         #expect(s.isDirectOllamaConfigured == true)
-        #expect(s.ollamaModel == "llama4")
+        #expect(s.ollamaModel == "qwen3.6")
     }
 
     @Test("AGENTKVT_ keys take precedence over generic OLLAMA_ keys")

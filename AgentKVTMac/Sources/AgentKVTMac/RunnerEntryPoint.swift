@@ -146,6 +146,7 @@ public func runAgentKVTMacRunner() async {
     if settings.runScheduler {
         if let backendClient {
             registry.register(makeFetchAgentLogsTool(backendClient: backendClient))
+            registry.register(makeFetchAgentLogDigestTool(backendClient: backendClient))
             registry.register(makeReadObjectiveSnapshotTool(backendClient: backendClient))
             registry.register(makeWriteObjectiveSnapshotTool(backendClient: backendClient))
         } else {
@@ -167,6 +168,7 @@ public func runAgentKVTMacRunner() async {
     } else {
         if let backendClient {
             registry.register(makeFetchAgentLogsTool(backendClient: backendClient))
+            registry.register(makeFetchAgentLogDigestTool(backendClient: backendClient))
         } else {
             registry.register(makeFetchAgentLogsTool(modelContext: context))
         }
@@ -307,10 +309,12 @@ private func runScheduler(
         backgroundTasks.append(Task(priority: .utility) {
             while !Task.isCancelled {
                 do {
+                    let email = await agentMailBridge?.getInboxId() ?? settings.imapUsername
                     try await backendClient.registerAgent(
                         agentId: agentId,
                         capabilities: agentCapabilities,
-                        webhookURL: webhookURLString
+                        webhookURL: webhookURLString,
+                        emailAddress: email
                     )
                 } catch {
                     print("[Scheduler] agent registration failed: \(error)")

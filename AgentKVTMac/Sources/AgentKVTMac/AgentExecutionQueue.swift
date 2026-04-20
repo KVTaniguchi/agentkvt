@@ -179,6 +179,10 @@ struct TaskSearchPayload: Sendable {
     let taskId: String
     let objectiveId: String
     let description: String
+    let taskKind: String?
+    let allowedToolIds: [String]
+    let requiredCapabilities: [String]
+    let doneWhen: String?
     /// Full parent objective goal from Rails (`objective.goal`); optional for older webhook clients.
     let objectiveGoal: String?
 
@@ -204,11 +208,37 @@ struct TaskSearchPayload: Sendable {
         self.taskId = taskId
         self.objectiveId = objectiveId
         self.description = description
+        self.taskKind = Self.normalizedString(obj["task_kind"])
+        self.allowedToolIds = Self.stringArray(obj["allowed_tool_ids"])
+        self.requiredCapabilities = Self.stringArray(obj["required_capabilities"])
+        self.doneWhen = Self.normalizedString(obj["done_when"])
         if let g = obj["objective_goal"] as? String {
             let t = g.trimmingCharacters(in: .whitespacesAndNewlines)
             self.objectiveGoal = t.isEmpty ? nil : t
         } else {
             self.objectiveGoal = nil
         }
+    }
+
+    private static func normalizedString(_ raw: Any?) -> String? {
+        guard let value = raw as? String else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private static func stringArray(_ raw: Any?) -> [String] {
+        let values: [Any]
+        switch raw {
+        case let array as [Any]:
+            values = array
+        case let string as String:
+            values = [string]
+        default:
+            values = []
+        }
+
+        return values
+            .map { String(describing: $0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
     }
 }

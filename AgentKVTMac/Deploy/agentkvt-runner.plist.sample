@@ -8,7 +8,7 @@
 
     <!-- Recommended for the current strongest-model Ollama path. -->
     <key>OLLAMA_MODEL</key>
-    <string>llama4:latest</string>
+    <string>qwen3.6:35b</string>
 
     <!-- Optional overrides -->
     <key>OLLAMA_BASE_URL</key>

@@ -25,7 +25,8 @@ private func makeAgentLogsTool(handler: @escaping ([String: Any]) async -> Strin
             failures, detect repeated errors, inspect which tools were called and what they \
             returned, or understand why an action produced unexpected output. Returns \
             timestamped log entries with phase labels (start, tool_call, \
-            tool_result, error, warning, outcome).
+            tool_result, error, warning, outcome). Filters are applied server-side \
+            for efficiency — use them to narrow results before fetching.
             """,
         parameters: .init(
             type: "object",
@@ -41,6 +42,18 @@ private func makeAgentLogsTool(handler: @escaping ([String: Any]) async -> Strin
                 "since_minutes": .init(
                     type: "integer",
                     description: "How far back to look in minutes. Default 120."
+                ),
+                "objective_id": .init(
+                    type: "string",
+                    description: "Optional UUID — return only logs tied to this objective."
+                ),
+                "task_id": .init(
+                    type: "string",
+                    description: "Optional UUID — return only logs tied to this task."
+                ),
+                "tool_name": .init(
+                    type: "string",
+                    description: "Optional tool name — return only logs from this tool (e.g. \"multi_step_search\")."
                 )
             ],
             required: []
@@ -89,30 +102,34 @@ enum FetchAgentLogsHandler {
         }
     }
 
-    // MARK: Remote (backend)
+    // MARK: Remote (backend) — filtering is done server-side
 
     static func fetchRemote(backendClient: BackendAPIClient, args: [String: Any]) async -> String {
         let phases = parsePhasesArg(args["phases"])
         let limit = parseLimit(args["limit"])
         let sinceMinutes = parseSinceMinutes(args["since_minutes"])
-        let since = Date().addingTimeInterval(-Double(sinceMinutes) * 60)
+        let objectiveId = parseUUID(args["objective_id"])
+        let taskId = parseUUID(args["task_id"])
+        let toolName = args["tool_name"] as? String
 
         do {
-            let logs = try await backendClient.fetchAgentLogs(limit: limit)
-            var entries = logs
-                .filter { $0.timestamp >= since }
-                .map { log in
-                    LogEntry(
-                        timestamp: log.timestamp,
-                        phase: log.phase,
-                        toolName: log.metadataJson["tool_name"],
-                        content: log.content
-                    )
-                }
-            if !phases.isEmpty {
-                entries = entries.filter { phases.contains($0.phase) }
+            let logs = try await backendClient.fetchAgentLogs(
+                limit: limit,
+                phases: phases.isEmpty ? nil : phases,
+                sinceMinutes: sinceMinutes,
+                objectiveId: objectiveId,
+                taskId: taskId,
+                toolName: toolName
+            )
+            let entries = logs.map { log in
+                LogEntry(
+                    timestamp: log.timestamp,
+                    phase: log.phase,
+                    toolName: log.metadataJson["tool_name"],
+                    content: log.content
+                )
             }
-            return format(logs: Array(entries.prefix(limit)), sinceMinutes: sinceMinutes)
+            return format(logs: entries, sinceMinutes: sinceMinutes)
         } catch {
             return "Error fetching agent logs: \(error)"
         }
@@ -169,6 +186,11 @@ enum FetchAgentLogsHandler {
         else if let d = value as? Double { raw = Int(d) }
         else { raw = 120 }
         return max(raw, 1)
+    }
+
+    private static func parseUUID(_ value: Any?) -> UUID? {
+        guard let str = value as? String, !str.isEmpty else { return nil }
+        return UUID(uuidString: str)
     }
 
     private static func timeString(_ date: Date) -> String {

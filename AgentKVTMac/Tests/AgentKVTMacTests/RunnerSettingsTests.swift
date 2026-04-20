@@ -16,7 +16,7 @@ struct RunnerSettingsTests {
         let settings = RunnerSettings.load(from: source)
 
         #expect(settings.runScheduler)
-        #expect(settings.ollamaModel == "llama4:latest")
+        #expect(settings.ollamaModel == "qwen3.6:35b")
         #expect(settings.webhookPort == 8765)
         #expect(settings.agentWebhookPublicURL == nil)
         #expect(settings.schedulerIntervalSeconds == 60)
@@ -74,7 +74,7 @@ struct RunnerSettingsTests {
         let configFile = tempDirectory.appending(path: "runner.plist", directoryHint: .notDirectory)
         let plist: [String: Any] = [
             "RUN_SCHEDULER": false,
-            "OLLAMA_MODEL": "llama4:latest",
+            "OLLAMA_MODEL": "qwen3.6:35b",
             "OLLAMA_API_KEY": "config-key",
             "SCHEDULER_INTERVAL_SECONDS": 45
         ]

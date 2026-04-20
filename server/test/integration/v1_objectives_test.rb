@@ -190,6 +190,10 @@ class V1ObjectivesTest < ActionDispatch::IntegrationTest
     assert_equal objective.id.to_s, body.dig("objective", "id")
     assert_equal 1,                 body["tasks"].length
     assert_equal "Search prices",   body["tasks"].first["description"]
+    assert_equal "research",        body["tasks"].first["task_kind"]
+    assert_includes body["tasks"].first["allowed_tool_ids"], "multi_step_search"
+    assert_includes body["tasks"].first["required_capabilities"], "objective_research"
+    assert_not_nil                  body["tasks"].first["done_when"]
     assert_equal 1,                 body["research_snapshots"].length
     assert_equal "cheapest_fare",   body["research_snapshots"].first["key"]
     assert_equal "$299",            body["research_snapshots"].first["value"]

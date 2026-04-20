@@ -48,6 +48,10 @@ class MacAgentClient
       task_id: task.id,
       objective_id: task.objective_id,
       description: task.description,
+      task_kind: task.task_kind,
+      allowed_tool_ids: task.allowed_tool_ids,
+      required_capabilities: task.required_capabilities,
+      done_when: task.done_when.to_s.byteslice(0, 500),
       # Full parent objective so the Mac agent can ground research/synthesis (task.description alone is often a narrow sub-line).
       objective_goal: goal.byteslice(0, 20_000),
       # Default to a single search step. Webhook-triggered missions on the Mac

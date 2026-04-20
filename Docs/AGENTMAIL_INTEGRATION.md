@@ -83,6 +83,7 @@ through AgentMail and remember the inbox id locally in
 4. The existing `EmailIngestor` and `incoming_email_trigger` path continues to
    work without needing a second ingestion architecture.
 5. Imported messages are relabeled in AgentMail as `processed` and `read`.
+6. **Agent Identity Sync**: As part of its 15-second heartbeat (`RegistrationsController#upsert`), the Mac runner passes its resolved AgentMail inbox ID (email address) to the server. The server automatically upserts this setting into the workspace's persistent `AgentIdentity#from_email`, making the remote identity available securely to the iOS UI.
 
 ## Sending Notifications Through AgentMail
 

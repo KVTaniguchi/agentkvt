@@ -145,13 +145,25 @@ private final class BackendStubState: @unchecked Sendable {
     func recordFailedTaskMessage(from request: URLRequest) -> String? {
         guard
             let data = requestBodyData(from: request),
-            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let task = object["task"] as? [String: Any],
-            let message = task["error_message"] as? String
+            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else {
             return nil
         }
 
+        let message: String? = {
+            if let task = object["task"] as? [String: Any] {
+                return task["error_message"] as? String ?? task["errorMessage"] as? String
+            }
+            if let task = object["task"] as? [String: String] {
+                return task["error_message"] ?? task["errorMessage"]
+            }
+            if let task = object["task"] as? NSDictionary {
+                return task["error_message"] as? String ?? task["errorMessage"] as? String
+            }
+            return nil
+        }()
+
+        guard let message else { return nil }
         lock.lock()
         failedTaskMessages.append(message)
         lock.unlock()
@@ -553,101 +565,99 @@ func supervisorRetriesTransientSynthesisSnapshotTimeout() async throws {
     )
 }
 
-@Suite(.serialized)
-struct ObjectiveExecutionPoolFailureRecoveryTests {
-    @Test("Supervisor failure marks the backend task failed instead of leaving it stuck in progress")
-    func supervisorFailureTransitionsBackendTaskOutOfInProgress() async throws {
-        let (container, context) = try makeContainer()
-        let objectiveId = UUID()
-        let taskId = UUID()
-        let taskDescription = "Turn the current research into a family-ready summary"
-        let objectiveGoal = "Turn the current research into a recommendation with the best next move."
+@Test("Supervisor failure marks the backend task failed instead of leaving it stuck in progress")
+func supervisorFailureTransitionsBackendTaskOutOfInProgress() async throws {
+    let (container, context) = try makeContainer()
+    let objectiveId = UUID()
+    let taskId = UUID()
+    let taskDescription = "Turn the current research into a family-ready summary"
+    let objectiveGoal = "Turn the current research into a recommendation with the best next move."
 
-        let backendState = BackendStubState()
-        let backendHost = "objective-execution-failure.example.test"
-        ObjectiveExecutionBackendURLProtocol.setHandler(forHost: backendHost) { request in
-            guard let url = request.url else {
-                throw URLError(.badURL)
-            }
+    let backendState = BackendStubState()
+    let backendHost = "objective-execution-failure.example.test"
+    ObjectiveExecutionBackendURLProtocol.setHandler(forHost: backendHost) { request in
+        guard let url = request.url else {
+            throw URLError(.badURL)
+        }
 
-            let okResponse = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!
-            let createdResponse = HTTPURLResponse(url: url, statusCode: 201, httpVersion: nil, headerFields: nil)!
+        let okResponse = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!
+        let createdResponse = HTTPURLResponse(url: url, statusCode: 201, httpVersion: nil, headerFields: nil)!
 
-            switch (request.httpMethod ?? "GET", url.path) {
-            case ("GET", "/v1/agent/objectives/\(objectiveId.uuidString)/research_snapshots"):
-                return (okResponse, makeResearchSnapshotsEnvelopeData())
+        switch (request.httpMethod ?? "GET", url.path) {
+        case ("GET", "/v1/agent/objectives/\(objectiveId.uuidString)/research_snapshots"):
+            return (okResponse, makeResearchSnapshotsEnvelopeData())
 
-            case ("POST", "/v1/agent/logs"):
-                _ = backendState.recordAgentLogContent(from: request)
-                return (createdResponse, makeAgentLogEnvelopeData(request: request))
+        case ("POST", "/v1/agent/logs"):
+            _ = backendState.recordAgentLogContent(from: request)
+            return (createdResponse, makeAgentLogEnvelopeData(request: request))
 
-            case ("POST", "/v1/agent/objectives/\(objectiveId.uuidString)/tasks/\(taskId.uuidString)/fail"):
-                let message = backendState.recordFailedTaskMessage(from: request) ?? "unknown error"
-                return (
-                    okResponse,
-                    makeTaskEnvelopeData(
-                        objectiveId: objectiveId,
-                        taskId: taskId,
-                        description: taskDescription,
-                        status: "failed",
-                        resultSummary: message
-                    )
+        case ("POST", "/v1/agent/objectives/\(objectiveId.uuidString)/tasks/\(taskId.uuidString)/fail"):
+            let message = backendState.recordFailedTaskMessage(from: request) ?? "unknown error"
+            return (
+                okResponse,
+                makeTaskEnvelopeData(
+                    objectiveId: objectiveId,
+                    taskId: taskId,
+                    description: taskDescription,
+                    status: "failed",
+                    resultSummary: message
                 )
+            )
 
-            default:
-                return (HTTPURLResponse(url: url, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data())
-            }
+        default:
+            return (HTTPURLResponse(url: url, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data())
         }
-        defer { ObjectiveExecutionBackendURLProtocol.reset(host: backendHost) }
-
-        let backendClient = BackendAPIClient(
-            baseURL: URL(string: "https://\(backendHost)")!,
-            workspaceSlug: "test-workspace",
-            agentToken: "test-agent-token",
-            session: ObjectiveExecutionBackendURLProtocol.makeSession()
-        )
-
-        let pool = makePool(
-            container: container,
-            context: context,
-            client: MockOllamaClient(responses: [
-                .assistantFinal(content: #"{"tool_calls":[{"name":"write_objective_snapshot","arguments":{"mark_task_completed":true}}]}"#),
-                .assistantFinal(content: #"{"tool_calls":[{"name":"write_objective_snapshot","arguments":{"mark_task_completed":true}}]}"#)
-            ]),
-            backendClient: backendClient,
-            timeoutSeconds: 5
-        )
-
-        let payload = try #require(TaskSearchPayload(json: taskSearchJSON(
-            taskId: taskId,
-            objectiveId: objectiveId,
-            description: taskDescription,
-            objectiveGoal: objectiveGoal
-        )))
-        await pool.enqueue(payload)
-
-        let deadline = Date().addingTimeInterval(20)
-        var rootBlocked = false
-        var backendTaskFailed = false
-        while Date() < deadline {
-            let readContext = ModelContext(container)
-            let units = try readContext.fetch(FetchDescriptor<WorkUnit>())
-            if units.first(where: { $0.objectiveId == objectiveId && $0.sourceTaskId == taskId && $0.workType == "objective_root" })?.state == WorkUnitState.blocked.rawValue {
-                rootBlocked = true
-            }
-            backendTaskFailed = backendState.failedTaskMessagesSnapshot().contains(where: {
-                $0.contains("Model returned JSON instead of a final prose summary")
-            })
-            if rootBlocked && backendTaskFailed {
-                break
-            }
-            try await Task.sleep(for: .milliseconds(200))
-        }
-
-        #expect(rootBlocked, "Expected supervisor failure to mark the root work unit blocked locally.")
-        #expect(
-            backendTaskFailed,
-            "Expected the supervisor failure path to transition the backend task out of in_progress with the synthesis error."
-        )
     }
+    defer { ObjectiveExecutionBackendURLProtocol.reset(host: backendHost) }
+
+    let backendClient = BackendAPIClient(
+        baseURL: URL(string: "https://\(backendHost)")!,
+        workspaceSlug: "test-workspace",
+        agentToken: "test-agent-token",
+        session: ObjectiveExecutionBackendURLProtocol.makeSession()
+    )
+
+    let pool = makePool(
+        container: container,
+        context: context,
+        client: MockOllamaClient(responses: [
+            // The objective board runner retries once when the model writes raw tool-call JSON as text.
+            .assistantFinal(content: #"{"tool_calls":[{"name":"write_objective_snapshot","arguments":{"mark_task_completed":true}}]}"#),
+            .assistantFinal(content: #"{"tool_calls":[{"name":"write_objective_snapshot","arguments":{"mark_task_completed":true}}]}"#)
+        ]),
+        backendClient: backendClient,
+        timeoutSeconds: 5
+    )
+
+    let payload = try #require(TaskSearchPayload(json: taskSearchJSON(
+        taskId: taskId,
+        objectiveId: objectiveId,
+        description: taskDescription,
+        objectiveGoal: objectiveGoal
+    )))
+    await pool.enqueue(payload)
+
+    let deadline = Date().addingTimeInterval(10)
+    var rootBlocked = false
+    var backendTaskFailed = false
+    while Date() < deadline {
+        let readContext = ModelContext(container)
+        let units = try readContext.fetch(FetchDescriptor<WorkUnit>())
+        if units.first(where: { $0.objectiveId == objectiveId && $0.sourceTaskId == taskId && $0.workType == "objective_root" })?.state == WorkUnitState.blocked.rawValue {
+            rootBlocked = true
+        }
+        backendTaskFailed = backendState.failedTaskMessagesSnapshot().contains(where: {
+            $0.contains("Model returned JSON instead of a final prose summary")
+        })
+        if rootBlocked && backendTaskFailed {
+            break
+        }
+        try await Task.sleep(for: .milliseconds(200))
+    }
+
+    #expect(rootBlocked, "Expected supervisor failure to mark the root work unit blocked locally.")
+    #expect(
+        backendTaskFailed,
+        "Expected the supervisor failure path to transition the backend task out of in_progress with the synthesis error."
+    )
 }

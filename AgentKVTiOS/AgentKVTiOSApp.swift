@@ -10,6 +10,7 @@ struct AgentKVTiOSApp: App {
     @State private var objectiveDraftStore: ObjectiveDraftStore
     @State private var chatStore: ChatStore
     @State private var inboundFilesStore: InboundFilesStore
+    @State private var workspaceStore: WorkspaceStore
 
     init() {
         let logFile = IOSRuntimeLog.bootstrap(processLabel: "AgentKVTiOSApp")
@@ -23,6 +24,7 @@ struct AgentKVTiOSApp: App {
         _objectiveDraftStore = State(wrappedValue: ObjectiveDraftStore(sync: sync))
         _chatStore = State(wrappedValue: ChatStore(sync: sync))
         _inboundFilesStore = State(wrappedValue: InboundFilesStore(sync: sync))
+        _workspaceStore = State(wrappedValue: WorkspaceStore(sync: sync))
     }
 
     var body: some Scene {
@@ -35,6 +37,7 @@ struct AgentKVTiOSApp: App {
                 .environment(objectiveDraftStore)
                 .environment(chatStore)
                 .environment(inboundFilesStore)
+                .environment(workspaceStore)
         }
     }
 }

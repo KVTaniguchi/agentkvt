@@ -71,7 +71,7 @@ Useful starter values:
 <key>RUN_SCHEDULER</key>
 <true/>
 <key>OLLAMA_MODEL</key>
-<string>llama4:latest</string>
+<string>qwen3.6:35b</string>
 <key>OLLAMA_BASE_URL</key>
 <string>http://localhost:11434</string>
 <key>SCHEDULER_INTERVAL_SECONDS</key>

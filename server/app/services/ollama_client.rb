@@ -3,7 +3,7 @@ require "json"
 
 class OllamaClient
   BASE_URL = ENV.fetch("OLLAMA_BASE_URL", "http://localhost:11434")
-  DEFAULT_MODEL = ENV.fetch("OLLAMA_MODEL", "llama4:latest")
+  DEFAULT_MODEL = ENV.fetch("OLLAMA_MODEL", "qwen3.6:35b")
   TOKEN_LOG_PATH = File.expand_path("~/Library/Logs/AgentKVT/token_usage.jsonl")
 
   # Sends a chat request to the local Ollama instance.
