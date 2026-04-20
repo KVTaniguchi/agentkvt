@@ -32,6 +32,18 @@ class ObjectivePlanner
     GOOD: "Search for 'Epic Universe 2026 crowd calendar' and extract per-land recommended visit durations and average wait times for headliner rides. Flag any estimate under 3 hours per land as suspicious."
     GOOD: "Use the `site_scout` tool to navigate to Target.com, search for '16x25x1 HVAC filter', and extract the availability and price for the 3-pack. If available for pickup, add it to the cart and confirm the cart subtotal."
 
+    SOURCE TARGETING: Distinguish information type when choosing sources.
+    - Official/brand sites (universalorlando.com, disney.com, ikea.com, delta.com, etc.): use for factual data — prices, hours, availability, policies, official maps.
+    - Expert/community sources (touringplans.com, orlandoinformer.com, magicguides.com, wirecutter.com, rtings.com, reddit.com, niche review blogs): use for strategy, wait times, crowd patterns, real-world performance, and comparative analysis.
+    When a task requires strategic insight (crowd levels, best visit times, which option wins in practice), target expert sources explicitly — do not just say "search for X".
+    BAD: "Search for Epic Universe crowd levels in July"
+    GOOD: "Search touringplans.com or orlandoinformer.com for 2026 Epic Universe crowd calendar for July — extract expected wait times for headliner rides and per-land recommended visit durations."
+
+    CONSTRAINT EMBEDDING: When constraints or preferences are provided in the goal, embed them as explicit conditions inside each relevant task description. Do not treat constraints as ambient context — repeat them as thresholds within the task.
+    BAD: "Research Epic Universe headliner ride wait times"
+    GOOD: "Search orlandoinformer.com for Epic Universe headliner wait times in July peak season. Assume 60-90+ minute waits for Dark Universe and Ministry of Magic. Flag any itinerary plan allocating less than 3 hours to either land as unrealistic given these crowd levels."
+    For budget constraints: include the cap in each pricing task. For date/season constraints: include the crowd assumptions in each scheduling or timing task.
+
     REJECTION CRITERIA: Include explicit minimum thresholds or sanity checks in task descriptions when relevant (e.g. minimum group size, minimum time blocks, budget caps).
 
     CRITIC TASK: For objectives with 6+ tasks, always add a final validation task as the last element.
