@@ -366,12 +366,61 @@ public final class OllamaClient: @unchecked Sendable {
     }
 
     private func normalizeManualToolPayload(_ rawContent: String) -> String {
-        let trimmed = rawContent.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.hasPrefix("```") else { return trimmed }
-        let lines = trimmed.split(separator: "\n", omittingEmptySubsequences: false)
-        guard lines.count >= 3 else { return trimmed }
-        let body = lines.dropFirst().dropLast().joined(separator: "\n")
-        return String(body).trimmingCharacters(in: .whitespacesAndNewlines)
+        // Strip <think>...</think> blocks (qwen3 thinking-mode output)
+        let noThink = Self.stripXMLBlocks(tag: "think", from: rawContent)
+        let trimmed = noThink.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Strip ``` code fences
+        if trimmed.hasPrefix("```") {
+            let lines = trimmed.split(separator: "\n", omittingEmptySubsequences: false)
+            guard lines.count >= 3 else { return trimmed }
+            let body = lines.dropFirst().dropLast().joined(separator: "\n")
+            return String(body).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        // Extract <tool_call>...</tool_call> blocks (qwen3 native format) and reformat
+        // as ManualToolResponse JSON: {"tool_calls": [...]}
+        let toolCallBlocks = Self.extractXMLBlocks(tag: "tool_call", from: trimmed)
+        if !toolCallBlocks.isEmpty {
+            let joined = toolCallBlocks
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .joined(separator: ",")
+            return "{\"tool_calls\":[\(joined)]}"
+        }
+
+        // Single JSON object {"name": "...", "arguments": {...}} — wrap in tool_calls array
+        if trimmed.hasPrefix("{"),
+           let data = trimmed.data(using: .utf8),
+           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           obj["name"] is String, obj["arguments"] != nil, obj["tool_calls"] == nil {
+            return "{\"tool_calls\":[\(trimmed)]}"
+        }
+
+        return trimmed
+    }
+
+    private static func stripXMLBlocks(tag: String, from content: String) -> String {
+        let open = "<\(tag)>"
+        let close = "</\(tag)>"
+        var result = content
+        while let startRange = result.range(of: open),
+              let endRange = result.range(of: close, range: startRange.upperBound..<result.endIndex) {
+            result.removeSubrange(startRange.lowerBound..<endRange.upperBound)
+        }
+        return result
+    }
+
+    private static func extractXMLBlocks(tag: String, from content: String) -> [String] {
+        let open = "<\(tag)>"
+        let close = "</\(tag)>"
+        var blocks: [String] = []
+        var searchRange = content.startIndex..<content.endIndex
+        while let startRange = content.range(of: open, range: searchRange),
+              let endRange = content.range(of: close, range: startRange.upperBound..<content.endIndex) {
+            blocks.append(String(content[startRange.upperBound..<endRange.lowerBound]))
+            searchRange = endRange.upperBound..<content.endIndex
+        }
+        return blocks
     }
 }
 
