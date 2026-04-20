@@ -31,8 +31,6 @@ module V1
       def registration_params
         params.require(:agent_registration).permit(:agent_id, :webhook_url, :email_address, capabilities: [])
       end
-
-      end
     end
   end
 end
