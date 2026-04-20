@@ -157,6 +157,8 @@ module ApiSerialization
       creation_source: objective.creation_source,
       planner_summary: ObjectivePlanningInputBuilder.for_objective(objective),
       hands_config: objective.hands_config || {},
+      in_progress_task_count: objective.tasks.count { |t| t.status == "in_progress" },
+      snapshot_count: objective.research_snapshots.size,
       created_at: iso8601(objective.created_at),
       updated_at: iso8601(objective.updated_at)
     }

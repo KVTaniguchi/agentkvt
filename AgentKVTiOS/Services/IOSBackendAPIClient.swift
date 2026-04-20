@@ -245,6 +245,8 @@ struct IOSBackendObjective: Decodable, Sendable, Identifiable, Equatable {
     let objectiveKind: String?
     let creationSource: String
     let plannerSummary: String
+    let inProgressTaskCount: Int
+    let snapshotCount: Int
     let createdAt: Date
     let updatedAt: Date
 
@@ -258,6 +260,8 @@ struct IOSBackendObjective: Decodable, Sendable, Identifiable, Equatable {
         case objectiveKind
         case creationSource
         case plannerSummary
+        case inProgressTaskCount
+        case snapshotCount
         case createdAt
         case updatedAt
     }
@@ -273,6 +277,8 @@ struct IOSBackendObjective: Decodable, Sendable, Identifiable, Equatable {
         objectiveKind = try container.decodeIfPresent(String.self, forKey: .objectiveKind)
         creationSource = try container.decodeIfPresent(String.self, forKey: .creationSource) ?? "manual"
         plannerSummary = try container.decodeIfPresent(String.self, forKey: .plannerSummary) ?? goal
+        inProgressTaskCount = try container.decodeIfPresent(Int.self, forKey: .inProgressTaskCount) ?? 0
+        snapshotCount = try container.decodeIfPresent(Int.self, forKey: .snapshotCount) ?? 0
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
     }

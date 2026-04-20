@@ -92,7 +92,8 @@ struct ObjectiveRow: View {
             Text(objective.goal)
                 .font(.headline)
                 .foregroundStyle(.primary)
-                .fixedSize(horizontal: false, vertical: true)
+                .lineLimit(3)
+                .truncationMode(.tail)
             HStack(spacing: 8) {
                 Text(objective.status.replacingOccurrences(of: "_", with: " ").capitalized)
                     .font(.caption)
@@ -105,6 +106,17 @@ struct ObjectiveRow: View {
                     Label("\(objective.priority)", systemImage: "arrow.up.circle")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if objective.inProgressTaskCount > 0 {
+                    Label("\(objective.inProgressTaskCount)", systemImage: "waveform")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                }
+                if objective.snapshotCount > 0 {
+                    Label("\(objective.snapshotCount)", systemImage: "chart.bar.doc.horizontal")
+                        .font(.caption2)
+                        .foregroundStyle(.teal)
                 }
             }
             Text(objective.updatedAt, style: .relative)

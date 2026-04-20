@@ -1,7 +1,7 @@
 module V1
   class ObjectivesController < BaseController
     def index
-      objectives = current_workspace.objectives.recent_first
+      objectives = current_workspace.objectives.recent_first.includes(:tasks, :research_snapshots)
       render json: { objectives: objectives.map { |o| serialize_objective(o) } }
     end
 
