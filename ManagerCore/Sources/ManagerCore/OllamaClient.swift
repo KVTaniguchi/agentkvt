@@ -230,6 +230,8 @@ public final class OllamaClient: @unchecked Sendable {
         let url = baseURL.appending(path: "api/chat")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
+        // timeoutInterval is the per-chunk inactivity timeout in streaming mode —
+        // the overall request won't timeout as long as the model keeps producing tokens.
         request.timeoutInterval = timeoutInterval
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(
@@ -237,24 +239,48 @@ public final class OllamaClient: @unchecked Sendable {
                 model: model,
                 messages: messages,
                 tools: tools,
-                stream: false,
+                stream: true,
                 options: ChatOptions(temperature: 0)
             )
         )
 
         let requestStart = Date()
-        let (data, response) = try await session.data(for: request)
-        let latencyMs = Int(Date().timeIntervalSince(requestStart) * 1000)
+        let (asyncBytes, response) = try await session.bytes(for: request)
         guard let http = response as? HTTPURLResponse else { throw OllamaError.invalidResponse }
         guard http.statusCode == 200 else {
-            if let err = try? JSONDecoder().decode(ChatResponse.self, from: data).error { throw OllamaError.apiError(err) }
+            var errorData = Data()
+            for try await byte in asyncBytes { errorData.append(byte) }
+            if let err = try? JSONDecoder().decode(ChatResponse.self, from: errorData).error { throw OllamaError.apiError(err) }
             throw OllamaError.httpStatus(http.statusCode)
         }
-        let parsed = try JSONDecoder().decode(ChatResponse.self, from: data)
-        guard let msg = parsed.message else { throw OllamaError.noMessage }
-        if let input = parsed.promptEvalCount, let output = parsed.evalCount {
+
+        var accumulatedContent = ""
+        var accumulatedToolCalls: [ToolCall] = []
+        var promptEvalCount: Int?
+        var evalCount: Int?
+
+        for try await line in asyncBytes.lines {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, let data = trimmed.data(using: .utf8) else { continue }
+            guard let chunk = try? JSONDecoder().decode(ChatResponse.self, from: data) else { continue }
+            if let content = chunk.message?.content { accumulatedContent += content }
+            if let calls = chunk.message?.toolCalls { accumulatedToolCalls += calls }
+            if chunk.done == true {
+                promptEvalCount = chunk.promptEvalCount
+                evalCount = chunk.evalCount
+            }
+        }
+
+        let latencyMs = Int(Date().timeIntervalSince(requestStart) * 1000)
+        if let input = promptEvalCount, let output = evalCount {
             Task { await TokenUsageLogger.shared.record(model: model, promptTokens: input, completionTokens: output, latencyMs: latencyMs) }
         }
+
+        let msg = Message(
+            role: "assistant",
+            content: accumulatedContent.isEmpty ? nil : accumulatedContent,
+            toolCalls: accumulatedToolCalls.isEmpty ? nil : accumulatedToolCalls
+        )
         return coerceAssistantMessageIfNeeded(msg, tools: tools)
     }
 
