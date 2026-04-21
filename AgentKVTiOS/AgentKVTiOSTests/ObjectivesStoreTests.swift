@@ -260,10 +260,6 @@ private final class MockObjectivesSync: ObjectivesRemoteSyncing, @unchecked Send
     func deleteObjectiveRemote(id: UUID) async throws {
         deletedIds.append(id)
     }
-
-    func fetchObjectivePresentationRemote(id: UUID) async throws -> UIPresentation {
-        fatalError("unused in these tests")
-    }
 }
 
 // MARK: - Tests

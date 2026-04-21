@@ -1,31 +1,5 @@
 import SwiftUI
 
-// MARK: - UINode model
-
-struct UINode: Codable, Sendable {
-    let type: String
-    // Layout containers
-    let children: [UINode]?
-    // card
-    let title: String?
-    // text
-    let content: String?
-    let style: String?    // "headline" | "body" | "caption"
-    // stat
-    let label: String?
-    let value: String?
-    let delta: String?
-    // badge
-    let color: String?    // "green" | "red" | "orange" | "blue" | "gray"
-    // link
-    let url: String?
-}
-
-struct UIPresentation: Codable, Sendable {
-    let layout: UINode?
-    let status: String?  // "ready" | "generating" — nil for legacy responses
-}
-
 struct ObjectiveFeedbackTarget: Identifiable, Hashable {
     static let objectiveID = "objective"
 
@@ -457,161 +431,6 @@ struct ObjectiveConfidenceOption: Identifiable, Hashable, Sendable {
     let draft: String
 }
 
-// MARK: - Node renderer
-
-struct NodeView: View {
-    let node: UINode
-
-    var body: some View {
-        switch node.type {
-        case "vstack":
-            VStack(alignment: .leading, spacing: 12) {
-                ForEach(Array((node.children ?? []).enumerated()), id: \.offset) { _, child in
-                    NodeView(node: child)
-                }
-            }
-        case "hstack":
-            HStack(alignment: .center, spacing: 8) {
-                ForEach(Array((node.children ?? []).enumerated()), id: \.offset) { _, child in
-                    NodeView(node: child)
-                }
-                Spacer(minLength: 0)
-            }
-        case "card":
-            CardNodeView(node: node)
-        case "text":
-            TextNodeView(node: node)
-        case "stat":
-            StatNodeView(node: node)
-        case "badge":
-            BadgeNodeView(node: node)
-        case "link":
-            LinkNodeView(node: node)
-        case "divider":
-            Divider()
-        default:
-            EmptyView()
-        }
-    }
-}
-
-private struct CardNodeView: View {
-    let node: UINode
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if let title = node.title {
-                Text(title)
-                    .font(.headline)
-            }
-            ForEach(Array((node.children ?? []).enumerated()), id: \.offset) { _, child in
-                NodeView(node: child)
-            }
-        }
-        .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(uiColor: .secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-    }
-}
-
-private struct TextNodeView: View {
-    let node: UINode
-
-    var body: some View {
-        if let content = ObjectiveFeedbackPresentation.displayText(node.content) {
-            Text(content)
-                .font(textFont)
-                .foregroundStyle(textColor)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    private var textFont: Font {
-        switch node.style {
-        case "headline": return .headline
-        case "caption":  return .caption
-        default:         return .body
-        }
-    }
-
-    private var textColor: Color {
-        switch node.style {
-        case "caption": return .secondary
-        default:        return .primary
-        }
-    }
-}
-
-private struct StatNodeView: View {
-    let node: UINode
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            if let label = node.label {
-                Text(label)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            if let value = ObjectiveFeedbackPresentation.displayText(node.value) {
-                Text(value)
-                    .font(.title2.bold())
-                    .foregroundStyle(.primary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            if let delta = ObjectiveFeedbackPresentation.displayText(node.delta) {
-                Label(delta, systemImage: "arrow.triangle.2.circlepath")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-    }
-}
-
-private struct BadgeNodeView: View {
-    let node: UINode
-
-    private var tint: Color {
-        switch node.color {
-        case "green":  return .green
-        case "red":    return .red
-        case "orange": return .orange
-        case "blue":   return .blue
-        default:       return .secondary
-        }
-    }
-
-    var body: some View {
-        if let label = node.label {
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(tint)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(tint.opacity(0.12))
-                .clipShape(Capsule())
-        }
-    }
-}
-
-private struct LinkNodeView: View {
-    let node: UINode
-
-    var body: some View {
-        if let label = node.label, let urlStr = node.url, let url = URL(string: urlStr) {
-            Link(destination: url) {
-                Label(label, systemImage: "arrow.up.right.square")
-                    .frame(maxWidth: .infinity, alignment: .center)
-            }
-            .buttonStyle(.borderedProminent)
-            #if os(iOS)
-            .controlSize(.large)
-            #endif
-        }
-    }
-}
-
 private struct ExpandableLinkText: View {
     let text: String
     var textStyle: UIFont.TextStyle = .body
@@ -706,7 +525,7 @@ private struct VerticalScrollLockConfigurationView: UIViewRepresentable {
     }
 }
 
-private extension View {
+extension View {
     func lockPrimaryScrollToVerticalAxis() -> some View {
         background(VerticalScrollLockConfigurationView())
     }
@@ -1678,9 +1497,6 @@ struct GenerativeResultsView: View {
 
     @Environment(ObjectivesStore.self) private var store
     @EnvironmentObject private var profileStore: FamilyProfileStore
-    @State private var layout: UINode?
-    @State private var isLoading = false
-    @State private var useFallback = false
     @State private var composerContext: ObjectiveFeedbackComposerContext?
     @State private var latestFeedbackResult: IOSBackendSubmitObjectiveFeedbackResult?
     @State private var pendingFeedbackSubmission: ObjectiveFeedbackPendingSubmission?
@@ -1841,159 +1657,44 @@ struct GenerativeResultsView: View {
     }
 
     var body: some View {
-        Group {
-            if isLoading {
-                VStack(spacing: 12) {
-                    ProgressView()
-                    Text("Generating layout…")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let layout, !useFallback {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        NodeView(node: layout)
-
-                        if let latestFollowUpCard {
-                            VStack(alignment: .leading, spacing: 10) {
-                                Text("Latest Follow-up")
-                                    .font(.headline)
-                                followUpCard(for: latestFollowUpCard)
-                            }
-                        }
-
-                        if shouldShowAgentActivity {
-                            ResearchAgentActivityCard(
-                                runningTaskCount: runningTaskCount,
-                                queuedTaskCount: queuedTaskCount,
-                                onlineAgentsCount: onlineAgentsCount,
-                                message: agentActivityMessage,
-                                showsProgress: pendingFeedbackSubmission != nil,
-                                isDispatching: isDispatchingNow,
-                                onDispatchNow: queuedTaskCount > 0 ? { Task { await dispatchNow() } } : nil
-                            )
-                        }
-
-                        if !historicalFollowUpCards.isEmpty {
-                            VStack(alignment: .leading, spacing: 10) {
-                                Text("Follow-up Loop")
-                                    .font(.headline)
-                                ForEach(historicalFollowUpCards) { card in
-                                    followUpCard(for: card)
-                                }
-                            }
-                        }
-
-                        if canContinueResearch && !snapshots.isEmpty {
-                            VStack(alignment: .leading, spacing: 12) {
-                                Text("Continue from a finding")
-                                    .font(.headline)
-                                ForEach(displayedSnapshots) { snapshot in
-                                    ResultsFindingFollowUpCard(
-                                        snapshot: snapshot,
-                                        submittingOptionID: activeConfidenceOptionID,
-                                        isSubmittingRating: activeRatingSnapshotID == snapshot.id
-                                    ) { context in
-                                        composerContext = context
-                                    } onSelectConfidenceOption: { snapshot, option in
-                                        Task { await submitConfidenceOption(for: snapshot, option: option) }
-                                    } onRateResult: { snapshot, rating in
-                                        Task { await submitSnapshotRating(for: snapshot, rating: rating) }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    .padding()
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-#if os(iOS)
-                .lockPrimaryScrollToVerticalAxis()
-#endif
-                .background(Color(.systemGroupedBackground))
-            } else {
-                List {
-                    if let latestFollowUpCard {
-                        Section("Latest Follow-up") {
-                            followUpCard(for: latestFollowUpCard)
-                                .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
-                                .listRowBackground(Color.clear)
-                        }
-                    }
-
-                    if shouldShowAgentActivity {
-                        Section("Agent Activity") {
-                            ResearchAgentActivityCard(
-                                runningTaskCount: runningTaskCount,
-                                queuedTaskCount: queuedTaskCount,
-                                onlineAgentsCount: onlineAgentsCount,
-                                message: agentActivityMessage,
-                                showsProgress: pendingFeedbackSubmission != nil,
-                                isDispatching: isDispatchingNow,
-                                onDispatchNow: queuedTaskCount > 0 ? { Task { await dispatchNow() } } : nil
-                            )
-                            .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
-                            .listRowBackground(Color.clear)
-                        }
-                    }
-
-                    if !historicalFollowUpCards.isEmpty {
-                        Section("Follow-up Loop") {
-                            ForEach(historicalFollowUpCards) { card in
-                                followUpCard(for: card)
-                                    .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
-                                    .listRowBackground(Color.clear)
-                            }
-                        }
-                    }
-
-                    Section("Research Snapshots") {
-                        if displayedSnapshots.isEmpty {
-                            Text("No research data yet.")
-                                .foregroundStyle(.secondary)
-                                .font(.subheadline)
-                        } else {
-                            ForEach(displayedSnapshots) { snapshot in
-                                if canContinueResearch {
-                                    ResultsFindingFollowUpCard(
-                                        snapshot: snapshot,
-                                        submittingOptionID: activeConfidenceOptionID,
-                                        isSubmittingRating: activeRatingSnapshotID == snapshot.id
-                                    ) { context in
-                                        composerContext = context
-                                    } onSelectConfidenceOption: { snapshot, option in
-                                        Task { await submitConfidenceOption(for: snapshot, option: option) }
-                                    } onRateResult: { snapshot, rating in
-                                        Task { await submitSnapshotRating(for: snapshot, rating: rating) }
-                                    }
-                                } else {
-                                    SnapshotRow(snapshot: snapshot)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        let dispatchAction: (() -> Void)? = queuedTaskCount > 0 ? { Task { await dispatchNow() } } : nil
+        return ResearchResultsView(
+            snapshots: displayedSnapshots,
+            latestFollowUpCard: latestFollowUpCard,
+            historicalFollowUpCards: historicalFollowUpCards,
+            shouldShowAgentActivity: shouldShowAgentActivity,
+            runningTaskCount: runningTaskCount,
+            queuedTaskCount: queuedTaskCount,
+            onlineAgentsCount: onlineAgentsCount,
+            agentActivityMessage: agentActivityMessage,
+            canContinueResearch: canContinueResearch,
+            activeConfidenceOptionID: activeConfidenceOptionID,
+            activeRatingSnapshotID: activeRatingSnapshotID,
+            isDispatchingNow: isDispatchingNow,
+            pendingFeedbackSubmission: pendingFeedbackSubmission,
+            followUpCardView: { card in AnyView(followUpCard(for: card)) },
+            onSelectAction: { composerContext = $0 },
+            onSelectConfidenceOption: { snapshot, option in
+                Task { await submitConfidenceOption(for: snapshot, option: option) }
+            },
+            onRateResult: { snapshot, rating in
+                Task { await submitSnapshotRating(for: snapshot, rating: rating) }
+            },
+            onDispatchNow: dispatchAction
+        )
         .navigationTitle("Research")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            if !isLoading {
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        Task {
-                            await loadPresentation()
-                            await refreshActivityStatus()
-                        }
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                    }
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    Task { await refreshActivityStatus() }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
                 }
             }
         }
         .safeAreaInset(edge: .bottom) {
-            if canContinueResearch && !isLoading {
+            if canContinueResearch {
                 VStack(alignment: .leading, spacing: 12) {
                     Divider()
                     VStack(alignment: .leading, spacing: 10) {
@@ -2091,7 +1792,6 @@ struct GenerativeResultsView: View {
             Text(feedbackErrorMessage ?? "An error occurred.")
         }
         .task {
-            await loadPresentation()
             await refreshActivityStatus()
             reconcileActivityPolling()
         }
@@ -2301,7 +2001,6 @@ struct GenerativeResultsView: View {
                 reason: feedback.reason ?? ""
             )
             onFeedbackMutated?()
-            await loadPresentation()
         } catch {
             feedbackErrorMessage = error.localizedDescription
         }
@@ -2346,7 +2045,6 @@ struct GenerativeResultsView: View {
                 reason: feedback.reason
             )
             onFeedbackMutated?()
-            await loadPresentation()
         } catch {
             feedbackErrorMessage = error.localizedDescription
         }
@@ -2464,38 +2162,6 @@ struct GenerativeResultsView: View {
     }
 
     @MainActor
-    private func loadPresentation() async {
-        isLoading = true
-        useFallback = false
-        layout = nil
-        defer { isLoading = false }
-
-        do {
-            let result = try await store.fetchPresentation(for: objectiveId)
-            if let node = result.layout {
-                layout = node
-            } else if result.status == "generating" {
-                // Server enqueued a generation job — poll every 5s until ready or 60s elapsed
-                for _ in 0..<12 {
-                    try await Task.sleep(nanoseconds: 5_000_000_000)
-                    let retry = try await store.fetchPresentation(for: objectiveId)
-                    if let node = retry.layout {
-                        layout = node
-                        return
-                    }
-                    if retry.status != "generating" { break }
-                }
-                useFallback = true
-            } else {
-                useFallback = true
-            }
-        } catch {
-            IOSRuntimeLog.log("[GenerativeResultsView] Presentation fetch failed: \(error)")
-            useFallback = true
-        }
-    }
-
-    @MainActor
     private func refreshActivityStatus() async {
         do {
             let detail = try await store.fetchDetail(for: objectiveId, viewerProfileId: profileStore.currentProfileId)
@@ -2592,7 +2258,7 @@ struct GenerativeResultsView: View {
     }
 }
 
-private struct ResearchAgentActivityCard: View {
+struct ResearchAgentActivityCard: View {
     let runningTaskCount: Int
     let queuedTaskCount: Int
     let onlineAgentsCount: Int

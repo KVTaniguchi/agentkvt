@@ -23,6 +23,7 @@
 		A1000018 /* ObjectivesDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000017 /* ObjectivesDashboardView.swift */; };
 		A1000019 /* ObjectiveDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000018 /* ObjectiveDetailView.swift */; };
 		A1000020 /* GenerativeResultsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000019 /* GenerativeResultsView.swift */; };
+		A1000024 /* ResearchResultsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000023 /* ResearchResultsView.swift */; };
 		A1000021 /* ObjectiveDraftStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000020 /* ObjectiveDraftStore.swift */; };
 		A1000022 /* ObjectiveComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000021 /* ObjectiveComposerView.swift */; };
 		A1000023 /* WorkspaceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000022 /* WorkspaceStore.swift */; };
@@ -71,6 +72,7 @@
 		A2000017 /* ObjectivesDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ObjectivesDashboardView.swift; sourceTree = "<group>"; };
 		A2000018 /* ObjectiveDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ObjectiveDetailView.swift; sourceTree = "<group>"; };
 		A2000019 /* GenerativeResultsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenerativeResultsView.swift; sourceTree = "<group>"; };
+		A2000023 /* ResearchResultsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResearchResultsView.swift; sourceTree = "<group>"; };
 		A2000020 /* ObjectiveDraftStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ObjectiveDraftStore.swift; sourceTree = "<group>"; };
 		A2000021 /* ObjectiveComposerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ObjectiveComposerView.swift; sourceTree = "<group>"; };
 		A2000022 /* WorkspaceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceStore.swift; sourceTree = "<group>"; };
@@ -161,6 +163,7 @@
 				A2000021 /* ObjectiveComposerView.swift */,
 				A2000018 /* ObjectiveDetailView.swift */,
 				A2000019 /* GenerativeResultsView.swift */,
+				A2000023 /* ResearchResultsView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -392,6 +395,7 @@
 				A1000022 /* ObjectiveComposerView.swift in Sources */,
 				A1000019 /* ObjectiveDetailView.swift in Sources */,
 				A1000020 /* GenerativeResultsView.swift in Sources */,
+				A1000024 /* ResearchResultsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
