@@ -542,22 +542,6 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             }
 
             if claimed.workType == Constants.synthesisType, let backendClient {
-                if ObjectiveResearchSnapshotPayload.clientRejectionMessageIfInvalid(result) != nil {
-                    try blockWorkUnit(
-                        claimed.workUnitId,
-                        error: "Model returned JSON instead of a final prose summary; refusing to mark complete."
-                    )
-                    await logEvent(
-                        phase: "error",
-                        content: "Synthesis produced JSON as final text; work unit blocked.",
-                        objectiveId: claimed.objectiveId,
-                        taskId: claimed.taskId,
-                        workUnitId: claimed.workUnitId,
-                        workerLabel: slot.label,
-                        taskName: "Objective Worker \(slot.label)"
-                    )
-                    return
-                }
                 let summaryKey = finalSummaryKey(taskId: claimed.taskId)
                 let existingSnaps = try? await backendClient.fetchResearchSnapshots(
                     objectiveId: claimed.objectiveId,
@@ -579,6 +563,22 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                         markTaskCompleted: true
                     )
                 } else if !toolWroteSummary {
+                    if ObjectiveResearchSnapshotPayload.clientRejectionMessageIfInvalid(result) != nil {
+                        try blockWorkUnit(
+                            claimed.workUnitId,
+                            error: "Model returned JSON instead of a final prose summary; refusing to mark complete."
+                        )
+                        await logEvent(
+                            phase: "error",
+                            content: "Synthesis produced JSON as final text and did not write task_summary via tools; work unit blocked.",
+                            objectiveId: claimed.objectiveId,
+                            taskId: claimed.taskId,
+                            workUnitId: claimed.workUnitId,
+                            workerLabel: slot.label,
+                            taskName: "Objective Worker \(slot.label)"
+                        )
+                        return
+                    }
                     if looksLikeMetaRefusal(result) {
                         try blockWorkUnit(
                             claimed.workUnitId,
@@ -698,6 +698,12 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             )
             systemPrompt = """
             AgentKVT objective-board mode (tools required). Do not reply with generic chat-assistant disclaimers; you already have the mission in the user message.
+
+            CRITICAL OUTPUT RULES:
+            - NEVER write JSON, tool-call syntax, or any structured data as your final text response.
+            - NEVER output {"tool_calls": ...} or similar structures as text.
+            - Your final textual response MUST be plain English prose sentences. Do NOT begin your message with `{` or `[`.
+            - To call a tool, use the tool interface; do not write tool-call JSON in your response text.
 
             You are \(workerLabel), the synthesis agent for one objective task.
 
