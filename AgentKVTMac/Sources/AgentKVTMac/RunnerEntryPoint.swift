@@ -127,9 +127,20 @@ public func runAgentKVTMacRunner() async {
     registry.register(makeShellCommandTool())
     registry.register(makePlaywrightScoutTool())
 
+    // Chat client: thinking enabled, larger context for open-ended conversation.
     let client = OllamaClient(
         baseURL: settings.ollamaBaseURL,
-        model: settings.ollamaModel
+        model: settings.ollamaModel,
+        think: true,
+        numCtx: 16384
+    )
+    // Heavy client: thinking disabled, smaller context for structured tool-calling work.
+    // Avoids the silent prefill stall that thinking mode causes on long-running tasks.
+    let heavyClient = OllamaClient(
+        baseURL: settings.ollamaBaseURL,
+        model: settings.ollamaModel,
+        think: false,
+        numCtx: 8192
     )
     let backendClient = settings.backendBaseURL.map {
         BackendAPIClient(
@@ -152,6 +163,7 @@ public func runAgentKVTMacRunner() async {
             context: sharedModelContext,
             modelContainer: container,
             client: client,
+            heavyClient: heavyClient,
             registry: registry,
             backendClient: backendClient,
             emailIngestor: emailIngestor,
@@ -180,6 +192,7 @@ private func runScheduler(
     context: SharedModelContext,
     modelContainer: ModelContainer,
     client: any OllamaClientProtocol,
+    heavyClient: OllamaClient,
     registry: ToolRegistry,
     backendClient: BackendAPIClient?,
     emailIngestor: EmailIngestor,
@@ -189,6 +202,9 @@ private func runScheduler(
     clockIntervalSeconds: Int,
     settings: RunnerSettings
 ) async {
+    // Pre-load the heavy model so the first objective request doesn't pay a cold-start penalty.
+    await heavyClient.warmUp()
+
     // ── Build the strict serial execution queue ──────────────────────────────────
     // All triggers funnel here. The actor's `run()` loop processes them one at a
     // time: while the LLM is awaiting a response, new triggers buffer in AgentQueue
@@ -197,6 +213,7 @@ private func runScheduler(
         modelContext: context,
         modelContainer: modelContainer,
         client: client,
+        heavyClient: heavyClient,
         registry: registry,
         backendClient: backendClient,
         emailIngestor: emailIngestor,

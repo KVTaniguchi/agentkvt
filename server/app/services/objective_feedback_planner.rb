@@ -34,7 +34,8 @@ class ObjectiveFeedbackPlanner
         { role: "user", content: build_input(feedback) }
       ],
       format: "json",
-      task: "objective-follow-up"
+      task: "objective-follow-up",
+      options: { num_ctx: 8192, think: false }
     )
 
     task_defs = normalize_task_defs(JSON.parse(raw))

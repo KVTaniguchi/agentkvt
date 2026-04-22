@@ -86,7 +86,8 @@ class ObjectivePlanner
         { role: "user", content: planning_input.presence || objective.goal }
       ],
       format: "json",
-      task: "objective-planner"
+      task: "objective-planner",
+      options: { num_ctx: 8192, think: false }
     )
 
     task_defs = normalize_task_defs(JSON.parse(raw))

@@ -43,7 +43,8 @@ class ObjectivePresentationBuilder
         { role: "user", content: input }
       ],
       format: "json",
-      task: "objective-presentation"
+      task: "objective-presentation",
+      options: { num_ctx: 8192, think: false }
     )
 
     parsed = JSON.parse(raw)

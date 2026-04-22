@@ -22,17 +22,27 @@ public final class OllamaClient: @unchecked Sendable {
     public let baseURL: URL
     public let model: String
     public let timeoutInterval: TimeInterval
+    /// Whether to enable chain-of-thought reasoning (qwen3 /think mode).
+    /// Disable for structured tool-calling tasks to avoid silent multi-second prefill stalls.
+    public let think: Bool
+    /// KV-cache context window size. Ollama defaults to the model's trained max (32k for qwen3).
+    /// Smaller values reduce VRAM allocation and prefill time significantly.
+    public let numCtx: Int
     private let session: URLSession
 
     public init(
         baseURL: URL = URL(string: "http://localhost:11434")!,
         model: String = "qwen3.6:35b",
         timeoutInterval: TimeInterval = 300,
+        think: Bool = true,
+        numCtx: Int = 32768,
         session: URLSession = .shared
     ) {
         self.baseURL = baseURL
         self.model = model
         self.timeoutInterval = timeoutInterval
+        self.think = think
+        self.numCtx = numCtx
         self.session = session
     }
 
@@ -190,6 +200,14 @@ public final class OllamaClient: @unchecked Sendable {
 
     struct ChatOptions: Encodable {
         let temperature: Double
+        let think: Bool
+        let numCtx: Int
+
+        enum CodingKeys: String, CodingKey {
+            case temperature
+            case think
+            case numCtx = "num_ctx"
+        }
     }
 
     /// Response from /api/chat (non-streaming).
@@ -248,7 +266,7 @@ public final class OllamaClient: @unchecked Sendable {
                 messages: messages,
                 tools: tools,
                 stream: true,
-                options: ChatOptions(temperature: 0)
+                options: ChatOptions(temperature: 0, think: think, numCtx: numCtx)
             )
         )
 
@@ -441,6 +459,31 @@ public final class OllamaClient: @unchecked Sendable {
             searchRange = endRange.upperBound..<content.endIndex
         }
         return blocks
+    }
+}
+
+extension OllamaClient {
+    /// Loads the model into memory and pins it with keep_alive=-1 so it stays hot between requests.
+    /// Call once at startup for any client used on hot paths.
+    public func warmUp() async {
+        let url = baseURL.appending(path: "api/chat")
+        var request = URLRequest(url: url, timeoutInterval: 60)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct WarmUpBody: Encodable {
+            let model: String
+            let messages: [String]
+            let stream: Bool
+            let keepAlive: String
+            enum CodingKeys: String, CodingKey {
+                case model, messages, stream
+                case keepAlive = "keep_alive"
+            }
+        }
+        request.httpBody = try? JSONEncoder().encode(
+            WarmUpBody(model: model, messages: [], stream: false, keepAlive: "-1")
+        )
+        _ = try? await session.data(for: request)
     }
 }
 
