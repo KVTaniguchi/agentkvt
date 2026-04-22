@@ -1,7 +1,7 @@
 import Foundation
 
 /// Protocol for LLM chat (enables mocking in integration tests).
-public protocol OllamaClientProtocol {
+public protocol OllamaClientProtocol: Sendable {
     func chat(messages: [OllamaClient.Message], tools: [OllamaClient.ToolDef]?) async throws -> OllamaClient.Message
 }
 
