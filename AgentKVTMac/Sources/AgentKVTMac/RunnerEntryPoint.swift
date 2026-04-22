@@ -131,10 +131,19 @@ public func runAgentKVTMacRunner() async {
     registry.register(makeShellCommandTool())
     registry.register(makePlaywrightScoutTool())
 
-    let client = OllamaClient(
+    let primaryClient = OllamaClient(
         baseURL: settings.ollamaBaseURL,
         model: settings.ollamaModel
     )
+    let client: any OllamaClientProtocol
+    if let geminiKey = settings.geminiAPIKey, !geminiKey.isEmpty {
+        client = FallbackOllamaClient(
+            primary: primaryClient,
+            fallback: GeminiOllamaAdapter(apiKey: geminiKey)
+        )
+    } else {
+        client = primaryClient
+    }
     let backendClient = settings.backendBaseURL.map {
         BackendAPIClient(
             baseURL: $0,
@@ -183,7 +192,7 @@ public func runAgentKVTMacRunner() async {
 private func runScheduler(
     context: SharedModelContext,
     modelContainer: ModelContainer,
-    client: OllamaClient,
+    client: any OllamaClientProtocol,
     registry: ToolRegistry,
     backendClient: BackendAPIClient?,
     emailIngestor: EmailIngestor,

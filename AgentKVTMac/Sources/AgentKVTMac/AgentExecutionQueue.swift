@@ -34,7 +34,7 @@ actor AgentExecutionQueue {
     init(
         modelContext: SharedModelContext,
         modelContainer: ModelContainer,
-        client: OllamaClient,
+        client: any OllamaClientProtocol,
         registry: ToolRegistry,
         backendClient: BackendAPIClient?,
         emailIngestor: EmailIngestor,

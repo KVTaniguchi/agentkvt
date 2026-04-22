@@ -349,6 +349,13 @@ public final class AgentTaskRunner: @unchecked Sendable {
             github_agent guidance:
             - Use this tool for read-only GitHub information that is relevant to the mission.
             """
+        case "ask_gemini":
+            return """
+            ask_gemini guidance:
+            - Prefer this for general knowledge, reasoning, and factual questions that do not require live data: theme park tips, travel planning, financial concepts, product comparisons, historical facts, recommendations, explanations, and summarisation.
+            - Call this INSTEAD of web_search or multi_step_search when the question is answerable from broad training knowledge — it is faster and uses no local compute.
+            - Reserve web_search and multi_step_search for questions that require current prices, schedules, recent news, or live availability.
+            """
         case "multi_step_search":
             return """
             multi_step_search guidance:

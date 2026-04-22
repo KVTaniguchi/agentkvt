@@ -17,6 +17,7 @@ module Slack
     CLASSIFIER_NUM_CTX = 2048
     DEFAULT_TIMEOUT_SECONDS = 25
     FEED_BOT_TIMEOUT_SECONDS = 8
+    CLASSIFIER_MODEL = ENV.fetch("OLLAMA_CLASSIFIER_MODEL", "qwen3:4b")
     STOP_WORDS = %w[
       a an and are at be but by for from has have if in into is it its of on or our so than that the their there
       they this to was we were will with you your
@@ -37,6 +38,7 @@ module Slack
 
       raw = OllamaClient.new.chat(
         messages: build_messages(candidate_objectives),
+        model: CLASSIFIER_MODEL,
         format: "json",
         task: "slack_message_classify",
         options: { num_ctx: CLASSIFIER_NUM_CTX, think: false },

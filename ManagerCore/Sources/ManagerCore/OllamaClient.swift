@@ -1,7 +1,7 @@
 import Foundation
 
 /// Protocol for LLM chat (enables mocking in integration tests).
-public protocol OllamaClientProtocol {
+public protocol OllamaClientProtocol: Sendable {
     func chat(messages: [OllamaClient.Message], tools: [OllamaClient.ToolDef]?) async throws -> OllamaClient.Message
 }
 
@@ -310,24 +310,10 @@ public final class OllamaClient: @unchecked Sendable {
     }
 
     private func performManualToolChat(messages: [Message], tools: [ToolDef]) async throws -> Message {
-        let manualMessages = makeManualToolMessages(from: messages, tools: tools)
+        let manualMessages = ManualToolMode.makeMessages(from: messages, tools: tools)
         let raw = try await performChat(messages: manualMessages, tools: nil)
         let rawContent = raw.content?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let normalized = normalizeManualToolPayload(rawContent)
-        guard let data = normalized.data(using: .utf8) else {
-            return .init(role: "assistant", content: rawContent, toolCalls: nil)
-        }
-        guard let parsed = try? JSONDecoder().decode(ManualToolResponse.self, from: data) else {
-            return .init(role: "assistant", content: rawContent, toolCalls: nil)
-        }
-        let toolCalls = try parsed.toolCalls?.map { call in
-            OllamaClient.ToolCall(
-                id: nil,
-                type: "function",
-                function: .init(name: call.name, arguments: try call.arguments.jsonString())
-            )
-        }
-        return .init(role: "assistant", content: parsed.content, toolCalls: toolCalls)
+        return ManualToolMode.parseResponse(rawContent)
     }
 
     private func shouldRetryWithManualToolMode(apiErrorMessage: String) -> Bool {
@@ -459,7 +445,7 @@ public enum OllamaError: Error {
     case noMessage
 }
 
-private enum JSONValue: Codable, Sendable {
+enum JSONValue: Codable, Sendable {
     case string(String)
     case number(Double)
     case bool(Bool)
