@@ -391,6 +391,22 @@ public actor BackendAPIClient {
         return try decoder.decode(BackendTaskEnvelope.self, from: data).task
     }
 
+    /// Releases a stuck claim back to pending so the task can be re-queued on the next poll.
+    /// Use this instead of failObjectiveTask when the failure is infrastructure-related
+    /// (Ollama timeout, transient backend error) rather than a permanent task failure.
+    public func releaseObjectiveTask(
+        objectiveId: UUID,
+        taskId: UUID
+    ) async throws -> BackendTask {
+        let data = try await performRequest(
+            path: "v1/agent/objectives/\(objectiveId.uuidString)/tasks/\(taskId.uuidString)/release",
+            method: "POST",
+            jsonBody: [:] as [String: String],
+            requiresAgentAuth: true
+        )
+        return try decoder.decode(BackendTaskEnvelope.self, from: data).task
+    }
+
     /// Registers this agent's capabilities and webhook URL with the backend.
     /// Call on startup and every ~15s as a heartbeat so TaskExecutorJob can route tasks here.
     public func registerAgent(

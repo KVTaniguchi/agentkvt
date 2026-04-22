@@ -95,6 +95,10 @@
         <!-- Override model and endpoint if needed -->
         <!-- <key>OLLAMA_MODEL</key><string>qwen3.6:35b</string> -->
         <!-- <key>OLLAMA_BASE_URL</key><string>http://localhost:11434</string> -->
+        <!-- Gemini fallback: uncomment and fill in to activate FallbackOllamaClient.
+             When set, Ollama timeouts automatically retry via Gemini Flash.
+             Free-tier key: https://aistudio.google.com/app/apikey -->
+        <!-- <key>GOOGLE_API_KEY</key><string>YOUR_GEMINI_API_KEY_HERE</string> -->
         <!-- <key>NOTIFICATION_EMAIL</key><string>you@example.com</string> -->
         <!-- <key>AGENTKVT_INBOX_DIR</key><string>/Users/YOURUSERNAME/.agentkvt/inbox</string> -->
         <!-- <key>AGENTKVT_INBOUND_DIR</key><string>/Users/YOURUSERNAME/.agentkvt/inbound</string> -->

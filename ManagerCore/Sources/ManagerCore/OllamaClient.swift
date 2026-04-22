@@ -3,6 +3,14 @@ import Foundation
 /// Protocol for LLM chat (enables mocking in integration tests).
 public protocol OllamaClientProtocol: Sendable {
     func chat(messages: [OllamaClient.Message], tools: [OllamaClient.ToolDef]?) async throws -> OllamaClient.Message
+    /// Returns true if the backend is reachable and can respond quickly.
+    /// Used as a pre-flight check before claiming a work unit to avoid the
+    /// claim-then-timeout loop. Defaults to true for mock/test conformers.
+    func isHealthy() async -> Bool
+}
+
+public extension OllamaClientProtocol {
+    func isHealthy() async -> Bool { true }
 }
 
 /// HTTP client for Ollama chat API with tool-calling support.
@@ -436,7 +444,19 @@ public final class OllamaClient: @unchecked Sendable {
     }
 }
 
-extension OllamaClient: OllamaClientProtocol {}
+extension OllamaClient: OllamaClientProtocol {
+    public func isHealthy() async -> Bool {
+        let url = baseURL.appending(path: "/api/tags")
+        var request = URLRequest(url: url, timeoutInterval: 5)
+        request.httpMethod = "GET"
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            return (response as? HTTPURLResponse)?.statusCode == 200
+        } catch {
+            return false
+        }
+    }
+}
 
 public enum OllamaError: Error {
     case invalidResponse

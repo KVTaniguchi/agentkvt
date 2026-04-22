@@ -350,21 +350,11 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                 )
             }
             if let backendClient {
-                do {
-                    _ = try await backendClient.failObjectiveTask(
-                        objectiveId: objectiveId,
-                        taskId: taskId,
-                        errorMessage: String(describing: error)
-                    )
-                } catch {
-                    await logEvent(
-                        phase: "error",
-                        content: "Failed to transition backend task out of in_progress after supervisor error: \(error)",
-                        objectiveId: objectiveId,
-                        taskId: taskId,
-                        taskName: "Objective Supervisor"
-                    )
-                }
+                await releaseBackendTaskWithRetry(
+                    backendClient: backendClient,
+                    objectiveId: objectiveId,
+                    taskId: taskId
+                )
             }
             await logEvent(
                 phase: "error",
@@ -380,6 +370,19 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         print("[ObjectiveWorker] \(slot.label) started finding work")
         while !Task.isCancelled {
             do {
+                guard await client.isHealthy() else {
+                    await logEvent(
+                        phase: "worker_claim",
+                        content: "LLM backend not healthy — skipping claim, backing off 30s",
+                        objectiveId: nil,
+                        taskId: nil,
+                        workUnitId: nil,
+                        workerLabel: slot.label,
+                        taskName: "Objective Worker \(slot.label)"
+                    )
+                    try? await Task.sleep(for: .seconds(30))
+                    continue
+                }
                 if let claimed = try claimNextWorkUnit(slot: slot) {
                     try await execute(claimed: claimed, slot: slot)
                 } else {
@@ -1074,6 +1077,40 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
 
         let nsError = error as NSError
         return nsError.domain == NSURLErrorDomain && nsError.code == URLError.timedOut.rawValue
+    }
+
+    /// Releases the backend task claim back to `pending` with up to 3 attempts and
+    /// linear backoff. Using `release` rather than `fail` means the task will be
+    /// re-queued on the next Solid Queue poll instead of requiring manual intervention.
+    private func releaseBackendTaskWithRetry(
+        backendClient: BackendAPIClient,
+        objectiveId: UUID,
+        taskId: UUID
+    ) async {
+        for attempt in 1...3 {
+            do {
+                _ = try await backendClient.releaseObjectiveTask(objectiveId: objectiveId, taskId: taskId)
+                await logEvent(
+                    phase: "objective_supervisor",
+                    content: "Released backend task claim back to pending (attempt \(attempt))",
+                    objectiveId: objectiveId,
+                    taskId: taskId,
+                    taskName: "Objective Supervisor"
+                )
+                return
+            } catch {
+                await logEvent(
+                    phase: "error",
+                    content: "Failed to release backend task (attempt \(attempt)/3): \(error)",
+                    objectiveId: objectiveId,
+                    taskId: taskId,
+                    taskName: "Objective Supervisor"
+                )
+                if attempt < 3 {
+                    try? await Task.sleep(for: .seconds(Double(attempt) * 5))
+                }
+            }
+        }
     }
 
     /// Repeats the mission in the **user** turn — local models (e.g. Llama with tools) often under-weight `system` alone.
