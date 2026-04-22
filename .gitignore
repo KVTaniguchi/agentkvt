@@ -27,3 +27,4 @@ AgentKVTiOS/Config/AgentKVTiOS.debug.local.xcconfig
 
 # Local deployment backups (may contain secrets)
 backups/
+.claude/worktrees/
