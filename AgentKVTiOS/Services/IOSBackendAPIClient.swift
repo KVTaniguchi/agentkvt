@@ -565,9 +565,16 @@ struct ObjectiveExecutionHealth: Sendable {
         let freshestActiveSilence = activeSilences.min()
         let stalestActiveSilence = activeSilences.max()
 
+        // A task with a recent unclosed worker_claim is actively running LLM inference — not stalled.
+        // A claim older than the stale threshold is a dead claim (runner crashed without closing it).
+        let anyActivelyRunning = activeTasks.contains {
+            hasActiveWorkerClaim(for: $0, logsByTaskID: logsByTaskID, within: staleThreshold, referenceDate: referenceDate)
+        }
+        let hasStalledActiveWork = !anyActivelyRunning && (freshestActiveSilence ?? 0) >= staleThreshold
+
         return .init(
             hasInProgressWork: true,
-            hasStalledActiveWork: (freshestActiveSilence ?? 0) >= staleThreshold,
+            hasStalledActiveWork: hasStalledActiveWork,
             freshestActiveSilence: freshestActiveSilence,
             stalestActiveSilence: stalestActiveSilence,
             staleThreshold: staleThreshold
@@ -590,6 +597,22 @@ struct ObjectiveExecutionHealth: Sendable {
         logsByTaskID: [UUID: [IOSBackendAgentLog]]
     ) -> Date {
         (logsByTaskID[task.id] ?? []).map(\.timestamp).max() ?? task.updatedAt
+    }
+
+    // Returns true when the most recent terminal log for the task is a worker_claim that is
+    // recent enough to plausibly still be running LLM inference. A claim older than the stale
+    // threshold is treated as a dead claim (runner crashed without closing the work unit).
+    private static func hasActiveWorkerClaim(
+        for task: IOSBackendTask,
+        logsByTaskID: [UUID: [IOSBackendAgentLog]],
+        within staleThreshold: TimeInterval,
+        referenceDate: Date
+    ) -> Bool {
+        let logs = (logsByTaskID[task.id] ?? []).sorted { $0.timestamp < $1.timestamp }
+        let terminalPhases: Set<String> = ["worker_claim", "worker_complete", "worker_error"]
+        guard let lastTerminal = logs.last(where: { terminalPhases.contains($0.phase) }),
+              lastTerminal.phase == "worker_claim" else { return false }
+        return referenceDate.timeIntervalSince(lastTerminal.timestamp) < staleThreshold
     }
 
     private static func taskStartDate(
