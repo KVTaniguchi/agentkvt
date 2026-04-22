@@ -136,7 +136,7 @@ struct RunnerSettings: Sendable {
         let objectiveWorkerConcurrency = min(8, max(1, resolver.int(for: "OBJECTIVE_WORKER_CONCURRENCY") ?? 3))
         let baseURLString = resolver.string(for: "OLLAMA_BASE_URL") ?? "http://localhost:11434"
         let ollamaBaseURL = URL(string: baseURLString) ?? URL(string: "http://localhost:11434")!
-        let ollamaModel = resolver.string(for: "OLLAMA_MODEL") ?? "qwen3.6:35b"
+        let ollamaModel = resolver.string(for: "OLLAMA_MODEL") ?? "qwen3:14b"
         let ollamaAPIKey = resolver.string(for: "OLLAMA_API_KEY")
         let backendBaseURL = resolver.string(for: "AGENTKVT_API_BASE_URL").flatMap(URL.init(string:))
         let backendWorkspaceSlug = resolver.string(for: "AGENTKVT_WORKSPACE_SLUG") ?? (backendBaseURL == nil ? nil : "default")
