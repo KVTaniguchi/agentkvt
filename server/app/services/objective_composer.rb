@@ -41,7 +41,8 @@ class ObjectiveComposer
       messages: build_messages(draft),
       model: @model,
       format: "json",
-      task: "objective-composer"
+      task: "objective-composer",
+      options: { num_ctx: 8192, think: false }
     )
 
     normalize_response(draft, JSON.parse(raw))

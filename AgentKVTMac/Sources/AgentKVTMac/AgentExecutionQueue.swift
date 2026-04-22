@@ -35,6 +35,7 @@ actor AgentExecutionQueue {
         modelContext: SharedModelContext,
         modelContainer: ModelContainer,
         client: any OllamaClientProtocol,
+        heavyClient: (any OllamaClientProtocol)? = nil,
         registry: ToolRegistry,
         backendClient: BackendAPIClient?,
         emailIngestor: EmailIngestor,
@@ -56,7 +57,8 @@ actor AgentExecutionQueue {
         self.emailIngestor = emailIngestor
         self.cloudInbound = CloudInboundService(modelContext: modelContext.raw, directory: dropzoneDir)
         self.agentQueue = AgentQueue()
-        
+
+        let workerClient = heavyClient ?? client
         let objectiveLogWriter: any AgentTaskLogWriting = if let backendClient {
             BackendAgentTaskLogWriter(backendClient: backendClient)
         } else {
@@ -64,13 +66,13 @@ actor AgentExecutionQueue {
         }
         let objectiveTaskRunner = AgentTaskRunner(
             modelContext: modelContext.raw,
-            client: client,
+            client: workerClient,
             registry: registry,
             logWriter: objectiveLogWriter
         )
         self.objectiveExecutionPool = ObjectiveExecutionPool(
             modelContainer: modelContainer,
-            client: client,
+            client: workerClient,
             taskRunner: objectiveTaskRunner,
             backendClient: backendClient,
             maxConcurrentWorkers: objectiveWorkerConcurrency
