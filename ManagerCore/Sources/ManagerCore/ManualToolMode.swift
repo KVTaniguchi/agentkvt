@@ -1,7 +1,7 @@
 import Foundation
 
-/// Shared utilities for manual tool-call mode — used when a model doesn't support
-/// native tool-calling (e.g. Gemini fallback) or when Ollama's tool API returns an error.
+/// Shared utilities for manual tool-call mode — used when Ollama's tool API returns an error
+/// and the call must be retried with a JSON-prompt-based tool-calling approach.
 ///
 /// Protocol: the model is given a JSON-only system prompt describing the tools, and
 /// must respond with either {"tool_calls":[...]} or {"content":"..."}.

@@ -119,10 +119,6 @@ public func runAgentKVTMacRunner() async {
     registry.register(makeReadResearchSnapshotTool(modelContext: context))
     registry.register(makeWriteResearchSnapshotTool(modelContext: context))
     registry.register(makeMultiStepSearchTool(apiKey: settings.ollamaAPIKey))
-    if let geminiKey = settings.geminiAPIKey, !geminiKey.isEmpty {
-        registry.register(makeGeminiAskTool(apiKey: geminiKey))
-    }
-
     if !settings.localFileAllowedDirectories.isEmpty {
         registry.register(makeReadLocalFileTool(allowedDirectories: settings.localFileAllowedDirectories))
     }
@@ -131,19 +127,10 @@ public func runAgentKVTMacRunner() async {
     registry.register(makeShellCommandTool())
     registry.register(makePlaywrightScoutTool())
 
-    let primaryClient = OllamaClient(
+    let client = OllamaClient(
         baseURL: settings.ollamaBaseURL,
         model: settings.ollamaModel
     )
-    let client: any OllamaClientProtocol
-    if let geminiKey = settings.geminiAPIKey, !geminiKey.isEmpty {
-        client = FallbackOllamaClient(
-            primary: primaryClient,
-            fallback: GeminiOllamaAdapter(apiKey: geminiKey)
-        )
-    } else {
-        client = primaryClient
-    }
     let backendClient = settings.backendBaseURL.map {
         BackendAPIClient(
             baseURL: $0,
