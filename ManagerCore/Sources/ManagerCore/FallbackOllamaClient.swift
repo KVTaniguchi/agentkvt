@@ -16,7 +16,15 @@ public final class FallbackOllamaClient: OllamaClientProtocol, @unchecked Sendab
             return try await primary.chat(messages: messages, tools: tools)
         } catch {
             guard Self.isOverloadError(error) else { throw error }
-            return try await fallback.chat(messages: messages, tools: tools)
+            print("[FallbackOllamaClient] Primary failed (\(error.localizedDescription)) — routing to fallback")
+            do {
+                let response = try await fallback.chat(messages: messages, tools: tools)
+                print("[FallbackOllamaClient] Fallback succeeded")
+                return response
+            } catch {
+                print("[FallbackOllamaClient] Fallback also failed: \(error.localizedDescription)")
+                throw error
+            }
         }
     }
 
