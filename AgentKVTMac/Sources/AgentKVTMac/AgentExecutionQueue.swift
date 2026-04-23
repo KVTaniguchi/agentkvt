@@ -187,6 +187,8 @@ struct TaskSearchPayload: Sendable {
     let doneWhen: String?
     /// Full parent objective goal from Rails (`objective.goal`); optional for older webhook clients.
     let objectiveGoal: String?
+    /// Structured brief from Rails (`objective.brief_json`) serialized as a JSON string; optional for older webhook clients.
+    let briefJson: String?
 
     /// Returns nil if the body is not a valid run_task_search payload.
     init?(json: String) {
@@ -219,6 +221,13 @@ struct TaskSearchPayload: Sendable {
             self.objectiveGoal = t.isEmpty ? nil : t
         } else {
             self.objectiveGoal = nil
+        }
+        if let brief = obj["objective_brief"] as? [String: Any],
+           let briefData = try? JSONSerialization.data(withJSONObject: brief),
+           let briefString = String(data: briefData, encoding: .utf8) {
+            self.briefJson = briefString
+        } else {
+            self.briefJson = nil
         }
     }
 

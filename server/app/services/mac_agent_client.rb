@@ -43,7 +43,7 @@ class MacAgentClient
 
   def build_payload(task)
     goal = task.objective&.goal.to_s
-    {
+    payload = {
       agentkvt: "run_task_search",
       task_id: task.id,
       objective_id: task.objective_id,
@@ -59,5 +59,8 @@ class MacAgentClient
       # to the multi_step_search tool.
       steps_json: [ { type: "search", query: task.description } ].to_json
     }
+    brief = task.objective&.brief_json
+    payload[:objective_brief] = brief if brief.present?
+    payload
   end
 end

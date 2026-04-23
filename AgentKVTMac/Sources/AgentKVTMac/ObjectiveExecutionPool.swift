@@ -14,6 +14,7 @@ private struct OrphanedObjectiveGroup: Sendable {
     let taskId: UUID
     let rootTaskDescription: String
     let parentObjectiveGoal: String?
+    let briefJson: String?
     let taskKind: String
     let allowedToolIds: [String]
     let requiredCapabilities: [String]
@@ -134,6 +135,8 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         let rootTaskDescription: String
         /// Parent objective goal from Rails webhook (`objective_goal`); nil in older SwiftData payloads.
         let parentObjectiveGoal: String?
+        /// Structured brief from Rails webhook (`objective_brief`) as a JSON string; nil in older payloads.
+        let briefJson: String?
         let taskKind: String?
         let allowedToolIds: [String]?
         let requiredCapabilities: [String]?
@@ -189,6 +192,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         var rootWorkUnitId: UUID?
         do {
             let parentGoal = payload.objectiveGoal
+            let briefJson = payload.briefJson
             let taskKind = normalizedTaskKind(raw: payload.taskKind, description: payload.description)
             let allowedToolIds = normalizedObjectiveToolIds(
                 explicit: payload.allowedToolIds,
@@ -205,6 +209,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                 taskId: taskId,
                 title: payload.description,
                 parentObjectiveGoal: parentGoal,
+                briefJson: briefJson,
                 taskKind: taskKind,
                 allowedToolIds: allowedToolIds,
                 requiredCapabilities: payload.requiredCapabilities,
@@ -244,6 +249,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                     planningRound: 1,
                     rootTaskDescription: payload.description,
                     parentObjectiveGoal: parentGoal,
+                    briefJson: briefJson,
                     taskKind: taskKind,
                     allowedToolIds: allowedToolIds,
                     requiredCapabilities: payload.requiredCapabilities,
@@ -275,6 +281,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                     taskId: taskId,
                     rootTaskDescription: payload.description,
                     parentObjectiveGoal: parentGoal,
+                    briefJson: briefJson,
                     taskKind: taskKind,
                     allowedToolIds: allowedToolIds,
                     requiredCapabilities: payload.requiredCapabilities,
@@ -292,6 +299,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                         planningRound: 1,
                         rootTaskDescription: payload.description,
                         parentObjectiveGoal: parentGoal,
+                        briefJson: briefJson,
                         taskKind: taskKind,
                         allowedToolIds: allowedToolIds,
                         requiredCapabilities: payload.requiredCapabilities,
@@ -307,6 +315,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                     taskId: taskId,
                     rootTaskDescription: payload.description,
                     parentObjectiveGoal: parentGoal,
+                    briefJson: briefJson,
                     taskKind: taskKind,
                     allowedToolIds: allowedToolIds,
                     requiredCapabilities: payload.requiredCapabilities,
@@ -325,6 +334,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                 taskId: taskId,
                 rootTaskDescription: payload.description,
                 parentObjectiveGoal: parentGoal,
+                briefJson: briefJson,
                 taskKind: taskKind,
                 allowedToolIds: allowedToolIds,
                 requiredCapabilities: payload.requiredCapabilities,
@@ -699,6 +709,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                 goal: effectiveGoal,
                 taskLine: claimed.payload.rootTaskDescription
             )
+            let briefBlock = briefContextBlock(claimed.payload.briefJson)
             systemPrompt = """
             AgentKVT objective-board mode (tools required). Do not reply with generic chat-assistant disclaimers; you already have the mission in the user message.
 
@@ -711,6 +722,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             You are \(workerLabel), the synthesis agent for one objective task.
 
             \(context)
+            \(briefBlock.isEmpty ? "" : "\n\(briefBlock)\n")
 
             Synthesis work unit: \(claimed.payload.workDescription)
             Objective ID: \(claimed.objectiveId.uuidString)
@@ -764,6 +776,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                 goal: effectiveGoal,
                 taskLine: claimed.payload.rootTaskDescription
             )
+            let briefBlock = briefContextBlock(claimed.payload.briefJson)
             if taskKind == "action" {
                 let actionToolsLine = sideEffectToolIds.isEmpty ? "No side-effect tool ids were specified; prefer the most direct allowed tool." : sideEffectToolIds.joined(separator: ", ")
                 let doneWhenLine = doneWhen ?? "Attempt the requested action, verify what happened, and record a receipt or blocker."
@@ -779,7 +792,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                 - To call a tool, use the tool interface; do not write tool-call JSON in your response text.
 
                 \(context)
-
+                \(briefBlock.isEmpty ? "" : "\n\(briefBlock)\n")
                 Execution work unit: \(claimed.payload.workDescription)
                 Objective ID: \(claimed.objectiveId.uuidString)
                 Task ID: \(claimed.taskId.uuidString)
@@ -823,7 +836,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                 - To call a tool, use the tool interface; do not write tool-call JSON in your response text.
 
                 \(context)
-
+                \(briefBlock.isEmpty ? "" : "\n\(briefBlock)\n")
                 Focused work unit: \(claimed.payload.workDescription)
                 Objective ID: \(claimed.objectiveId.uuidString)
                 Task ID: \(claimed.taskId.uuidString)
@@ -1176,6 +1189,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         taskId: UUID,
         rootTaskDescription: String,
         parentObjectiveGoal: String?,
+        briefJson: String?,
         taskKind: String,
         allowedToolIds: [String],
         requiredCapabilities: [String],
@@ -1186,6 +1200,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         let planned = await planResearchWorkUnits(
             rootTaskDescription: rootTaskDescription,
             parentObjectiveGoal: parentObjectiveGoal,
+            briefJson: briefJson,
             completedSummaries: completedSummaries,
             planningRound: planningRound
         )
@@ -1202,6 +1217,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                     planningRound: planningRound,
                     rootTaskDescription: rootTaskDescription,
                     parentObjectiveGoal: parentObjectiveGoal,
+                    briefJson: briefJson,
                     taskKind: taskKind,
                     allowedToolIds: allowedToolIds,
                     requiredCapabilities: requiredCapabilities,
@@ -1236,6 +1252,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
     private func planResearchWorkUnits(
         rootTaskDescription: String,
         parentObjectiveGoal: String?,
+        briefJson: String?,
         completedSummaries: [String],
         planningRound: Int
     ) async -> [String] {
@@ -1267,6 +1284,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         SPECIFICITY REQUIREMENT: Work units that would produce vague or boilerplate answers are useless. If the root task is already narrow enough to execute directly, return 0 work units (empty array) rather than splitting into generic sub-tasks.
         If the task is asking for a recommendation, summary, decision, or clarified brief, return 0 work units so the supervisor can go straight to synthesis.
 
+        CONSTRAINT EMBEDDING: If the brief contains hard constraints or success criteria, each relevant work unit must embed the specific threshold so the worker knows to flag violations.
         REJECTION CRITERIA: If the root task includes minimum thresholds (e.g. "minimum 3 hours per land", "under $500"), echo those thresholds in the relevant work unit descriptions so the worker knows to reject estimates that don't meet them.
         """
         let goalBlock: String = {
@@ -1278,10 +1296,12 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             \(g)
             """
         }()
+        let briefBlock = briefContextBlock(briefJson)
         let userPrompt = """
         Objective task:
         \(rootTaskDescription)
         \(goalBlock)
+        \(briefBlock.isEmpty ? "" : "\n\(briefBlock)")
 
         Planning round: \(planningRound)
 
@@ -1363,6 +1383,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         taskId: UUID,
         title: String,
         parentObjectiveGoal: String?,
+        briefJson: String?,
         taskKind: String,
         allowedToolIds: [String],
         requiredCapabilities: [String],
@@ -1379,6 +1400,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             taskId: taskId,
             rootTaskDescription: title,
             parentObjectiveGoal: parentObjectiveGoal,
+            briefJson: briefJson,
             taskKind: taskKind,
             allowedToolIds: allowedToolIds,
             requiredCapabilities: requiredCapabilities,
@@ -1411,6 +1433,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         taskId: UUID,
         rootTaskDescription: String,
         parentObjectiveGoal: String?,
+        briefJson: String?,
         taskKind: String,
         allowedToolIds: [String],
         requiredCapabilities: [String],
@@ -1427,6 +1450,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             taskId: taskId,
             rootTaskDescription: rootTaskDescription,
             parentObjectiveGoal: parentObjectiveGoal,
+            briefJson: briefJson,
             taskKind: taskKind,
             allowedToolIds: allowedToolIds,
             requiredCapabilities: requiredCapabilities,
@@ -1464,6 +1488,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
         planningRound: Int,
         rootTaskDescription: String,
         parentObjectiveGoal: String?,
+        briefJson: String?,
         taskKind: String,
         allowedToolIds: [String],
         requiredCapabilities: [String],
@@ -1476,6 +1501,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             taskId: taskId,
             rootTaskDescription: rootTaskDescription,
             parentObjectiveGoal: parentObjectiveGoal,
+            briefJson: briefJson,
             taskKind: taskKind,
             allowedToolIds: allowedToolIds,
             requiredCapabilities: requiredCapabilities,
@@ -1856,6 +1882,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                 taskId: taskId,
                 rootTaskDescription: payload.rootTaskDescription,
                 parentObjectiveGoal: payload.parentObjectiveGoal,
+                briefJson: payload.briefJson,
                 taskKind: normalizedTaskKind(raw: payload.taskKind, description: payload.rootTaskDescription),
                 allowedToolIds: normalizedObjectiveToolIds(
                     explicit: payload.allowedToolIds,
@@ -1893,6 +1920,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
                 taskId: orphan.taskId,
                 rootTaskDescription: orphan.rootTaskDescription,
                 parentObjectiveGoal: orphan.parentObjectiveGoal,
+                briefJson: orphan.briefJson,
                 taskKind: orphan.taskKind,
                 allowedToolIds: orphan.allowedToolIds,
                 requiredCapabilities: orphan.requiredCapabilities,
@@ -1935,6 +1963,36 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
 
     private func finalSummaryKey(taskId: UUID) -> String {
         "task_summary_\(taskId.uuidString.replacingOccurrences(of: "-", with: "").prefix(12))"
+    }
+
+    private func briefContextBlock(_ briefJson: String?) -> String {
+        guard let briefJson,
+              let data = briefJson.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              !obj.isEmpty else { return "" }
+
+        var lines: [String] = ["OBJECTIVE BRIEF (original user-provided context — validate all findings against these):"]
+
+        func appendList(_ key: String, _ label: String) {
+            let items: [String]
+            if let arr = obj[key] as? [String] {
+                items = arr.filter { !$0.isEmpty }
+            } else if let str = obj[key] as? String, !str.isEmpty {
+                items = [str]
+            } else { return }
+            guard !items.isEmpty else { return }
+            lines.append("\(label):")
+            items.forEach { lines.append("- \($0)") }
+        }
+
+        appendList("context", "Context")
+        appendList("constraints", "Constraints (hard limits — flag any finding that violates these)")
+        appendList("success_criteria", "Success criteria (every snapshot must advance at least one of these)")
+        appendList("preferences", "Preferences")
+        appendList("deliverable", "Deliverable")
+        appendList("open_questions", "Open questions to resolve")
+
+        return lines.count > 1 ? lines.joined(separator: "\n") : ""
     }
 
     private func objectiveContextBlock(goal: String?, taskLine: String) -> String {
