@@ -1361,14 +1361,6 @@ actor IOSBackendAPIClient {
         _ = try await performRequest(path: "v1/objectives/\(id.uuidString)", method: "DELETE")
     }
 
-    func postClientTelemetrySnapshot(payload: [String: Any]) async throws {
-        _ = try await performRequest(
-            path: "v1/client_telemetry_snapshots",
-            method: "POST",
-            jsonBody: payload
-        )
-    }
-
     private func iso8601(_ date: Date) -> String {
         ISO8601DateFormatter().string(from: date)
     }
@@ -1754,10 +1746,6 @@ final class IOSBackendSyncService {
         )
     }
 
-    func postClientTelemetrySnapshotRemote(payload: [String: Any]) async throws {
-        guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
-        try await client.postClientTelemetrySnapshot(payload: payload)
-    }
 }
 
 extension IOSBackendSyncService: ObjectivesRemoteSyncing {}

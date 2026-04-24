@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_04_19_000000) do
+ActiveRecord::Schema[8.0].define(version: 2026_04_24_000000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -128,19 +128,6 @@ ActiveRecord::Schema[8.0].define(version: 2026_04_19_000000) do
     t.datetime "updated_at", null: false
     t.index ["workspace_id", "is_processed", "timestamp"], name: "index_inbound_files_on_workspace_processed_timestamp"
     t.index ["workspace_id", "timestamp"], name: "index_inbound_files_on_workspace_id_and_timestamp"
-  end
-
-  create_table "inbound_emails", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
-    t.uuid "workspace_id", null: false
-    t.string "message_id", null: false
-    t.string "inbox_id", null: false
-    t.string "from_address"
-    t.string "subject"
-    t.text "body_text"
-    t.datetime "created_at", null: false
-    t.datetime "updated_at", null: false
-    t.index ["workspace_id", "message_id"], name: "index_inbound_emails_on_workspace_id_and_message_id", unique: true
-    t.index ["workspace_id"], name: "index_inbound_emails_on_workspace_id"
   end
 
   create_table "life_context_entries", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -379,7 +366,6 @@ ActiveRecord::Schema[8.0].define(version: 2026_04_19_000000) do
   add_foreign_key "devices", "users"
   add_foreign_key "family_members", "devices"
   add_foreign_key "family_members", "workspaces"
-  add_foreign_key "inbound_emails", "workspaces"
   add_foreign_key "inbound_files", "family_members", column: "uploaded_by_profile_id"
   add_foreign_key "inbound_files", "workspaces"
   add_foreign_key "life_context_entries", "users", column: "updated_by_user_id"

@@ -1,6 +1,4 @@
 class Workspace < ApplicationRecord
-  has_many :workspace_memberships, dependent: :destroy
-  has_many :users, through: :workspace_memberships
   has_many :family_members, dependent: :destroy
   has_many :chat_threads, dependent: :destroy
   has_many :chat_messages, through: :chat_threads
@@ -13,10 +11,7 @@ class Workspace < ApplicationRecord
   has_many :agent_registrations, dependent: :destroy
   has_many :slack_workspace_links, dependent: :destroy
   has_one :agent_identity, dependent: :destroy
-  has_many :agent_personas, dependent: :destroy
-  has_many :workspace_provider_credentials, dependent: :destroy
   has_many :slack_messages, dependent: :destroy
-  has_many :client_context_snapshots, dependent: :destroy
 
   validates :name, presence: true
   validates :slug, presence: true, uniqueness: true
