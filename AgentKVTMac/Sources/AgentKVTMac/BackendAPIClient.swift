@@ -118,6 +118,19 @@ private struct BackendChatMessageEnvelope: Codable {
     let chatMessage: BackendChatMessage
 }
 
+public struct BackendInboundEmail: Codable, Sendable {
+    public let id: UUID
+    public let workspaceId: UUID
+    public let messageId: String
+    public let fromAddress: String?
+    public let subject: String?
+    public let createdAt: Date
+}
+
+private struct BackendInboundEmailEnvelope: Codable {
+    let inboundEmail: BackendInboundEmail
+}
+
 private struct BackendInboundFileEnvelope: Codable {
     let inboundFile: BackendInboundFile
 }
@@ -536,6 +549,26 @@ public actor BackendAPIClient {
             requiresAgentAuth: true
         )
         return try decoder.decode(BackendInboundFileEnvelope.self, from: data).inboundFile
+    }
+
+    @discardableResult
+    public func postInboundEmail(
+        messageId: String,
+        fromAddress: String?,
+        subject: String?,
+        bodyText: String?
+    ) async throws -> BackendInboundEmail {
+        var payload: [String: Any] = ["message_id": messageId]
+        if let v = fromAddress { payload["from_address"] = v }
+        if let v = subject     { payload["subject"] = v }
+        if let v = bodyText    { payload["body_text"] = v }
+        let data = try await performRequest(
+            path: "v1/agent/inbound_emails",
+            method: "POST",
+            jsonBody: ["inbound_email": payload],
+            requiresAgentAuth: true
+        )
+        return try decoder.decode(BackendInboundEmailEnvelope.self, from: data).inboundEmail
     }
 
     private func performRequest(

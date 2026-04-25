@@ -243,6 +243,12 @@ private func runScheduler(
         agentMailPoller = nil
     }
 
+    // ── Backend email forwarding (posts .eml files to Rails for objective routing) ─
+    if let backendClient, imapPoller != nil || agentMailPoller != nil {
+        let emailService = BackendEmailService(backendClient: backendClient, directory: emailIngestor.directory)
+        await emailService.start(pollInterval: 30)
+    }
+
     // ── FSEvents: inbox (.eml files) ─────────────────────────────────────────────
     let inboxWatcher = DirectoryWatcher(directory: emailIngestor.directory) { url in
         guard url.pathExtension.lowercased() == "eml" else { return }
