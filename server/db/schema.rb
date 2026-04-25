@@ -114,6 +114,18 @@ ActiveRecord::Schema[8.0].define(version: 2026_04_24_000000) do
     t.index ["workspace_id"], name: "index_family_members_on_workspace_id"
   end
 
+  create_table "inbound_emails", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "workspace_id", null: false
+    t.string "message_id", null: false
+    t.string "from_address"
+    t.string "subject"
+    t.text "body_text"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["workspace_id", "message_id"], name: "index_inbound_emails_on_workspace_id_and_message_id", unique: true
+    t.index ["workspace_id"], name: "index_inbound_emails_on_workspace_id"
+  end
+
   create_table "inbound_files", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.uuid "workspace_id", null: false
     t.uuid "uploaded_by_profile_id"
@@ -334,7 +346,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_04_24_000000) do
     t.jsonb "metadata_json", default: {}, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.index ["workspace_id", "provider"], name: "index_workspace_provider_credentials_on_workspace_id_and_provider", unique: true
+    t.index ["workspace_id", "provider"], name: "idx_workspace_provider_credentials_unique", unique: true
     t.index ["workspace_id"], name: "index_workspace_provider_credentials_on_workspace_id"
   end
 
@@ -355,6 +367,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_04_24_000000) do
     t.index ["workspace_id"], name: "index_slack_messages_on_workspace_id"
   end
 
+  add_foreign_key "inbound_emails", "workspaces"
   add_foreign_key "action_items", "family_members", column: "owner_profile_id"
   add_foreign_key "action_items", "workspaces"
   add_foreign_key "agent_logs", "workspaces"
