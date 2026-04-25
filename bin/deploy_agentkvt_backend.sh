@@ -5,7 +5,7 @@ usage() {
   cat <<'EOF'
 Usage: ./bin/deploy_agentkvt_backend.sh [git-ref]
 
-Deploy the Rails backend from the current repo checkout on the server Mac.
+Deploy the Rails backend and Mac runner from the current repo checkout on the server Mac.
 
 Default git-ref: origin/main
 
@@ -17,6 +17,7 @@ What this script does:
 - restarts the API via launchd if com.agentkvt.api is installed
 - falls back to Puma tmp_restart if the API is already running unmanaged
 - verifies /healthz and probes a protected route to catch stale route tables
+- if AgentKVTMac/ Swift sources changed: rebuilds the runner and restarts com.agentkvt.runner
 EOF
 }
 
@@ -28,6 +29,8 @@ fi
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TARGET_REF="${1:-origin/main}"
 LAUNCHD_LABEL="com.agentkvt.api"
+RUNNER_LABEL="com.agentkvt.runner"
+RUNNER_PKG_DIR="${REPO_ROOT}/AgentKVTMac"
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/agentkvt-backend-deploy.XXXXXX")"
 STASHED=0
 BACKUP_BRANCH=""
@@ -152,6 +155,8 @@ git fetch origin
 
 git rev-parse --verify "${TARGET_REF}^{commit}" >/dev/null 2>&1 || fail "Git ref not found: ${TARGET_REF}"
 
+PRE_MERGE_SHA="$(git rev-parse HEAD)"
+
 log "Merging ${TARGET_REF} into ${CURRENT_BRANCH}"
 git merge --no-edit "${TARGET_REF}"
 
@@ -170,6 +175,30 @@ wait_for_healthz
 
 log "Probing protected runtime route"
 probe_runtime_routes
+
+# ── Mac runner rebuild (only when Swift sources changed) ──────────────────────
+RUNNER_CHANGED="$(git diff --name-only "${PRE_MERGE_SHA}" HEAD -- AgentKVTMac/ 2>/dev/null || true)"
+if [ -n "${RUNNER_CHANGED}" ]; then
+  log "AgentKVTMac sources changed — rebuilding runner"
+  (
+    cd "${RUNNER_PKG_DIR}"
+    swift build -c release 2>&1 | grep -E 'error:|Build complete|warning: unused' | grep -v 'warning:' || true
+  )
+  if launchctl print "gui/$(id -u)/${RUNNER_LABEL}" >/dev/null 2>&1; then
+    log "Restarting runner via launchd (gui/$(id -u)/${RUNNER_LABEL})"
+    launchctl kickstart -k "gui/$(id -u)/${RUNNER_LABEL}"
+    sleep 3
+    if launchctl list "${RUNNER_LABEL}" 2>/dev/null | grep -q '"PID"'; then
+      printf 'runner: running\n'
+    else
+      printf 'runner: not running after restart — check /tmp/agentkvt-runner.err\n' >&2
+    fi
+  else
+    printf 'runner launchd service not found — skipping restart\n'
+  fi
+else
+  printf '\n==> No AgentKVTMac changes — skipping runner rebuild\n'
+fi
 
 log "Deploy complete"
 printf 'Current branch: %s\n' "${CURRENT_BRANCH}"
