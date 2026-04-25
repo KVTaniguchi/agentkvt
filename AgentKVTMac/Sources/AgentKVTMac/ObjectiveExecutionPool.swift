@@ -1556,6 +1556,7 @@ private final class ObjectiveExecutionProcessor: @unchecked Sendable {
             taskId: unit.sourceTaskId ?? UUID(),
             rootTaskDescription: unit.title,
             parentObjectiveGoal: nil,
+            briefJson: nil,
             taskKind: nil,
             allowedToolIds: nil,
             requiredCapabilities: nil,
