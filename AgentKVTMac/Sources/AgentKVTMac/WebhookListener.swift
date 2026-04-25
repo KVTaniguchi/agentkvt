@@ -41,6 +41,19 @@ final class WebhookListener: @unchecked Sendable {
                 print("WebhookListener: listening on port \(self.port)")
             case .failed(let err):
                 self.listener = nil
+                // EADDRINUSE: retry once for transient races (e.g. TIME_WAIT), then yield
+                // ownership to the existing AgentKVT process rather than grinding 5 attempts.
+                if case .posix(let code) = err, code == .EADDRINUSE {
+                    if attempt == 1 {
+                        print("WebhookListener: port \(self.port) in use, retrying once in 5s…")
+                        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 5) {
+                            self.attemptBind(attempt: attempt + 1)
+                        }
+                    } else {
+                        print("WebhookListener: port \(self.port) owned by another AgentKVT process — yielding webhook ownership")
+                    }
+                    return
+                }
                 if attempt < 5 {
                     print("WebhookListener: bind failed (\(err)), retrying in 3s (attempt \(attempt)/5)…")
                     DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 3) {
