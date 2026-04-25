@@ -166,6 +166,8 @@ class ObjectiveComposer
       "What household project or responsibility are you trying to plan, and what deadline or constraints should I optimize for?"
     when "shopping"
       "What items are you looking to buy, and are there specific retailers (like Target) or price limits I should keep in mind?"
+    when "restaurant_reservation"
+      "How many people, what night and time, and what neighborhood or part of the city? Any cuisine or vibe in mind — and should I just surface options for you to pick, or go ahead and make the booking once I find a good fit?"
     else
       "What are you trying to accomplish, and what would make the result feel successful?"
     end

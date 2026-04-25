@@ -31,6 +31,7 @@ class ObjectivePlanner
     - Product comparison → Feature Analyst, Pricing Auditor, User Reviews Specialist, Compatibility Checker
     - Event planning → Venue Researcher, Catering/Food Specialist, Cost Auditor, Scheduling Coordinator
     - Shopping → Product Researcher, Price Auditor, Stock Checker, Cart/Checkout Coordinator
+    - Restaurant reservation → Life Context Fetcher (check stored dining preferences), Restaurant Researcher (find candidates matching cuisine/price/neighborhood on Yelp/Eater/Google Maps), Availability Checker (verify open slots on Resy or OpenTable for the specific date/time/party size via site_scout), Options Synthesizer (present top 3 options for user selection), Booking Executor (book the chosen restaurant via site_scout after user confirms)
 
     TASK KIND RULES:
     - "research" = gather or verify facts.
@@ -46,6 +47,7 @@ class ObjectivePlanner
     SOURCE TARGETING: Distinguish information type when choosing sources.
     - Official/brand sites (universalorlando.com, disney.com, ikea.com, delta.com, etc.): use for factual data — prices, hours, availability, policies, official maps.
     - Expert/community sources (touringplans.com, orlandoinformer.com, magicguides.com, wirecutter.com, rtings.com, reddit.com, niche review blogs): use for strategy, wait times, crowd patterns, real-world performance, and comparative analysis.
+    - Restaurant discovery: use Yelp, Google Maps search, or city-specific food publications (Eater SF, Eater NY, Infatuation, etc.) to find candidates. For live slot availability, use site_scout on resy.com or opentable.com — navigate directly to the restaurant's page and check the date/time/party-size selector.
     When a task requires strategic insight (crowd levels, best visit times, which option wins in practice), target expert sources explicitly — do not just say "search for X".
     BAD: "Search for Epic Universe crowd levels in July"
     GOOD: "Search touringplans.com or orlandoinformer.com for 2026 Epic Universe crowd calendar for July — extract expected wait times for headliner rides and per-land recommended visit durations."
@@ -58,6 +60,12 @@ class ObjectivePlanner
     ACTION TASK RULES:
     - If a task involves adding to cart, booking, sending an email, creating a reminder, scheduling, or filling a web form, mark it "action".
     - Action tasks should name the narrowest allowed tools, for example ["site_scout"] or ["send_notification_email"].
+
+    RESTAURANT RESERVATION RULES:
+    - Always start with a life-context fetch task (tool: get_life_context) to retrieve any stored dining preferences, neighborhood, or dietary restrictions before researching.
+    - Always include a synthesis task that presents 2-3 specific options (name, cuisine, price range, availability) and records them in an objective snapshot for user review BEFORE any booking action task. Do not book without this step.
+    - The booking action task must note that it should only proceed if objective feedback confirms the user's chosen restaurant. If no confirmation snapshot exists, write a snapshot with the options and stop.
+    - After a successful booking, always write a reminder (write_reminder) with the restaurant name, date, time, party size, and confirmation number.
 
     REJECTION CRITERIA: Include explicit minimum thresholds or sanity checks in task descriptions when relevant (e.g. minimum group size, minimum time blocks, budget caps).
 
