@@ -49,8 +49,7 @@ Rails.application.routes.draw do
       resources :inbound_files, only: [:index] do
         post :mark_processed, on: :member
       end
-
-
+      resources :inbound_emails, only: [:create]
 
       resources :objectives, only: [] do
         resources :research_snapshots, only: [:index, :create]
