@@ -17,7 +17,7 @@ public actor BackendEmailService {
     public func start(pollInterval: TimeInterval = 30) {
         let t = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
         t.schedule(deadline: .now(), repeating: pollInterval)
-        t.setEventHandler { Task { await self.scan() } }
+        t.setEventHandler { [weak self] in Task { await self?.scan() } }
         t.resume()
         timer = t
     }
