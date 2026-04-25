@@ -6,6 +6,7 @@ module ObjectiveComposerTemplates
     trip_planning
     household_planning
     shopping
+    restaurant_reservation
   ].freeze
 
   FIELD_KEYS = %w[
@@ -23,7 +24,8 @@ module ObjectiveComposerTemplates
     "date_night" => "Date Night",
     "trip_planning" => "Trip Planning",
     "household_planning" => "Household Planning",
-    "shopping" => "Shopping"
+    "shopping" => "Shopping",
+    "restaurant_reservation" => "Restaurant Reservation"
   }.freeze
 
   TEMPLATE_GUIDANCE = {
@@ -32,7 +34,8 @@ module ObjectiveComposerTemplates
     "date_night" => "Clarify the occasion, timing, budget, location, preferences, and the kind of plan or recommendations the user wants back.",
     "trip_planning" => "Clarify the destination, timing, travelers, budget, logistics constraints, and the itinerary or comparison deliverable the user wants.",
     "household_planning" => "Clarify the household project, deadline, budget, constraints, participants, and the checklist or plan the user wants.",
-    "shopping" => "Clarify the items needed, the preferred retailers (e.g. Target), any price thresholds, delivery/pickup preferences, and the final deliverable (e.g. cart ready for checkout)."
+    "shopping" => "Clarify the items needed, the preferred retailers (e.g. Target), any price thresholds, delivery/pickup preferences, and the final deliverable (e.g. cart ready for checkout).",
+    "restaurant_reservation" => "Clarify the party size, date and time, neighborhood or city, cuisine or vibe preference, budget per person, and whether to just surface options or actually make the booking."
   }.freeze
 
   REQUIRED_FIELDS = {
@@ -41,7 +44,8 @@ module ObjectiveComposerTemplates
     "date_night" => %w[context constraints preferences success_criteria],
     "trip_planning" => %w[context constraints preferences success_criteria deliverable],
     "household_planning" => %w[context constraints success_criteria deliverable],
-    "shopping" => %w[context constraints preferences success_criteria deliverable]
+    "shopping" => %w[context constraints preferences success_criteria deliverable],
+    "restaurant_reservation" => %w[context constraints preferences success_criteria]
   }.freeze
 
   def self.normalize_template_key(value)

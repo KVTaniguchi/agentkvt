@@ -12,6 +12,7 @@ private enum ObjectiveComposerTemplate: String, CaseIterable, Identifiable {
     case dateNight = "date_night"
     case tripPlanning = "trip_planning"
     case householdPlanning = "household_planning"
+    case restaurantReservation = "restaurant_reservation"
 
     var id: String { rawValue }
 
@@ -22,6 +23,7 @@ private enum ObjectiveComposerTemplate: String, CaseIterable, Identifiable {
         case .dateNight: return "Date Night"
         case .tripPlanning: return "Trip Planning"
         case .householdPlanning: return "Household Planning"
+        case .restaurantReservation: return "Restaurant Reservation"
         }
     }
 
@@ -37,6 +39,8 @@ private enum ObjectiveComposerTemplate: String, CaseIterable, Identifiable {
             return "Turn a destination idea into a planning-ready travel brief."
         case .householdPlanning:
             return "Clarify chores, projects, deadlines, and constraints for home planning."
+        case .restaurantReservation:
+            return "Find and book a restaurant — the agent surfaces options and waits for your pick before reserving."
         }
     }
 
@@ -47,6 +51,7 @@ private enum ObjectiveComposerTemplate: String, CaseIterable, Identifiable {
         case .dateNight: return "heart.text.square"
         case .tripPlanning: return "airplane"
         case .householdPlanning: return "house"
+        case .restaurantReservation: return "fork.knife"
         }
     }
 }
