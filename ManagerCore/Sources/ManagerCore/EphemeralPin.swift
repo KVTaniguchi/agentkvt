@@ -14,7 +14,7 @@ public enum EphemeralPinRole: String, Codable, Sendable {
 @Model
 public final class EphemeralPin {
     public var id: UUID = UUID()
-    public var content: String = “”
+    public var content: String = ""
     public var category: String?
     public var strength: Double = 1.0
     public var expiresAt: Date = Date()
