@@ -19,10 +19,21 @@ class ChatThread < ApplicationRecord
 
   before_validation :apply_defaults
 
+  SYSTEM_PROMPT_MAX_LENGTH = 2000
+  INJECTION_PATTERN = /\b(ignore\s+(all\s+)?previous\s+instructions?|system\s+override|act\s+as\s+(if|an?\s+unrestricted)|disregard\s+(all\s+)?prior|you\s+are\s+now\s+(an?\s+)?|forget\s+(all\s+)?previous)/i
+
   validates :title, presence: true
-  validates :system_prompt, presence: true
+  validates :system_prompt, presence: true, length: { maximum: SYSTEM_PROMPT_MAX_LENGTH }
+  validate :system_prompt_no_injection
 
   private
+
+  def system_prompt_no_injection
+    return if system_prompt.blank?
+    if system_prompt.match?(INJECTION_PATTERN)
+      errors.add(:system_prompt, "contains disallowed content")
+    end
+  end
 
   def apply_defaults
     self.title = title.presence || "Assistant"

@@ -54,6 +54,9 @@ struct RunnerSettings: Sendable {
     let webhookPort: UInt16
     /// When set, registered with the API so `TaskExecutorJob` can POST to a URL reachable from the server (Tailscale, ngrok, LAN IP). If nil, defaults to `http://127.0.0.1:<WEBHOOK_PORT>` (only works when Rails runs on the same machine as this runner).
     let agentWebhookPublicURL: String?
+    /// Shared secret for HMAC-SHA256 webhook signature validation (env: AGENTKVT_WEBHOOK_SECRET).
+    /// When set, every incoming webhook POST must carry `X-Webhook-Signature: sha256=<hmac>`.
+    let webhookSecret: String?
     let disableCloudKit: Bool
     let imapHost: String?
     let imapPort: Int
@@ -166,9 +169,13 @@ struct RunnerSettings: Sendable {
         let imapHost = resolver.string(for: "AGENTKVT_IMAP_HOST")
         let imapPort = resolver.int(for: "AGENTKVT_IMAP_PORT") ?? 993
         let imapUsername = resolver.string(for: "AGENTKVT_IMAP_USERNAME")
-        let imapPassword = resolver.string(for: "AGENTKVT_IMAP_PASSWORD")
+        // Keychain is preferred for the IMAP password; plist/env is the fallback for backwards compatibility.
+        let imapPassword = KeychainAccess.read(account: "imap_password")
+            ?? resolver.string(for: "AGENTKVT_IMAP_PASSWORD")
         let imapMailbox = resolver.string(for: "AGENTKVT_IMAP_MAILBOX") ?? "INBOX"
         let imapPollSeconds = max(60, resolver.int(for: "AGENTKVT_IMAP_POLL_SECONDS") ?? 300)
+        let webhookSecret = KeychainAccess.read(account: "webhook_secret")
+            ?? resolver.string(for: "AGENTKVT_WEBHOOK_SECRET").flatMap { $0.isEmpty ? nil : $0 }
 
         return RunnerSettings(
             source: source,
@@ -200,6 +207,7 @@ struct RunnerSettings: Sendable {
             localFileAllowedDirectories: localFileAllowedDirectories,
             webhookPort: webhookPort,
             agentWebhookPublicURL: agentWebhookPublicURL,
+            webhookSecret: webhookSecret,
             disableCloudKit: disableCloudKit,
             imapHost: imapHost,
             imapPort: imapPort,

@@ -1,16 +1,22 @@
 require "net/http"
 require "json"
+require "openssl"
 
 # Sends fire-and-forget trigger payloads to the Mac agent's WebhookListener.
 # The Mac agent writes the payload to its dropzone and runs all webhook-scheduled
 # missions, which can then call multi_step_search and write results back via the
 # agent API.
+#
+# When MAC_AGENT_WEBHOOK_SECRET is set, every POST is signed with
+# X-Webhook-Signature: sha256=<hmac-sha256> so the Mac listener can reject
+# unauthenticated callers.
 class MacAgentClient
   # Prefer 127.0.0.1 over "localhost" to avoid IPv6 ::1 vs IPv4 mismatches with the Mac listener.
   DEFAULT_WEBHOOK_URL = ENV.fetch("MAC_AGENT_WEBHOOK_URL", "http://127.0.0.1:8765")
 
   def initialize(webhook_url: nil)
     @webhook_url = webhook_url.presence || DEFAULT_WEBHOOK_URL
+    @webhook_secret = ENV["MAC_AGENT_WEBHOOK_SECRET"].presence
   end
 
   # Enqueues a task-search trigger on the Mac agent. Returns true if the webhook
@@ -25,10 +31,15 @@ class MacAgentClient
     http.read_timeout = 15
     http.write_timeout = 15 if http.respond_to?(:write_timeout=)
 
+    body = payload.to_json
     request = Net::HTTP::Post.new(uri)
     request["Content-Type"] = "application/json"
     request["Connection"] = "close"
-    request.body = payload.to_json
+    if @webhook_secret
+      sig = OpenSSL::HMAC.hexdigest("SHA256", @webhook_secret, body)
+      request["X-Webhook-Signature"] = "sha256=#{sig}"
+    end
+    request.body = body
 
     response = http.request(request)
     ok = response.is_a?(Net::HTTPSuccess)

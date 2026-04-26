@@ -28,9 +28,14 @@ public func makePlaywrightScoutTool() -> ToolRegistry.Tool {
                 return "Error: url is required."
             }
             
-            let actions = args["actions"] as? [[String: Any]] ?? []
+            let rawActions = args["actions"] as? [[String: Any]] ?? []
+            let allowedActionTypes: Set<String> = ["click", "fill", "navigate", "wait", "screenshot", "select", "hover", "scroll"]
+            let actions = rawActions.filter { action in
+                guard let type = action["type"] as? String else { return false }
+                return allowedActionTypes.contains(type)
+            }
             let useSession = args["use_session"] as? Bool ?? false
-            
+
             return await PlaywrightRunner.run(url: url, actions: actions, useSession: useSession)
         }
     )

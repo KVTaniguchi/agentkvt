@@ -87,15 +87,18 @@ actor IMAPEmailPoller {
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+        // Password is passed via environment, not CLI args, to keep it out of the process list.
         process.arguments = [
             scriptURL.path,
             host,
             String(settings.imapPort),
             username,
-            password,
             settings.imapMailbox,
             inboxDir.path
         ]
+        var env = ProcessInfo.processInfo.environment
+        env["AGENTKVT_IMAP_PASSWORD"] = password
+        process.environment = env
 
         let stdout = Pipe()
         let stderr = Pipe()
@@ -157,7 +160,8 @@ private let imapFetchScriptSource = """
 #!/usr/bin/env python3
 \"\"\"
 AgentKVT IMAP fetcher.
-Usage: imap_fetch.py host port username password mailbox output_dir
+Usage: imap_fetch.py host port username mailbox output_dir
+Password is read from the AGENTKVT_IMAP_PASSWORD environment variable.
 Prints a JSON array of written .eml file paths to stdout.
 \"\"\"
 import imaplib
@@ -168,14 +172,18 @@ from datetime import datetime
 
 
 def main():
-    if len(sys.argv) != 7:
+    if len(sys.argv) != 6:
         print(
-            "Usage: imap_fetch.py host port username password mailbox output_dir",
+            "Usage: imap_fetch.py host port username mailbox output_dir",
             file=sys.stderr,
         )
         sys.exit(1)
 
-    host, port_str, username, password, mailbox, output_dir = sys.argv[1:]
+    host, port_str, username, mailbox, output_dir = sys.argv[1:]
+    password = os.environ.get("AGENTKVT_IMAP_PASSWORD", "")
+    if not password:
+        print("Error: AGENTKVT_IMAP_PASSWORD environment variable is not set", file=sys.stderr)
+        sys.exit(1)
     os.makedirs(output_dir, exist_ok=True)
     written = []
 
