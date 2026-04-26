@@ -37,7 +37,9 @@ fi
 mkdir -p "${LOG_DIR}"
 
 if ! pg_ctl -D "${PGDATA}" status >/dev/null 2>&1; then
-  pg_ctl -D "${PGDATA}" -l "${PGLOG}" start
+  pg_ctl -D "${PGDATA}" -l "${PGLOG}" start || \
+    pg_ctl -D "${PGDATA}" status >/dev/null 2>&1 || \
+    { echo "ERROR: Postgres failed to start and is not running." >&2; exit 1; }
 fi
 
 if command -v tailscale >/dev/null 2>&1; then
