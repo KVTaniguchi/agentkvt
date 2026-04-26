@@ -42,4 +42,40 @@ class EmailMessageProcessorJobTest < ActiveSupport::TestCase
       end
     end
   end
+
+  test "calls manifest pipeline for utility bill emails" do
+    bill_email = @workspace.inbound_emails.create!(
+      message_id:   "msg-peco",
+      from_address: "billing@peco.com",
+      subject:      "Your PECO Bill",
+      body_text:    "Amount due: $134.56"
+    )
+
+    updater_calls = []
+    fake_updater = ->(utility:, fields:, source_message_id:) { updater_calls << { utility: utility, fields: fields } }
+
+    Email::MessageClassifier.stub(:call, { "action" => "ignore", "summary" => "", "objective_id" => nil }) do
+      HouseManifest::BillExtractor.stub(:call, { "amount_due" => 134.56 }) do
+        HouseManifest::Updater.stub(:call, fake_updater) do
+          EmailMessageProcessorJob.new.perform(bill_email.id)
+        end
+      end
+    end
+
+    assert_equal 1, updater_calls.size
+    assert_equal "PECO", updater_calls.first[:utility]
+  end
+
+  test "skips manifest pipeline for non-utility emails" do
+    updater_calls = []
+    fake_updater = ->(utility:, fields:, source_message_id:) { updater_calls << utility }
+
+    Email::MessageClassifier.stub(:call, { "action" => "ignore", "summary" => "", "objective_id" => nil }) do
+      HouseManifest::Updater.stub(:call, fake_updater) do
+        EmailMessageProcessorJob.new.perform(@email.id)
+      end
+    end
+
+    assert_empty updater_calls
+  end
 end
