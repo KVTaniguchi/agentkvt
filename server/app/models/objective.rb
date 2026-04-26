@@ -6,6 +6,7 @@ class Objective < ApplicationRecord
   has_many :research_snapshots, dependent: :destroy
   has_many :objective_feedbacks, dependent: :destroy
   has_many :research_snapshot_feedbacks, dependent: :destroy
+  has_many :finalized_drafts, class_name: "ObjectiveDraft", foreign_key: :finalized_objective_id, dependent: :nullify, inverse_of: :finalized_objective
 
   STATUSES = %w[pending active completed archived].freeze
 
