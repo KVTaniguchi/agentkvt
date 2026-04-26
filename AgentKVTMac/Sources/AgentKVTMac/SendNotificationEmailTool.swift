@@ -63,9 +63,16 @@ public enum SendNotificationEmailTool {
                 return "Error writing to outbox: \(error)"
             }
         case .mailCommand:
+            // Strip newlines (header injection) and leading dashes (flag confusion with /usr/bin/mail -s).
+            let safeSubject = String(
+                subject
+                    .components(separatedBy: .newlines).joined()
+                    .trimmingCharacters(in: CharacterSet(charactersIn: "-").union(.whitespaces))
+                    .prefix(200)
+            )
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/usr/bin/mail")
-            process.arguments = ["-s", subject, destination]
+            process.arguments = ["-s", safeSubject, destination]
             let pipe = Pipe()
             process.standardInput = pipe
             process.standardError = Pipe()

@@ -268,7 +268,7 @@ private func runScheduler(
     }
 
     // ── Webhook listener (highest priority — explicit external intent) ────────────
-    let webhookListener = WebhookListener(port: webhookPort) { payload in
+    let webhookListener = WebhookListener(port: webhookPort, webhookSecret: settings.webhookSecret) { payload in
         if WebhookChatSignal.matches(payload) {
             executionQueue.enqueue(.processPendingChat, priority: .high)
         } else {

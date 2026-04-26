@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Network
 
@@ -9,16 +10,22 @@ import Network
 /// are present. A single-shot read is insufficient: Ruby's `Net::HTTP` and other clients
 /// can split headers and body across TCP segments; previously we ACKed 200 without ever
 /// calling `onPayload`, leaving Rails tasks stuck `in_progress`.
+///
+/// When `webhookSecret` is non-nil every POST must carry a valid
+/// `X-Webhook-Signature: sha256=<hmac>` header computed over the raw body.
+/// Requests with missing or invalid signatures are rejected with 401.
 final class WebhookListener: @unchecked Sendable {
     private let port: NWEndpoint.Port
     let onPayload: @Sendable (String) -> Void
+    private let webhookSecret: String?
     private var listener: NWListener?
 
     private static let headerSeparator = Data("\r\n\r\n".utf8)
     private static let maxRequestBytes = 512 * 1024
 
-    init(port: UInt16 = 8765, onPayload: @escaping @Sendable (String) -> Void) {
+    init(port: UInt16 = 8765, webhookSecret: String? = nil, onPayload: @escaping @Sendable (String) -> Void) {
         self.port = NWEndpoint.Port(rawValue: port)!
+        self.webhookSecret = webhookSecret
         self.onPayload = onPayload
     }
 
@@ -129,7 +136,7 @@ final class WebhookListener: @unchecked Sendable {
                 }
                 let bodyEnd = bodyStart + expected
                 let bodyChunk = buf.subdata(in: bodyStart..<bodyEnd)
-                self.finish(conn: conn, bodyData: bodyChunk)
+                self.finish(conn: conn, bodyData: bodyChunk, headerText: headerText)
 
                 let remaining = buf.count - bodyEnd
                 if remaining > 0 {
@@ -143,18 +150,44 @@ final class WebhookListener: @unchecked Sendable {
                     return
                 }
                 let bodyChunk = buf.subdata(in: bodyStart..<buf.endIndex)
-                self.finish(conn: conn, bodyData: bodyChunk)
+                self.finish(conn: conn, bodyData: bodyChunk, headerText: headerText)
             }
         }
     }
 
-    private func finish(conn: NWConnection, bodyData: Data) {
+    private func finish(conn: NWConnection, bodyData: Data, headerText: String) {
+        if let secret = webhookSecret, !secret.isEmpty {
+            guard validateSignature(body: bodyData, headerText: headerText, secret: secret) else {
+                let resp = "HTTP/1.1 401 Unauthorized\r\nContent-Type: text/plain\r\nContent-Length: 12\r\nConnection: close\r\n\r\nUnauthorized"
+                conn.send(content: resp.data(using: .utf8), completion: .idempotent)
+                conn.cancel()
+                print("WebhookListener: rejected request — invalid or missing X-Webhook-Signature")
+                return
+            }
+        }
         let response = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK"
         conn.send(content: response.data(using: .utf8), completion: .idempotent)
         if let body = String(data: bodyData, encoding: .utf8) {
             onPayload(body)
         }
         conn.cancel()
+    }
+
+    /// Validates `X-Webhook-Signature: sha256=<hex>` against HMAC-SHA256(secret, body).
+    private func validateSignature(body: Data, headerText: String, secret: String) -> Bool {
+        var provided: String? = nil
+        for line in headerText.split(separator: "\r\n", omittingEmptySubsequences: false) {
+            if line.lowercased().hasPrefix("x-webhook-signature:") {
+                provided = String(line.dropFirst("x-webhook-signature:".count)).trimmingCharacters(in: .whitespaces)
+                break
+            }
+        }
+        guard let sig = provided, sig.hasPrefix("sha256=") else { return false }
+        let hexProvided = String(sig.dropFirst("sha256=".count))
+        let key = SymmetricKey(data: Data(secret.utf8))
+        let mac = HMAC<SHA256>.authenticationCode(for: body, using: key)
+        let hexExpected = Data(mac).map { String(format: "%02x", $0) }.joined()
+        return hexExpected == hexProvided
     }
 
     /// Parses the first `Content-Length` header (case-insensitive), if present.
