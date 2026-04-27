@@ -6,6 +6,7 @@ module V1
 
       ObjectiveFeedback.transaction do
         feedback.update!(objective_feedback_params)
+        attach_feedback_inbound_files!(feedback)
         feedback.follow_up_tasks.proposed.destroy_all
         ObjectiveFeedbackPlanner.new.call(feedback)
         ObjectiveFeedbackLifecycle.new.refresh!(feedback.reload)
@@ -85,6 +86,14 @@ module V1
         :task_id,
         :research_snapshot_id
       )
+    end
+
+    def attach_feedback_inbound_files!(feedback)
+      ids = params.dig(:objective_feedback, :inbound_file_ids)
+      return if ids.blank?
+
+      files = feedback.objective.workspace.inbound_files.where(id: Array(ids))
+      feedback.inbound_files << files.reject { |f| feedback.inbound_file_ids.include?(f.id) }
     end
   end
 end

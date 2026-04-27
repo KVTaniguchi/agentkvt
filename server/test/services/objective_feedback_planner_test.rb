@@ -273,6 +273,61 @@ class ObjectiveFeedbackPlannerTest < ActiveSupport::TestCase
     assert_includes realignment_task.description, "Must be within 2 hours of SF"
   end
 
+  test "planner prompt includes image descriptions when feedback has attached images" do
+    file = @workspace.inbound_files.create!(
+      file_name: "damage.jpg",
+      content_type: "image/jpeg",
+      file_data: "fake-binary-data",
+      byte_size: 16
+    )
+    feedback = @objective.objective_feedbacks.create!(
+      content: "Check the area shown in the photo.",
+      feedback_kind: "follow_up",
+      status: "received"
+    )
+    feedback.inbound_files << file
+
+    captured_input = nil
+    client = Object.new
+    client.define_singleton_method(:chat) do |messages:, **_kwargs|
+      captured_input = messages.last.fetch(:content)
+      JSON.generate([ { "description" => "Inspect the area shown in the photo" } ])
+    end
+
+    stub_describer = Object.new
+    stub_describer.define_singleton_method(:describe_for_feedback) do |_feedback|
+      [ "Attached image 1 (damage.jpg): A cracked ceiling with water stain." ]
+    end
+
+    ObjectiveFeedbackPlanner.new(client: client, image_describer: stub_describer).call(feedback)
+
+    assert_includes captured_input, "Attached images (visual context for this feedback):"
+    assert_includes captured_input, "damage.jpg"
+    assert_includes captured_input, "cracked ceiling"
+  end
+
+  test "planner prompt omits image section when feedback has no attached images" do
+    feedback = @objective.objective_feedbacks.create!(
+      content: "Keep going.",
+      feedback_kind: "follow_up",
+      status: "received"
+    )
+
+    captured_input = nil
+    client = Object.new
+    client.define_singleton_method(:chat) do |messages:, **_kwargs|
+      captured_input = messages.last.fetch(:content)
+      JSON.generate([ { "description" => "Continue research" } ])
+    end
+
+    stub_describer = Object.new
+    stub_describer.define_singleton_method(:describe_for_feedback) { |_feedback| [] }
+
+    ObjectiveFeedbackPlanner.new(client: client, image_describer: stub_describer).call(feedback)
+
+    refute_includes captured_input, "Attached images"
+  end
+
   test "creates fallback follow-up tasks when the client raises" do
     feedback = @objective.objective_feedbacks.create!(
       content: "Turn the findings into a recommendation with a backup option.",

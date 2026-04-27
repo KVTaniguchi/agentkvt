@@ -14,9 +14,19 @@ class ObjectiveImageDescriber
   end
 
   def describe_all(objective)
+    describe_files(objective.inbound_files, context_id: objective.id)
+  end
+
+  def describe_for_feedback(feedback)
+    describe_files(feedback.inbound_files, context_id: feedback.id)
+  end
+
+  private
+
+  def describe_files(files, context_id:)
     return [] if VISION_MODEL.nil?
 
-    image_files = objective.inbound_files
+    image_files = files
       .select { |f| f.content_type.to_s.start_with?("image/") }
       .first(MAX_IMAGES)
 
@@ -25,12 +35,10 @@ class ObjectiveImageDescriber
     image_files.filter_map.with_index(1) do |file, index|
       describe(file, index)
     rescue => e
-      Rails.logger.warn("[ObjectiveImageDescriber] objective=#{objective.id} file=#{file.id} error=#{e.message}")
+      Rails.logger.warn("[ObjectiveImageDescriber] context=#{context_id} file=#{file.id} error=#{e.message}")
       nil
     end
   end
-
-  private
 
   def describe(file, index)
     b64 = Base64.strict_encode64(file.file_data)
