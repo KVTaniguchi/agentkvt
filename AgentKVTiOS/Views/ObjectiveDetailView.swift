@@ -1,4 +1,5 @@
 import Foundation
+import PhotosUI
 import SwiftUI
 
 struct ObjectiveDetailView: View {
@@ -28,6 +29,9 @@ struct ObjectiveDetailView: View {
     @State private var editingFeedbackContext: ObjectiveFeedbackComposerContext?
     @State private var feedbackPlanActionInProgressID: UUID?
     @State private var guidance: ObjectiveGuidance?
+    @State private var selectedFeedbackPhotoItems: [PhotosPickerItem] = []
+    @State private var attachedFeedbackFileIds: [UUID] = []
+    @State private var isUploadingFeedbackPhotos = false
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
@@ -457,6 +461,29 @@ struct ObjectiveDetailView: View {
                 TextField("Tell AgentKVT what to research next...", text: $feedbackDraft, axis: .vertical)
                     .lineLimit(3...6)
 
+                PhotosPicker(
+                    selection: $selectedFeedbackPhotoItems,
+                    maxSelectionCount: 3,
+                    matching: .images
+                ) {
+                    Label(
+                        attachedFeedbackFileIds.isEmpty ? "Add Photos" : "\(attachedFeedbackFileIds.count) Photo\(attachedFeedbackFileIds.count == 1 ? "" : "s") Attached",
+                        systemImage: attachedFeedbackFileIds.isEmpty ? "photo.badge.plus" : "photo.stack"
+                    )
+                }
+                .onChange(of: selectedFeedbackPhotoItems) { _, newItems in
+                    Task { await uploadFeedbackPhotos(newItems) }
+                }
+
+                if isUploadingFeedbackPhotos {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("Uploading photos…")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
                 Button {
                     Task { await submitObjectiveFeedback() }
                 } label: {
@@ -469,7 +496,7 @@ struct ObjectiveDetailView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(runNowProminentTint)
-                .disabled(trimmedFeedbackDraft.isEmpty || isSubmittingFeedback || isStartingWork || isDeleting)
+                .disabled(trimmedFeedbackDraft.isEmpty || isSubmittingFeedback || isStartingWork || isDeleting || isUploadingFeedbackPhotos)
             } header: {
                 Text("Continue Research")
             } footer: {
@@ -1173,18 +1200,48 @@ struct ObjectiveDetailView: View {
                 content: trimmedFeedbackDraft,
                 feedbackKind: selectedFeedbackKind,
                 taskId: selectedFeedbackTarget.taskId,
-                researchSnapshotId: selectedFeedbackTarget.researchSnapshotId
+                researchSnapshotId: selectedFeedbackTarget.researchSnapshotId,
+                inboundFileIds: attachedFeedbackFileIds
             )
             highlightedFeedbackID = result.objectiveFeedback.id
             feedbackDraft = ""
             selectedFeedbackKind = ObjectiveFeedbackKindOption.followUp.rawValue
             selectedFeedbackTargetID = ObjectiveFeedbackTarget.objectiveID
+            selectedFeedbackPhotoItems = []
+            attachedFeedbackFileIds = []
             await loadDetail(showSpinner: false)
             if result.objectiveFeedback.status == "queued" {
                 await refreshDetailBurst()
             }
         } catch {
             actionError = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func uploadFeedbackPhotos(_ items: [PhotosPickerItem]) async {
+        guard !items.isEmpty else { return }
+        isUploadingFeedbackPhotos = true
+        attachedFeedbackFileIds = []
+        defer { isUploadingFeedbackPhotos = false }
+
+        let sync = IOSBackendSyncService()
+        for item in items {
+            do {
+                guard let data = try await item.loadTransferable(type: Data.self) else { continue }
+                let contentType = item.supportedContentTypes.first?.preferredMIMEType ?? "image/jpeg"
+                let ext = item.supportedContentTypes.first?.preferredFilenameExtension ?? "jpg"
+                let fileName = "feedback_photo_\(UUID().uuidString).\(ext)"
+                let uploaded = try await sync.createInboundFileRemote(
+                    fileName: fileName,
+                    contentType: contentType,
+                    fileData: data,
+                    uploadedByProfileId: nil
+                )
+                attachedFeedbackFileIds.append(uploaded.id)
+            } catch {
+                IOSRuntimeLog.log("[ObjectiveDetailView] photo upload failed: \(error)")
+            }
         }
     }
 

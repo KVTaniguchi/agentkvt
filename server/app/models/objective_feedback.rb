@@ -12,6 +12,8 @@ class ObjectiveFeedback < ApplicationRecord
   belongs_to :objective
   belongs_to :task, optional: true
   belongs_to :research_snapshot, optional: true
+  has_many :objective_feedback_inbound_files, dependent: :destroy
+  has_many :inbound_files, through: :objective_feedback_inbound_files
   has_many :follow_up_tasks,
     class_name: "Task",
     foreign_key: :source_feedback_id,

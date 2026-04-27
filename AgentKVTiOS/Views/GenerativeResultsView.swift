@@ -1,3 +1,4 @@
+import PhotosUI
 import SwiftUI
 
 struct ObjectiveFeedbackTarget: Identifiable, Hashable {
@@ -35,6 +36,7 @@ struct ObjectiveFeedbackSubmissionRequest: Sendable {
     let researchSnapshotId: UUID?
     let targetLabel: String
     let targetPreview: String?
+    var inboundFileIds: [UUID] = []
 }
 
 enum ObjectiveFeedbackKindOption: String, CaseIterable, Identifiable {
@@ -550,6 +552,9 @@ struct ObjectiveFeedbackComposerSheet: View {
     @State private var selectedFeedbackTargetID = ObjectiveFeedbackTarget.objectiveID
     @State private var errorMessage: String?
     @State private var submissionPhase: SubmissionPhase = .editing
+    @State private var selectedFeedbackPhotoItems: [PhotosPickerItem] = []
+    @State private var attachedFeedbackFileIds: [UUID] = []
+    @State private var isUploadingFeedbackPhotos = false
 
     private enum SubmissionPhase {
         case editing
@@ -608,7 +613,8 @@ struct ObjectiveFeedbackComposerSheet: View {
             taskId: selectedFeedbackTarget.taskId,
             researchSnapshotId: selectedFeedbackTarget.researchSnapshotId,
             targetLabel: selectedFeedbackTarget.label,
-            targetPreview: selectedFeedbackTarget.preview
+            targetPreview: selectedFeedbackTarget.preview,
+            inboundFileIds: attachedFeedbackFileIds
         )
     }
 
@@ -708,6 +714,29 @@ struct ObjectiveFeedbackComposerSheet: View {
                             TextField("Tell AgentKVT what to research next...", text: $feedbackDraft, axis: .vertical)
                                 .lineLimit(4...8)
 
+                            PhotosPicker(
+                                selection: $selectedFeedbackPhotoItems,
+                                maxSelectionCount: 3,
+                                matching: .images
+                            ) {
+                                Label(
+                                    attachedFeedbackFileIds.isEmpty ? "Add Photos" : "\(attachedFeedbackFileIds.count) Photo\(attachedFeedbackFileIds.count == 1 ? "" : "s") Attached",
+                                    systemImage: attachedFeedbackFileIds.isEmpty ? "photo.badge.plus" : "photo.stack"
+                                )
+                            }
+                            .onChange(of: selectedFeedbackPhotoItems) { _, newItems in
+                                Task { await uploadFeedbackPhotos(newItems) }
+                            }
+
+                            if isUploadingFeedbackPhotos {
+                                HStack(spacing: 8) {
+                                    ProgressView().controlSize(.small)
+                                    Text("Uploading photos…")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+
                             Button {
                                 Task { await submit() }
                             } label: {
@@ -716,7 +745,7 @@ struct ObjectiveFeedbackComposerSheet: View {
                             }
                             .buttonStyle(.borderedProminent)
                             .tint(ObjectiveFeedbackKindOption.from(rawValue: selectedFeedbackKind).tint)
-                            .disabled(trimmedFeedbackDraft.isEmpty)
+                            .disabled(trimmedFeedbackDraft.isEmpty || isUploadingFeedbackPhotos)
                         } header: {
                             Text("Next Pass")
                         } footer: {
@@ -844,7 +873,8 @@ struct ObjectiveFeedbackComposerSheet: View {
                     content: request.content,
                     feedbackKind: request.feedbackKind,
                     taskId: request.taskId,
-                    researchSnapshotId: request.researchSnapshotId
+                    researchSnapshotId: request.researchSnapshotId,
+                    inboundFileIds: request.inboundFileIds
                 )
             } else {
                 result = try await store.submitObjectiveFeedback(
@@ -852,7 +882,8 @@ struct ObjectiveFeedbackComposerSheet: View {
                     content: request.content,
                     feedbackKind: request.feedbackKind,
                     taskId: request.taskId,
-                    researchSnapshotId: request.researchSnapshotId
+                    researchSnapshotId: request.researchSnapshotId,
+                    inboundFileIds: request.inboundFileIds
                 )
             }
             acknowledgementTask.cancel()
@@ -885,6 +916,33 @@ struct ObjectiveFeedbackComposerSheet: View {
         }
         let nsError = error as NSError
         return nsError.domain == NSURLErrorDomain && nsError.code == URLError.timedOut.rawValue
+    }
+
+    @MainActor
+    private func uploadFeedbackPhotos(_ items: [PhotosPickerItem]) async {
+        guard !items.isEmpty else { return }
+        isUploadingFeedbackPhotos = true
+        attachedFeedbackFileIds = []
+        defer { isUploadingFeedbackPhotos = false }
+
+        let sync = IOSBackendSyncService()
+        for item in items {
+            do {
+                guard let data = try await item.loadTransferable(type: Data.self) else { continue }
+                let contentType = item.supportedContentTypes.first?.preferredMIMEType ?? "image/jpeg"
+                let ext = item.supportedContentTypes.first?.preferredFilenameExtension ?? "jpg"
+                let fileName = "feedback_photo_\(UUID().uuidString).\(ext)"
+                let uploaded = try await sync.createInboundFileRemote(
+                    fileName: fileName,
+                    contentType: contentType,
+                    fileData: data,
+                    uploadedByProfileId: nil
+                )
+                attachedFeedbackFileIds.append(uploaded.id)
+            } catch {
+                IOSRuntimeLog.log("[GenerativeResultsView] photo upload failed: \(error)")
+            }
+        }
     }
 }
 

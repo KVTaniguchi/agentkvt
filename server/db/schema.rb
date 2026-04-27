@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_04_24_000000) do
+ActiveRecord::Schema[8.0].define(version: 2026_04_27_000000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -222,6 +222,24 @@ ActiveRecord::Schema[8.0].define(version: 2026_04_24_000000) do
     t.index ["task_id"], name: "index_objective_feedbacks_on_task_id"
   end
 
+  create_table "objective_feedback_inbound_files", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "objective_feedback_id", null: false
+    t.uuid "inbound_file_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["inbound_file_id"], name: "index_objective_feedback_inbound_files_on_inbound_file_id"
+    t.index ["objective_feedback_id", "inbound_file_id"], name: "index_feedback_inbound_files_unique", unique: true
+  end
+
+  create_table "objective_inbound_files", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "objective_id", null: false
+    t.uuid "inbound_file_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["inbound_file_id"], name: "index_objective_inbound_files_on_inbound_file_id"
+    t.index ["objective_id", "inbound_file_id"], name: "index_objective_inbound_files_unique", unique: true
+  end
+
   create_table "research_snapshot_feedbacks", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.uuid "workspace_id", null: false
     t.uuid "objective_id", null: false
@@ -387,9 +405,13 @@ ActiveRecord::Schema[8.0].define(version: 2026_04_24_000000) do
   add_foreign_key "objective_drafts", "family_members", column: "created_by_profile_id"
   add_foreign_key "objective_drafts", "objectives", column: "finalized_objective_id"
   add_foreign_key "objective_drafts", "workspaces"
+  add_foreign_key "objective_feedback_inbound_files", "inbound_files"
+  add_foreign_key "objective_feedback_inbound_files", "objective_feedbacks"
   add_foreign_key "objective_feedbacks", "objectives"
   add_foreign_key "objective_feedbacks", "research_snapshots"
   add_foreign_key "objective_feedbacks", "tasks"
+  add_foreign_key "objective_inbound_files", "inbound_files"
+  add_foreign_key "objective_inbound_files", "objectives"
   add_foreign_key "objectives", "workspaces"
   add_foreign_key "research_snapshot_feedbacks", "family_members", column: "created_by_profile_id"
   add_foreign_key "research_snapshot_feedbacks", "objectives"

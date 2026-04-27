@@ -8,8 +8,8 @@ protocol ObjectivesRemoteSyncing: Sendable {
     func createObjectiveRemote(goal: String, status: String, priority: Int, inboundFileIds: [UUID]) async throws -> IOSBackendObjective
     func fetchObjectiveDetailRemote(id: UUID, viewerProfileId: UUID?) async throws -> IOSBackendObjectiveDetail
     func updateObjectiveRemote(id: UUID, goal: String, status: String, priority: Int) async throws -> IOSBackendObjective
-    func submitObjectiveFeedbackRemote(id: UUID, content: String, feedbackKind: String, taskId: UUID?, researchSnapshotId: UUID?) async throws -> IOSBackendSubmitObjectiveFeedbackResult
-    func updateObjectiveFeedbackRemote(objectiveId: UUID, feedbackId: UUID, content: String, feedbackKind: String, taskId: UUID?, researchSnapshotId: UUID?) async throws -> IOSBackendSubmitObjectiveFeedbackResult
+    func submitObjectiveFeedbackRemote(id: UUID, content: String, feedbackKind: String, taskId: UUID?, researchSnapshotId: UUID?, inboundFileIds: [UUID]) async throws -> IOSBackendSubmitObjectiveFeedbackResult
+    func updateObjectiveFeedbackRemote(objectiveId: UUID, feedbackId: UUID, content: String, feedbackKind: String, taskId: UUID?, researchSnapshotId: UUID?, inboundFileIds: [UUID]) async throws -> IOSBackendSubmitObjectiveFeedbackResult
     func approveObjectiveFeedbackPlanRemote(objectiveId: UUID, feedbackId: UUID) async throws -> IOSBackendSubmitObjectiveFeedbackResult
     func regenerateObjectiveFeedbackPlanRemote(objectiveId: UUID, feedbackId: UUID) async throws -> IOSBackendSubmitObjectiveFeedbackResult
     func submitResearchSnapshotFeedbackRemote(objectiveId: UUID, snapshotId: UUID, createdByProfileId: UUID?, rating: String, reason: String?) async throws -> IOSBackendResearchSnapshotFeedback
@@ -76,14 +76,16 @@ final class ObjectivesStore {
         content: String,
         feedbackKind: String,
         taskId: UUID?,
-        researchSnapshotId: UUID?
+        researchSnapshotId: UUID?,
+        inboundFileIds: [UUID] = []
     ) async throws -> IOSBackendSubmitObjectiveFeedbackResult {
         let result = try await sync.submitObjectiveFeedbackRemote(
             id: id,
             content: content,
             feedbackKind: feedbackKind,
             taskId: taskId,
-            researchSnapshotId: researchSnapshotId
+            researchSnapshotId: researchSnapshotId,
+            inboundFileIds: inboundFileIds
         )
         upsertObjective(result.objective)
         return result
@@ -96,7 +98,8 @@ final class ObjectivesStore {
         content: String,
         feedbackKind: String,
         taskId: UUID?,
-        researchSnapshotId: UUID?
+        researchSnapshotId: UUID?,
+        inboundFileIds: [UUID] = []
     ) async throws -> IOSBackendSubmitObjectiveFeedbackResult {
         let result = try await sync.updateObjectiveFeedbackRemote(
             objectiveId: objectiveId,
@@ -104,7 +107,8 @@ final class ObjectivesStore {
             content: content,
             feedbackKind: feedbackKind,
             taskId: taskId,
-            researchSnapshotId: researchSnapshotId
+            researchSnapshotId: researchSnapshotId,
+            inboundFileIds: inboundFileIds
         )
         upsertObjective(result.objective)
         return result

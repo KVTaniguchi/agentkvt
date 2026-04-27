@@ -63,6 +63,7 @@ module V1
           status: "received"
         )
       )
+      attach_feedback_inbound_files!(feedback)
 
       created_tasks = ObjectiveFeedbackPlanner.new.call(feedback)
       ObjectiveFeedbackLifecycle.new.refresh!(feedback.reload)
@@ -200,6 +201,14 @@ module V1
 
       files = current_workspace.inbound_files.where(id: Array(ids))
       objective.inbound_files << files.reject { |f| objective.inbound_file_ids.include?(f.id) }
+    end
+
+    def attach_feedback_inbound_files!(feedback)
+      ids = params.dig(:objective_feedback, :inbound_file_ids)
+      return if ids.blank?
+
+      files = current_workspace.inbound_files.where(id: Array(ids))
+      feedback.inbound_files << files.reject { |f| feedback.inbound_file_ids.include?(f.id) }
     end
 
     def objective_params

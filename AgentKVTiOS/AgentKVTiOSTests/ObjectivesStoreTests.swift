@@ -128,7 +128,8 @@ private final class MockObjectivesSync: ObjectivesRemoteSyncing, @unchecked Send
         content: String,
         feedbackKind: String,
         taskId: UUID?,
-        researchSnapshotId: UUID?
+        researchSnapshotId: UUID?,
+        inboundFileIds: [UUID]
     ) async throws -> IOSBackendSubmitObjectiveFeedbackResult {
         feedbackSubmissions.append((id, content, feedbackKind, taskId, researchSnapshotId))
         return IOSBackendSubmitObjectiveFeedbackResult(
@@ -151,7 +152,8 @@ private final class MockObjectivesSync: ObjectivesRemoteSyncing, @unchecked Send
         content: String,
         feedbackKind: String,
         taskId: UUID?,
-        researchSnapshotId: UUID?
+        researchSnapshotId: UUID?,
+        inboundFileIds: [UUID]
     ) async throws -> IOSBackendSubmitObjectiveFeedbackResult {
         feedbackUpdates.append((objectiveId, feedbackId, content, feedbackKind, taskId, researchSnapshotId))
         return IOSBackendSubmitObjectiveFeedbackResult(

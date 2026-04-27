@@ -22,8 +22,9 @@ class ObjectiveFeedbackPlanner
     - Respond with ONLY valid JSON and no explanation.
   PROMPT
 
-  def initialize(client: OllamaClient.new)
+  def initialize(client: OllamaClient.new, image_describer: ObjectiveImageDescriber.new)
     @client = client
+    @image_describer = image_describer
   end
 
   def call(feedback)
@@ -168,6 +169,8 @@ class ObjectiveFeedbackPlanner
     objective = feedback.objective
     brief = ObjectivePlanningInputBuilder.normalize_brief(objective.brief_json)
 
+    image_descriptions = @image_describer.describe_for_feedback(feedback)
+
     lines = [
       "Objective: #{objective.goal}",
       "Objective summary:",
@@ -177,6 +180,12 @@ class ObjectiveFeedbackPlanner
       "User feedback:",
       feedback.content.to_s.strip
     ]
+
+    if image_descriptions.any?
+      lines << ""
+      lines << "Attached images (visual context for this feedback):"
+      image_descriptions.each { |desc| lines << desc }
+    end
 
     anchor_lines = []
     anchor_lines += brief["success_criteria"].map { |c| "- Success criterion: #{c}" }

@@ -1108,7 +1108,8 @@ actor IOSBackendAPIClient {
         content: String,
         feedbackKind: String,
         taskId: UUID?,
-        researchSnapshotId: UUID?
+        researchSnapshotId: UUID?,
+        inboundFileIds: [UUID] = []
     ) async throws -> IOSBackendSubmitObjectiveFeedbackResult {
         var objectiveFeedback: [String: Any] = [
             "content": content,
@@ -1119,6 +1120,9 @@ actor IOSBackendAPIClient {
         }
         if let researchSnapshotId {
             objectiveFeedback["research_snapshot_id"] = researchSnapshotId.uuidString
+        }
+        if !inboundFileIds.isEmpty {
+            objectiveFeedback["inbound_file_ids"] = inboundFileIds.map { $0.uuidString }
         }
 
         let data = try await performRequest(
@@ -1140,7 +1144,8 @@ actor IOSBackendAPIClient {
         content: String,
         feedbackKind: String,
         taskId: UUID?,
-        researchSnapshotId: UUID?
+        researchSnapshotId: UUID?,
+        inboundFileIds: [UUID] = []
     ) async throws -> IOSBackendSubmitObjectiveFeedbackResult {
         var objectiveFeedback: [String: Any] = [
             "content": content,
@@ -1151,6 +1156,9 @@ actor IOSBackendAPIClient {
         }
         if let researchSnapshotId {
             objectiveFeedback["research_snapshot_id"] = researchSnapshotId.uuidString
+        }
+        if !inboundFileIds.isEmpty {
+            objectiveFeedback["inbound_file_ids"] = inboundFileIds.map { $0.uuidString }
         }
 
         let data = try await performRequest(
@@ -1537,7 +1545,8 @@ final class IOSBackendSyncService {
         content: String,
         feedbackKind: String,
         taskId: UUID?,
-        researchSnapshotId: UUID?
+        researchSnapshotId: UUID?,
+        inboundFileIds: [UUID]
     ) async throws -> IOSBackendSubmitObjectiveFeedbackResult {
         guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
         return try await client.submitObjectiveFeedback(
@@ -1545,7 +1554,8 @@ final class IOSBackendSyncService {
             content: content,
             feedbackKind: feedbackKind,
             taskId: taskId,
-            researchSnapshotId: researchSnapshotId
+            researchSnapshotId: researchSnapshotId,
+            inboundFileIds: inboundFileIds
         )
     }
 
@@ -1555,7 +1565,8 @@ final class IOSBackendSyncService {
         content: String,
         feedbackKind: String,
         taskId: UUID?,
-        researchSnapshotId: UUID?
+        researchSnapshotId: UUID?,
+        inboundFileIds: [UUID]
     ) async throws -> IOSBackendSubmitObjectiveFeedbackResult {
         guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
         return try await client.updateObjectiveFeedback(
@@ -1564,7 +1575,8 @@ final class IOSBackendSyncService {
             content: content,
             feedbackKind: feedbackKind,
             taskId: taskId,
-            researchSnapshotId: researchSnapshotId
+            researchSnapshotId: researchSnapshotId,
+            inboundFileIds: inboundFileIds
         )
     }
 
