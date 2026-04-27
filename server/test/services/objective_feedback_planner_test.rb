@@ -149,6 +149,130 @@ class ObjectiveFeedbackPlannerTest < ActiveSupport::TestCase
     assert_includes planning_input, "Outdated and too vague"
   end
 
+  test "planner prompt includes brief anchors when objective has success criteria, constraints, and deliverable" do
+    objective = @workspace.objectives.create!(
+      goal: "Research electric bikes",
+      status: "active",
+      brief_json: {
+        "success_criteria" => [ "Find a bike under $2,000", "Must have at least 40-mile range" ],
+        "constraints" => [ "Available for purchase in the US", "Ships within 2 weeks" ],
+        "deliverable" => "A ranked shortlist of 3 bikes with pros and cons"
+      }
+    )
+    feedback = objective.objective_feedbacks.create!(
+      content: "Compare the top brands on range and price.",
+      feedback_kind: "compare_options",
+      status: "received"
+    )
+
+    captured_messages = nil
+    client = Object.new
+    client.define_singleton_method(:chat) do |messages:, **_kwargs|
+      captured_messages = messages
+      JSON.generate([ { "description" => "Compare top electric bike brands on range and price" } ])
+    end
+
+    ObjectiveFeedbackPlanner.new(client: client).call(feedback)
+
+    planning_input = captured_messages.last.fetch(:content)
+    assert_includes planning_input, "ORIGINAL OBJECTIVE ANCHORS"
+    assert_includes planning_input, "Success criterion: Find a bike under $2,000"
+    assert_includes planning_input, "Constraint: Available for purchase in the US"
+    assert_includes planning_input, "Deliverable: A ranked shortlist of 3 bikes with pros and cons"
+  end
+
+  test "planner prompt omits anchor section when brief_json is blank" do
+    captured_messages = nil
+    feedback = @objective.objective_feedbacks.create!(
+      content: "Check availability for next weekend.",
+      feedback_kind: "follow_up",
+      status: "received"
+    )
+
+    client = Object.new
+    client.define_singleton_method(:chat) do |messages:, **_kwargs|
+      captured_messages = messages
+      JSON.generate([ { "description" => "Check hotel availability for next weekend" } ])
+    end
+
+    ObjectiveFeedbackPlanner.new(client: client).call(feedback)
+
+    planning_input = captured_messages.last.fetch(:content)
+    refute_includes planning_input, "ORIGINAL OBJECTIVE ANCHORS"
+  end
+
+  test "inserts a proposed realignment task on every 3rd feedback cycle" do
+    2.times do |i|
+      @objective.objective_feedbacks.create!(
+        content: "Prior feedback #{i + 1}",
+        feedback_kind: "follow_up",
+        status: "received"
+      )
+    end
+
+    third_feedback = @objective.objective_feedbacks.create!(
+      content: "Keep digging on the hotel options.",
+      feedback_kind: "follow_up",
+      status: "received"
+    )
+
+    tasks = ObjectiveFeedbackPlanner.new(
+      client: stub_client(JSON.generate([ { "description" => "Dig deeper on hotel pricing" } ]))
+    ).call(third_feedback)
+
+    realignment_tasks = tasks.select { |t| t.task_kind == "synthesis" && t.status == "proposed" && t.description.include?("drifted") }
+    assert_equal 1, realignment_tasks.length
+    assert_equal third_feedback.id, realignment_tasks.first.source_feedback_id
+  end
+
+  test "does not insert a realignment task on non-cycle feedback" do
+    feedback = @objective.objective_feedbacks.create!(
+      content: "What is the cancellation policy?",
+      feedback_kind: "clarify_gaps",
+      status: "received"
+    )
+
+    tasks = ObjectiveFeedbackPlanner.new(
+      client: stub_client(JSON.generate([ { "description" => "Look up cancellation policy" } ]))
+    ).call(feedback)
+
+    realignment_tasks = tasks.select { |t| t.description.include?("drifted") }
+    assert_empty realignment_tasks
+  end
+
+  test "realignment task description embeds success criteria and constraints from brief_json" do
+    objective = @workspace.objectives.create!(
+      goal: "Plan a company offsite",
+      status: "active",
+      brief_json: {
+        "success_criteria" => [ "All 20 attendees can attend", "Total cost under $15,000" ],
+        "constraints" => [ "Must be within 2 hours of SF", "Must have AV equipment" ]
+      }
+    )
+    2.times do |i|
+      objective.objective_feedbacks.create!(
+        content: "Prior feedback #{i + 1}",
+        feedback_kind: "follow_up",
+        status: "received"
+      )
+    end
+
+    third_feedback = objective.objective_feedbacks.create!(
+      content: "Any venue with outdoor space?",
+      feedback_kind: "compare_options",
+      status: "received"
+    )
+
+    ObjectiveFeedbackPlanner.new(
+      client: stub_client(JSON.generate([ { "description" => "Find venues with outdoor space near SF" } ]))
+    ).call(third_feedback)
+
+    realignment_task = objective.tasks.find_by(task_kind: "synthesis", status: "proposed")
+    assert_not_nil realignment_task
+    assert_includes realignment_task.description, "All 20 attendees can attend"
+    assert_includes realignment_task.description, "Must be within 2 hours of SF"
+  end
+
   test "creates fallback follow-up tasks when the client raises" do
     feedback = @objective.objective_feedbacks.create!(
       content: "Turn the findings into a recommendation with a backup option.",

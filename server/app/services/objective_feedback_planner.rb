@@ -1,5 +1,6 @@
 class ObjectiveFeedbackPlanner
   MAX_TASKS = 3
+  REALIGNMENT_CYCLE_INTERVAL = 3
 
   SYSTEM_PROMPT = <<~PROMPT.freeze
     You are a follow-up research task planner. Given an existing objective, current findings, and new user feedback,
@@ -47,9 +48,9 @@ class ObjectiveFeedbackPlanner
     end.uniq
     descriptions = normalize_descriptions(feedback, descriptions).first(MAX_TASKS)
 
-    return persist_tasks(feedback, descriptions) if descriptions.any?
-
-    fallback_tasks(feedback)
+    tasks = descriptions.any? ? persist_tasks(feedback, descriptions) : fallback_tasks(feedback)
+    realignment = maybe_insert_realignment_task(feedback)
+    tasks + Array(realignment)
   rescue JSON::ParserError, RuntimeError => error
     Rails.logger.error(
       "[ObjectiveFeedbackPlanner] feedback=#{feedback.id} objective=#{feedback.objective_id} error=#{error.message} raw=#{raw.inspect}"
@@ -139,8 +140,34 @@ class ObjectiveFeedbackPlanner
       normalized.include?("turn the current research into")
   end
 
+  def maybe_insert_realignment_task(feedback)
+    objective = feedback.objective
+    return unless (objective.objective_feedbacks.count % REALIGNMENT_CYCLE_INTERVAL).zero?
+
+    objective.tasks.create!(
+      description: realignment_description(objective),
+      task_kind: "synthesis",
+      status: "proposed",
+      source_feedback: feedback
+    )
+  end
+
+  def realignment_description(objective)
+    brief = ObjectivePlanningInputBuilder.normalize_brief(objective.brief_json)
+    criteria = brief["success_criteria"].first(2).join("; ")
+    constraints = brief["constraints"].first(2).join("; ")
+
+    parts = [ "Review all research findings and completed tasks for this objective." ]
+    parts << "Compare current progress against these success criteria: #{criteria}." if criteria.present?
+    parts << "Honor these constraints: #{constraints}." if constraints.present?
+    parts << "Flag any areas where the research has drifted from the original goal and identify the single most important gap or course correction needed."
+    parts.join(" ").truncate(500)
+  end
+
   def build_input(feedback)
     objective = feedback.objective
+    brief = ObjectivePlanningInputBuilder.normalize_brief(objective.brief_json)
+
     lines = [
       "Objective: #{objective.goal}",
       "Objective summary:",
@@ -150,6 +177,17 @@ class ObjectiveFeedbackPlanner
       "User feedback:",
       feedback.content.to_s.strip
     ]
+
+    anchor_lines = []
+    anchor_lines += brief["success_criteria"].map { |c| "- Success criterion: #{c}" }
+    anchor_lines += brief["constraints"].map { |c| "- Constraint: #{c}" }
+    anchor_lines << "- Deliverable: #{brief["deliverable"]}" if brief["deliverable"].present?
+
+    if anchor_lines.any?
+      lines << ""
+      lines << "ORIGINAL OBJECTIVE ANCHORS (use these as strongly weighted priorities when generating next-step tasks — do not reject tasks that explore adjacent areas, but prefer tasks that advance these criteria):"
+      lines.concat(anchor_lines)
+    end
 
     if feedback.task.present?
       lines << ""
