@@ -7,6 +7,7 @@ module V1
 
     def create
       objective = current_workspace.objectives.create!(objective_params)
+      attach_inbound_files!(objective)
 
       # Kick off LLM task decomposition for active objectives immediately
       ObjectiveKickoff.new.call(objective) if objective.status == "active"
@@ -191,6 +192,14 @@ module V1
       return false if latest_snapshot_at.nil?
 
       latest_snapshot_at > objective.presentation_generated_at
+    end
+
+    def attach_inbound_files!(objective)
+      ids = params.dig(:objective, :inbound_file_ids)
+      return if ids.blank?
+
+      files = current_workspace.inbound_files.where(id: Array(ids))
+      objective.inbound_files << files.reject { |f| objective.inbound_file_ids.include?(f.id) }
     end
 
     def objective_params

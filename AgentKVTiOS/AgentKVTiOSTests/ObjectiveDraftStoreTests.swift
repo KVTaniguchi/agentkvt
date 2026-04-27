@@ -131,7 +131,8 @@ private final class MockObjectiveDraftSync: ObjectiveDraftRemoteSyncing, @unchec
         goal: String,
         status: String,
         priority: Int,
-        briefJson: IOSBackendObjectiveBrief
+        briefJson: IOSBackendObjectiveBrief,
+        inboundFileIds: [UUID]
     ) async throws -> IOSBackendFinalizeObjectiveDraftResult {
         try finalizeResult.get()
     }
