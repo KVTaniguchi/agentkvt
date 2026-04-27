@@ -110,7 +110,7 @@ private final class MockObjectivesSync: ObjectivesRemoteSyncing, @unchecked Send
         objectives
     }
 
-    func createObjectiveRemote(goal: String, status: String, priority: Int) async throws -> IOSBackendObjective {
+    func createObjectiveRemote(goal: String, status: String, priority: Int, inboundFileIds: [UUID]) async throws -> IOSBackendObjective {
         fatalError("unused in these tests")
     }
 

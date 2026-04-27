@@ -1,6 +1,8 @@
 class InboundFile < ApplicationRecord
   belongs_to :workspace
   belongs_to :uploaded_by_profile, class_name: "FamilyMember", optional: true
+  has_many :objective_inbound_files, dependent: :destroy
+  has_many :objectives, through: :objective_inbound_files
 
   scope :recent_first, -> { order(timestamp: :desc, created_at: :desc) }
 

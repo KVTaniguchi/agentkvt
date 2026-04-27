@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 
 private enum ObjectiveComposerStage {
     case archetypes
@@ -94,6 +95,9 @@ struct ObjectiveComposerView: View {
     @State private var localErrorMessage: String?
     @State private var pendingTurn: PendingObjectiveComposerTurn?
     @State private var isSummarySheetPresented = false
+    @State private var selectedPhotoItems: [PhotosPickerItem] = []
+    @State private var attachedFileIds: [UUID] = []
+    @State private var isUploadingPhotos = false
     @FocusState private var isDraftMessageFieldFocused: Bool
 
     private var draft: IOSBackendObjectiveDraft? {
@@ -365,6 +369,36 @@ struct ObjectiveComposerView: View {
                 Text("Active objectives are created and then immediately sent to the Mac agent for planning.")
             }
 
+            Section {
+                PhotosPicker(
+                    selection: $selectedPhotoItems,
+                    maxSelectionCount: 3,
+                    matching: .images
+                ) {
+                    Label(
+                        attachedFileIds.isEmpty ? "Add Photos" : "\(attachedFileIds.count) Photo\(attachedFileIds.count == 1 ? "" : "s") Attached",
+                        systemImage: attachedFileIds.isEmpty ? "photo.badge.plus" : "photo.stack"
+                    )
+                }
+                .onChange(of: selectedPhotoItems) { _, newItems in
+                    Task { await uploadSelectedPhotos(newItems) }
+                }
+
+                if isUploadingPhotos {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Uploading photos…")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } header: {
+                Text("Photos")
+            } footer: {
+                Text("Photos give the planner visual context. Up to 3 images.")
+            }
+
             if let draft, !draft.missingFields.isEmpty {
                 Section("Still Missing") {
                     ForEach(draft.missingFields, id: \.self) { field in
@@ -448,7 +482,8 @@ struct ObjectiveComposerView: View {
             let finalized = try await draftStore.finalizeDraft(
                 goal: reviewGoal,
                 briefJson: draft?.briefJson ?? .init(),
-                startImmediately: startImmediately
+                startImmediately: startImmediately,
+                inboundFileIds: attachedFileIds
             )
             objectivesStore.upsertObjective(finalized)
             draftStore.reset()
@@ -456,6 +491,33 @@ struct ObjectiveComposerView: View {
         } catch {
             localErrorMessage = error.localizedDescription
             IOSRuntimeLog.log("[ObjectiveComposerView] finalize draft failed: \(error)")
+        }
+    }
+
+    @MainActor
+    private func uploadSelectedPhotos(_ items: [PhotosPickerItem]) async {
+        guard !items.isEmpty else { return }
+        isUploadingPhotos = true
+        attachedFileIds = []
+        defer { isUploadingPhotos = false }
+
+        let sync = IOSBackendSyncService()
+        for item in items {
+            do {
+                guard let data = try await item.loadTransferable(type: Data.self) else { continue }
+                let contentType = item.supportedContentTypes.first?.preferredMIMEType ?? "image/jpeg"
+                let ext = item.supportedContentTypes.first?.preferredFilenameExtension ?? "jpg"
+                let fileName = "photo_\(UUID().uuidString).\(ext)"
+                let uploaded = try await sync.createInboundFileRemote(
+                    fileName: fileName,
+                    contentType: contentType,
+                    fileData: data,
+                    uploadedByProfileId: nil
+                )
+                attachedFileIds.append(uploaded.id)
+            } catch {
+                IOSRuntimeLog.log("[ObjectiveComposerView] photo upload failed: \(error)")
+            }
         }
     }
 
@@ -881,6 +943,9 @@ private struct LegacyObjectiveCreateView: View {
     @State private var launchActive = true
     @State private var isSaving = false
     @State private var errorMessage: String?
+    @State private var selectedPhotoItems: [PhotosPickerItem] = []
+    @State private var attachedFileIds: [UUID] = []
+    @State private var isUploadingPhotos = false
 
     var body: some View {
         Form {
@@ -902,6 +967,36 @@ private struct LegacyObjectiveCreateView: View {
             }
 
             Section {
+                PhotosPicker(
+                    selection: $selectedPhotoItems,
+                    maxSelectionCount: 3,
+                    matching: .images
+                ) {
+                    Label(
+                        attachedFileIds.isEmpty ? "Add Photos" : "\(attachedFileIds.count) Photo\(attachedFileIds.count == 1 ? "" : "s") Attached",
+                        systemImage: attachedFileIds.isEmpty ? "photo.badge.plus" : "photo.stack"
+                    )
+                }
+                .onChange(of: selectedPhotoItems) { _, newItems in
+                    Task { await uploadSelectedPhotos(newItems) }
+                }
+
+                if isUploadingPhotos {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Uploading photos…")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } header: {
+                Text("Photos")
+            } footer: {
+                Text("Photos give the planner visual context. Up to 3 images.")
+            }
+
+            Section {
                 Toggle("Start immediately (Active)", isOn: $launchActive)
             } footer: {
                 Text("Active objectives are created and then immediately sent to the Mac agent for planning.")
@@ -919,7 +1014,7 @@ private struct LegacyObjectiveCreateView: View {
                             .frame(maxWidth: .infinity)
                     }
                 }
-                .disabled(goal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving)
+                .disabled(goal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving || isUploadingPhotos)
             }
         }
         .alert("Could Not Create Objective", isPresented: Binding(
@@ -941,10 +1036,41 @@ private struct LegacyObjectiveCreateView: View {
         defer { isSaving = false }
 
         do {
-            _ = try await store.createObjective(goal: trimmed, status: launchActive ? "active" : "pending")
+            _ = try await store.createObjective(
+                goal: trimmed,
+                status: launchActive ? "active" : "pending",
+                inboundFileIds: attachedFileIds
+            )
             onComplete()
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func uploadSelectedPhotos(_ items: [PhotosPickerItem]) async {
+        guard !items.isEmpty else { return }
+        isUploadingPhotos = true
+        attachedFileIds = []
+        defer { isUploadingPhotos = false }
+
+        let sync = IOSBackendSyncService()
+        for item in items {
+            do {
+                guard let data = try await item.loadTransferable(type: Data.self) else { continue }
+                let contentType = item.supportedContentTypes.first?.preferredMIMEType ?? "image/jpeg"
+                let ext = item.supportedContentTypes.first?.preferredFilenameExtension ?? "jpg"
+                let fileName = "photo_\(UUID().uuidString).\(ext)"
+                let uploaded = try await sync.createInboundFileRemote(
+                    fileName: fileName,
+                    contentType: contentType,
+                    fileData: data,
+                    uploadedByProfileId: nil
+                )
+                attachedFileIds.append(uploaded.id)
+            } catch {
+                IOSRuntimeLog.log("[LegacyObjectiveCreateView] photo upload failed: \(error)")
+            }
         }
     }
 }

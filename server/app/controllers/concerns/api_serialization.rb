@@ -146,6 +146,13 @@ module ApiSerialization
   end
 
   def serialize_objective(objective)
+    inbound_file_ids =
+      if objective.association(:inbound_files).loaded?
+        objective.inbound_files.map(&:id)
+      else
+        objective.inbound_file_ids
+      end
+
     {
       id: objective.id,
       workspace_id: objective.workspace_id,
@@ -157,6 +164,7 @@ module ApiSerialization
       creation_source: objective.creation_source,
       planner_summary: ObjectivePlanningInputBuilder.for_objective(objective),
       hands_config: objective.hands_config || {},
+      inbound_file_ids: inbound_file_ids,
       in_progress_task_count: objective.tasks.count { |t| t.status == "in_progress" },
       snapshot_count: objective.research_snapshots.size,
       created_at: iso8601(objective.created_at),

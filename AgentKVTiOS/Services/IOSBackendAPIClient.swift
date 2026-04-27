@@ -245,6 +245,7 @@ struct IOSBackendObjective: Decodable, Sendable, Identifiable, Equatable {
     let objectiveKind: String?
     let creationSource: String
     let plannerSummary: String
+    let inboundFileIds: [UUID]
     let inProgressTaskCount: Int
     let snapshotCount: Int
     let createdAt: Date
@@ -260,6 +261,7 @@ struct IOSBackendObjective: Decodable, Sendable, Identifiable, Equatable {
         case objectiveKind
         case creationSource
         case plannerSummary
+        case inboundFileIds
         case inProgressTaskCount
         case snapshotCount
         case createdAt
@@ -277,6 +279,7 @@ struct IOSBackendObjective: Decodable, Sendable, Identifiable, Equatable {
         objectiveKind = try container.decodeIfPresent(String.self, forKey: .objectiveKind)
         creationSource = try container.decodeIfPresent(String.self, forKey: .creationSource) ?? "manual"
         plannerSummary = try container.decodeIfPresent(String.self, forKey: .plannerSummary) ?? goal
+        inboundFileIds = try container.decodeIfPresent([UUID].self, forKey: .inboundFileIds) ?? []
         inProgressTaskCount = try container.decodeIfPresent(Int.self, forKey: .inProgressTaskCount) ?? 0
         snapshotCount = try container.decodeIfPresent(Int.self, forKey: .snapshotCount) ?? 0
         createdAt = try container.decode(Date.self, forKey: .createdAt)
@@ -1027,7 +1030,8 @@ actor IOSBackendAPIClient {
         priority: Int,
         objectiveKind: String? = nil,
         creationSource: String? = nil,
-        briefJson: IOSBackendObjectiveBrief? = nil
+        briefJson: IOSBackendObjectiveBrief? = nil,
+        inboundFileIds: [UUID] = []
     ) async throws -> IOSBackendObjective {
         var objective: [String: Any] = [
             "goal": goal,
@@ -1042,6 +1046,9 @@ actor IOSBackendAPIClient {
         }
         if let briefJson {
             objective["brief_json"] = briefJson.jsonObject
+        }
+        if !inboundFileIds.isEmpty {
+            objective["inbound_file_ids"] = inboundFileIds.map(\.uuidString)
         }
 
         let data = try await performRequest(
@@ -1309,19 +1316,22 @@ actor IOSBackendAPIClient {
         goal: String,
         status: String,
         priority: Int,
-        briefJson: IOSBackendObjectiveBrief
+        briefJson: IOSBackendObjectiveBrief,
+        inboundFileIds: [UUID] = []
     ) async throws -> IOSBackendFinalizeObjectiveDraftResult {
+        var objectiveDraft: [String: Any] = [
+            "goal": goal,
+            "status": status,
+            "priority": priority,
+            "brief_json": briefJson.jsonObject
+        ]
+        if !inboundFileIds.isEmpty {
+            objectiveDraft["inbound_file_ids"] = inboundFileIds.map(\.uuidString)
+        }
         let data = try await performRequest(
             path: "v1/objective_drafts/\(id.uuidString)/finalize",
             method: "POST",
-            jsonBody: [
-                "objective_draft": [
-                    "goal": goal,
-                    "status": status,
-                    "priority": priority,
-                    "brief_json": briefJson.jsonObject
-                ]
-            ],
+            jsonBody: ["objective_draft": objectiveDraft],
             timeoutInterval: Self.draftRequestTimeout
         )
         let decoded = try decoder.decode(IOSBackendFinalizeObjectiveDraftEnvelope.self, from: data)
@@ -1507,9 +1517,9 @@ final class IOSBackendSyncService {
         return try await client.fetchObjectives()
     }
 
-    func createObjectiveRemote(goal: String, status: String = "active", priority: Int = 0) async throws -> IOSBackendObjective {
+    func createObjectiveRemote(goal: String, status: String = "active", priority: Int = 0, inboundFileIds: [UUID] = []) async throws -> IOSBackendObjective {
         guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
-        return try await client.createObjective(goal: goal, status: status, priority: priority)
+        return try await client.createObjective(goal: goal, status: status, priority: priority, inboundFileIds: inboundFileIds)
     }
 
     func fetchObjectiveDetailRemote(id: UUID, viewerProfileId: UUID?) async throws -> IOSBackendObjectiveDetail {
@@ -1718,7 +1728,8 @@ final class IOSBackendSyncService {
         goal: String,
         status: String,
         priority: Int,
-        briefJson: IOSBackendObjectiveBrief
+        briefJson: IOSBackendObjectiveBrief,
+        inboundFileIds: [UUID] = []
     ) async throws -> IOSBackendFinalizeObjectiveDraftResult {
         guard let client else { throw IOSBackendAPIError.invalidPayload("Backend not configured") }
         return try await client.finalizeObjectiveDraft(
@@ -1726,7 +1737,8 @@ final class IOSBackendSyncService {
             goal: goal,
             status: status,
             priority: priority,
-            briefJson: briefJson
+            briefJson: briefJson,
+            inboundFileIds: inboundFileIds
         )
     }
 

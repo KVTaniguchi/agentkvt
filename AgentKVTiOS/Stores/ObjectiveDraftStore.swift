@@ -18,7 +18,8 @@ protocol ObjectiveDraftRemoteSyncing: Sendable {
         goal: String,
         status: String,
         priority: Int,
-        briefJson: IOSBackendObjectiveBrief
+        briefJson: IOSBackendObjectiveBrief,
+        inboundFileIds: [UUID]
     ) async throws -> IOSBackendFinalizeObjectiveDraftResult
 }
 
@@ -154,7 +155,8 @@ final class ObjectiveDraftStore {
     func finalizeDraft(
         goal: String,
         briefJson: IOSBackendObjectiveBrief,
-        startImmediately: Bool
+        startImmediately: Bool,
+        inboundFileIds: [UUID] = []
     ) async throws -> IOSBackendObjective {
         guard let draft = activeDraft else {
             throw ObjectiveDraftStoreError.noActiveDraft
@@ -172,7 +174,8 @@ final class ObjectiveDraftStore {
                 goal: trimmedGoal,
                 status: startImmediately ? "active" : "pending",
                 priority: 0,
-                briefJson: briefJson
+                briefJson: briefJson,
+                inboundFileIds: inboundFileIds
             )
             setActiveDraft(result.objectiveDraft)
             return result.objective

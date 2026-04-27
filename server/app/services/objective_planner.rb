@@ -76,8 +76,9 @@ class ObjectivePlanner
     Example output: [{"description":"Search for hotel options near the convention center with prices and availability for the target dates","task_kind":"research","allowed_tool_ids":["multi_step_search"],"done_when":"At least one snapshot captures current prices, dates, and cancellation policy details."},{"description":"Use the site_scout tool to add the best in-stock 16x25x1 HVAC filter 3-pack to the Target cart and confirm the subtotal.","task_kind":"action","allowed_tool_ids":["site_scout"],"required_capabilities":["objective_research","site_scout"],"done_when":"An objective snapshot records the cart subtotal or the blocker preventing checkout."},{"description":"Review all findings and produce the recommended next move with risks and immediate action items.","task_kind":"synthesis","done_when":"A final objective snapshot captures the recommendation and marks the task complete."}]
   PROMPT
 
-  def initialize(client: OllamaClient.new)
+  def initialize(client: OllamaClient.new, image_describer: ObjectiveImageDescriber.new)
     @client = client
+    @image_describer = image_describer
   end
 
   # Prompts the LLM to decompose +objective.goal+ into reviewable Tasks and persists them.
@@ -85,7 +86,7 @@ class ObjectivePlanner
   # Mac agent begins executing them.
   def call(objective)
     goal = objective.goal.to_s.strip
-    planning_input = ObjectivePlanningInputBuilder.for_objective(objective)
+    planning_input = build_planning_input(objective)
     min_task_count = minimum_task_count(planning_input.presence || goal)
     raw = nil
     raw = @client.chat(
@@ -122,6 +123,14 @@ class ObjectivePlanner
   end
 
   private
+
+  def build_planning_input(objective)
+    base = ObjectivePlanningInputBuilder.for_objective(objective)
+    descriptions = @image_describer.describe_all(objective)
+    return base if descriptions.empty?
+
+    [base, "\nAttached images:", *descriptions].join("\n")
+  end
 
   def normalize_task_defs(parsed)
     return parsed if parsed.is_a?(Array)

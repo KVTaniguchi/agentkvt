@@ -46,6 +46,12 @@ module V1
           creation_source: "guided"
         )
 
+        inbound_file_ids = Array(params.dig(:objective_draft, :inbound_file_ids)).compact
+        if inbound_file_ids.any?
+          files = current_workspace.inbound_files.where(id: inbound_file_ids)
+          objective.inbound_files << files
+        end
+
         draft.update!(
           status: "finalized",
           finalized_objective: objective,

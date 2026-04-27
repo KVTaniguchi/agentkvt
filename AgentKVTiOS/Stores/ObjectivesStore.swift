@@ -5,7 +5,7 @@ import Observation
 protocol ObjectivesRemoteSyncing: Sendable {
     var isEnabled: Bool { get }
     func fetchObjectivesRemote() async throws -> [IOSBackendObjective]
-    func createObjectiveRemote(goal: String, status: String, priority: Int) async throws -> IOSBackendObjective
+    func createObjectiveRemote(goal: String, status: String, priority: Int, inboundFileIds: [UUID]) async throws -> IOSBackendObjective
     func fetchObjectiveDetailRemote(id: UUID, viewerProfileId: UUID?) async throws -> IOSBackendObjectiveDetail
     func updateObjectiveRemote(id: UUID, goal: String, status: String, priority: Int) async throws -> IOSBackendObjective
     func submitObjectiveFeedbackRemote(id: UUID, content: String, feedbackKind: String, taskId: UUID?, researchSnapshotId: UUID?) async throws -> IOSBackendSubmitObjectiveFeedbackResult
@@ -51,8 +51,8 @@ final class ObjectivesStore {
 
     /// Creates an objective on the server and prepends it to the local list.
     @MainActor
-    func createObjective(goal: String, status: String = "active") async throws -> IOSBackendObjective {
-        let objective = try await sync.createObjectiveRemote(goal: goal, status: status, priority: 0)
+    func createObjective(goal: String, status: String = "active", inboundFileIds: [UUID] = []) async throws -> IOSBackendObjective {
+        let objective = try await sync.createObjectiveRemote(goal: goal, status: status, priority: 0, inboundFileIds: inboundFileIds)
         upsertObjective(objective)
         return objective
     }
