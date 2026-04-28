@@ -166,6 +166,7 @@ module ApiSerialization
       hands_config: objective.hands_config || {},
       inbound_file_ids: inbound_file_ids,
       in_progress_task_count: objective.tasks.count { |t| t.status == "in_progress" },
+      pending_task_count: objective.tasks.count { |t| t.status == "pending" },
       snapshot_count: objective.research_snapshots.size,
       created_at: iso8601(objective.created_at),
       updated_at: iso8601(objective.updated_at)

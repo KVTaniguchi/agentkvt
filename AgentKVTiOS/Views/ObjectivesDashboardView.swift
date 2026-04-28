@@ -108,6 +108,11 @@ struct ObjectiveRow: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
+                if objective.pendingTaskCount > 0 {
+                    Label("\(objective.pendingTaskCount)", systemImage: "hourglass")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
                 if objective.inProgressTaskCount > 0 {
                     Label("\(objective.inProgressTaskCount)", systemImage: "waveform")
                         .font(.caption2)
