@@ -246,6 +246,7 @@ struct IOSBackendObjective: Decodable, Sendable, Identifiable, Equatable {
     let creationSource: String
     let plannerSummary: String
     let inboundFileIds: [UUID]
+    let pendingTaskCount: Int
     let inProgressTaskCount: Int
     let snapshotCount: Int
     let createdAt: Date
@@ -262,6 +263,7 @@ struct IOSBackendObjective: Decodable, Sendable, Identifiable, Equatable {
         case creationSource
         case plannerSummary
         case inboundFileIds
+        case pendingTaskCount
         case inProgressTaskCount
         case snapshotCount
         case createdAt
@@ -280,6 +282,7 @@ struct IOSBackendObjective: Decodable, Sendable, Identifiable, Equatable {
         creationSource = try container.decodeIfPresent(String.self, forKey: .creationSource) ?? "manual"
         plannerSummary = try container.decodeIfPresent(String.self, forKey: .plannerSummary) ?? goal
         inboundFileIds = try container.decodeIfPresent([UUID].self, forKey: .inboundFileIds) ?? []
+        pendingTaskCount = try container.decodeIfPresent(Int.self, forKey: .pendingTaskCount) ?? 0
         inProgressTaskCount = try container.decodeIfPresent(Int.self, forKey: .inProgressTaskCount) ?? 0
         snapshotCount = try container.decodeIfPresent(Int.self, forKey: .snapshotCount) ?? 0
         createdAt = try container.decode(Date.self, forKey: .createdAt)
