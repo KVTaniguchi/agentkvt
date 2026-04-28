@@ -33,3 +33,8 @@ production:
     class: HealthScoutJob
     queue: background
     schedule: every monday at 7am
+
+  stale_pending_tasks:
+    class: StalePendingTasksJob
+    queue: background
+    schedule: every 10 minutes

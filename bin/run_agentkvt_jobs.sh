@@ -33,10 +33,17 @@ fi
 
 mkdir -p "${LOG_DIR}"
 
-if ! pg_ctl -D "${PGDATA}" status >/dev/null 2>&1; then
-  pg_ctl -D "${PGDATA}" -l "${PGLOG}" start || \
-    pg_ctl -D "${PGDATA}" status >/dev/null 2>&1 || \
-    { echo "ERROR: Postgres failed to start and is not running." >&2; exit 1; }
+# Use pg_isready (connection-level check) as source of truth rather than pg_ctl status,
+# which fails on stale postmaster.pid even when Postgres is actually accepting connections.
+if ! pg_isready -h 127.0.0.1 -q 2>/dev/null; then
+  pg_ctl -D "${PGDATA}" -l "${PGLOG}" start 2>&1 || true
+  for _i in $(seq 1 10); do
+    pg_isready -h 127.0.0.1 -q 2>/dev/null && break || sleep 1
+  done
+  if ! pg_isready -h 127.0.0.1 -q 2>/dev/null; then
+    echo "ERROR: Postgres is not accepting connections after start attempt." >&2
+    exit 1
+  fi
 fi
 
 if [ -f "${SERVER_DIR}/.env" ]; then
