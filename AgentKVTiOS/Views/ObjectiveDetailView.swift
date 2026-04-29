@@ -1,6 +1,7 @@
 import Foundation
 import PhotosUI
 import SwiftUI
+import UIKit
 
 struct ObjectiveDetailView: View {
     let objective: IOSBackendObjective
@@ -32,6 +33,7 @@ struct ObjectiveDetailView: View {
     @State private var selectedFeedbackPhotoItems: [PhotosPickerItem] = []
     @State private var attachedFeedbackFileIds: [UUID] = []
     @State private var isUploadingFeedbackPhotos = false
+    @State private var lastCompletedCount: Int = 0
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
@@ -514,9 +516,22 @@ struct ObjectiveDetailView: View {
     }
 
     @ViewBuilder
+    private var compactStatusMessage: String {
+        if hasStaleActiveWork {
+            let agentHint = onlineAgentRegistrationsCount == 0 ? " No agent online." : ""
+            return "Task stalled — use Reset below to unblock.\(agentHint)"
+        }
+        if canDispatchQueuedTasksWhileActive {
+            return "\(taskCounts.inProgress) running · \(taskCounts.pending) queued"
+        }
+        return "\(taskCounts.inProgress) task(s) running on Mac"
+    }
+
+    @ViewBuilder
     private var actionsSectionContent: some View {
         if needsPlanReview {
             Button {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 actionInProgress = "approvePlan"
                 Task { await approveObjectivePlan() }
             } label: {
@@ -535,6 +550,7 @@ struct ObjectiveDetailView: View {
             .disabled(isStartingWork || isDeleting)
 
             Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 actionInProgress = "regeneratePlan"
                 Task { await regenerateObjectivePlan() }
             } label: {
@@ -548,19 +564,17 @@ struct ObjectiveDetailView: View {
             .disabled(isStartingWork || isDeleting)
         } else {
             if hasInProgressWork {
-                VStack(alignment: .leading, spacing: 8) {
-                    Label(activeWorkActionLabel, systemImage: activeWorkActionIcon)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(activeWorkActionTint)
+                Label(activeWorkActionLabel, systemImage: activeWorkActionIcon)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(activeWorkActionTint)
 
-                    Text(activeWorkActionMessage)
-                    .font(.subheadline)
+                Text(compactStatusMessage)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                }
 
                 if canDispatchQueuedTasksWhileActive {
                     Button {
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                         actionInProgress = "runNow"
                         Task { await runObjectiveNow() }
                     } label: {
@@ -576,6 +590,7 @@ struct ObjectiveDetailView: View {
                 }
             } else {
                 Button {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                     actionInProgress = "runNow"
                     Task { await runObjectiveNow() }
                 } label: {
@@ -588,12 +603,14 @@ struct ObjectiveDetailView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(runNowProminentTint)
+                .opacity(onlineAgentRegistrationsCount == 0 ? 0.55 : 1.0)
                 .disabled(isStartingWork || isDeleting)
             }
 
             if hasInProgressWork {
                 if hasStaleActiveWork {
                     Button {
+                        UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
                         actionInProgress = "resetTasks"
                         Task { await resetStuckTasksAndRun() }
                     } label: {
@@ -609,6 +626,7 @@ struct ObjectiveDetailView: View {
                     .disabled(isStartingWork || isDeleting)
                 } else {
                     Button {
+                        UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
                         actionInProgress = "resetTasks"
                         Task { await resetStuckTasksAndRun() }
                     } label: {
@@ -626,6 +644,7 @@ struct ObjectiveDetailView: View {
 
             if displayedObjective.status == "active" {
                 Button(role: .destructive) {
+                    UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
                     showRerunAllConfirmation = true
                 } label: {
                     HStack {
@@ -1033,6 +1052,11 @@ struct ObjectiveDetailView: View {
             reconcileFeedbackTargetSelection()
             reconcileHighlightedFeedbackSelection()
             lastLoadedAt = Date()
+            let newCompleted = taskCounts.completed
+            if newCompleted > lastCompletedCount && lastCompletedCount > 0 {
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+            }
+            lastCompletedCount = newCompleted
             recomputeGuidance()
             reconcilePolling()
         } catch {
@@ -1668,6 +1692,7 @@ private struct ObjectiveActivityCard: View {
                     .font(.title3)
                     .foregroundStyle(summary.tint)
                     .frame(width: 28)
+                    .symbolEffect(.rotate, isActive: summary.showsProgress)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(summary.title)
@@ -1680,9 +1705,11 @@ private struct ObjectiveActivityCard: View {
 
                 Spacer(minLength: 8)
 
-                if summary.showsProgress {
-                    ProgressView()
-                        .tint(summary.tint)
+                if onlineAgentRegistrationsCount > 0 {
+                    Circle()
+                        .fill(.green)
+                        .frame(width: 8, height: 8)
+                        .shadow(color: .green, radius: 3)
                 }
 
                 if showsDisclosure {
@@ -1731,41 +1758,8 @@ private struct ObjectiveActivityCard: View {
                 .clipShape(RoundedRectangle(cornerRadius: 14))
             }
 
-            if showsOperationalMetrics {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        if taskCounts.hasAnyTasks {
-                            if taskCounts.proposed > 0 {
-                                ObjectiveMetricChip(count: taskCounts.proposed, label: "proposed", tint: .teal)
-                            }
-                            if taskCounts.pending > 0 {
-                                ObjectiveMetricChip(count: taskCounts.pending, label: "pending", tint: .orange)
-                            }
-                            if taskCounts.inProgress > 0 {
-                                ObjectiveMetricChip(count: taskCounts.inProgress, label: "active", tint: .blue)
-                            }
-                            if taskCounts.completed > 0 {
-                                ObjectiveMetricChip(count: taskCounts.completed, label: "done", tint: .green)
-                            }
-                            if taskCounts.failed > 0 {
-                                ObjectiveMetricChip(count: taskCounts.failed, label: "failed", tint: .red)
-                            }
-                        }
-                        if onlineAgentRegistrationsCount > 0 {
-                            ObjectiveMetricChip(
-                                count: onlineAgentRegistrationsCount,
-                                label: onlineAgentRegistrationsCount == 1 ? "agent online" : "agents online",
-                                tint: .teal
-                            )
-                        }
-                        if snapshotCount > 0 {
-                            ObjectiveMetricChip(count: snapshotCount, label: "snapshots", tint: .secondary)
-                        }
-                        if logCount > 0 {
-                            ObjectiveMetricChip(count: logCount, label: "logs", tint: .secondary)
-                        }
-                    }
-                }
+            if showsOperationalMetrics && taskCounts.hasAnyTasks {
+                TaskProgressBar(taskCounts: taskCounts, snapshotCount: snapshotCount, logCount: logCount)
             }
 
             if let lastFinding {
@@ -1782,6 +1776,91 @@ private struct ObjectiveActivityCard: View {
             }
         }
         .padding(.vertical, 4)
+    }
+}
+
+private struct TaskProgressBar: View {
+    let taskCounts: ObjectiveTaskCounts
+    let snapshotCount: Int
+    let logCount: Int
+
+    private var total: Int {
+        taskCounts.proposed + taskCounts.pending + taskCounts.inProgress + taskCounts.completed + taskCounts.failed
+    }
+
+    private func fraction(_ count: Int) -> Double {
+        total > 0 ? Double(count) / Double(total) : 0
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            GeometryReader { geo in
+                HStack(spacing: 2) {
+                    let w = geo.size.width
+                    if taskCounts.completed > 0 {
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(Color.green)
+                            .frame(width: max(4, w * fraction(taskCounts.completed)))
+                    }
+                    if taskCounts.inProgress > 0 {
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(Color.blue)
+                            .frame(width: max(4, w * fraction(taskCounts.inProgress)))
+                    }
+                    if taskCounts.pending + taskCounts.proposed > 0 {
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(Color.secondary.opacity(0.3))
+                            .frame(width: max(4, w * fraction(taskCounts.pending + taskCounts.proposed)))
+                    }
+                    if taskCounts.failed > 0 {
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(Color.red)
+                            .frame(width: max(4, w * fraction(taskCounts.failed)))
+                    }
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .frame(height: 6)
+
+            HStack {
+                HStack(spacing: 6) {
+                    if taskCounts.completed > 0 {
+                        Text("\(taskCounts.completed) done")
+                            .foregroundStyle(.green)
+                    }
+                    if taskCounts.inProgress > 0 {
+                        Text("\(taskCounts.inProgress) active")
+                            .foregroundStyle(.blue)
+                    }
+                    if taskCounts.pending > 0 {
+                        Text("\(taskCounts.pending) pending")
+                            .foregroundStyle(.secondary)
+                    }
+                    if taskCounts.proposed > 0 {
+                        Text("\(taskCounts.proposed) proposed")
+                            .foregroundStyle(.teal)
+                    }
+                    if taskCounts.failed > 0 {
+                        Text("\(taskCounts.failed) failed")
+                            .foregroundStyle(.red)
+                    }
+                }
+                .font(.caption2)
+
+                Spacer()
+
+                HStack(spacing: 8) {
+                    if snapshotCount > 0 {
+                        Label("\(snapshotCount)", systemImage: "chart.bar.doc.horizontal")
+                    }
+                    if logCount > 0 {
+                        Label("\(logCount)", systemImage: "list.bullet.rectangle")
+                    }
+                }
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+            }
+        }
     }
 }
 
