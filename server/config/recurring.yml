@@ -38,3 +38,8 @@ production:
     class: StalePendingTasksJob
     queue: background
     schedule: every 10 minutes
+
+  stale_in_progress_tasks:
+    class: StaleInProgressTasksJob
+    queue: background
+    schedule: every 30 minutes
