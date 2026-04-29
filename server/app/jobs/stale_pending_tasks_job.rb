@@ -31,18 +31,12 @@ class StalePendingTasksJob < ApplicationJob
   private
 
   def stale_objectives
-    active_objective_ids_with_in_progress = Objective
-      .joins(:tasks)
-      .where(tasks: { status: "in_progress" })
-      .select(:id)
-
     Objective
       .includes(:workspace)
       .where(status: "active")
       .joins(:tasks)
       .where(tasks: { status: "pending" })
       .where("tasks.created_at <= ?", STALE_THRESHOLD.ago)
-      .where.not(id: active_objective_ids_with_in_progress)
       .distinct
   end
 

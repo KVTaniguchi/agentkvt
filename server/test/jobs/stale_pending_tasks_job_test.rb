@@ -36,13 +36,14 @@ class StalePendingTasksJobTest < ActiveSupport::TestCase
     end
   end
 
-  test "does nothing when there are in_progress tasks" do
+  test "alerts even when in_progress tasks exist alongside stale pending tasks" do
     @objective.tasks.create!(description: "Find top-rated grinders", status: "pending", created_at: 20.minutes.ago)
     @objective.tasks.create!(description: "Check availability", status: "in_progress", created_at: 5.minutes.ago)
     stub_env("SLACK_FEED_CHANNEL_IDS", "C123") do
       with_stubbed_notifier do |notify_calls|
         StalePendingTasksJob.new.perform
-        assert_empty notify_calls
+        assert_equal 1, notify_calls.size
+        assert_match(/stalled/i, notify_calls.first[:text])
       end
     end
   end
