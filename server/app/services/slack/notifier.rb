@@ -11,16 +11,14 @@ module Slack
     # channel: Slack channel ID ("C0ASF73V75F"), user ID for DMs ("U0ASWJ44S2C"),
     #          or channel name ("#general").
     # text:    The message body (plain text or Slack mrkdwn).
-    # workspace: optional Workspace; used to look up a stored bot token.
-    #            Falls back to SLACK_BOT_TOKEN env var.
+    # workspace: accepted for API compatibility but unused; token comes from SLACK_BOT_TOKEN.
     def self.call(channel:, text:, workspace: nil)
-      new(channel: channel, text: text, workspace: workspace).call
+      new(channel: channel, text: text).call
     end
 
-    def initialize(channel:, text:, workspace: nil)
-      @channel   = channel
-      @text      = text
-      @workspace = workspace
+    def initialize(channel:, text:)
+      @channel = channel
+      @text    = text
     end
 
     def call
@@ -48,11 +46,6 @@ module Slack
     private
 
     def resolve_token!
-      if @workspace
-        cred = WorkspaceProviderCredential.find_by(workspace: @workspace, provider: "slack")
-        return cred.secret_value if cred&.secret_value.present?
-      end
-
       token = ENV["SLACK_BOT_TOKEN"].presence
       raise TokenMissingError, "No Slack bot token available" unless token
 
