@@ -102,6 +102,7 @@ struct ObjectiveRow: View {
                     .padding(.vertical, 3)
                     .background(statusColor.opacity(0.85))
                     .clipShape(Capsule())
+                    .shadow(color: objective.status == "active" ? .green.opacity(0.6) : .clear, radius: 4)
                 if objective.priority > 0 {
                     Label("\(objective.priority)", systemImage: "arrow.up.circle")
                         .font(.caption2)
@@ -117,6 +118,7 @@ struct ObjectiveRow: View {
                     Label("\(objective.inProgressTaskCount)", systemImage: "waveform")
                         .font(.caption2)
                         .foregroundStyle(.orange)
+                        .symbolEffect(.pulse, isActive: objective.inProgressTaskCount > 0)
                 }
                 if objective.snapshotCount > 0 {
                     Label("\(objective.snapshotCount)", systemImage: "chart.bar.doc.horizontal")
