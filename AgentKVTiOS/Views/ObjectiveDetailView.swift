@@ -16,6 +16,7 @@ struct ObjectiveDetailView: View {
     @State private var actionInProgress: String?
     @State private var errorMessage: String?
     @State private var actionError: String?
+    @State private var showPromptSheet = false
     @State private var showEditPromptSheet = false
     @State private var showDeleteConfirmation = false
     @State private var showRerunAllConfirmation = false
@@ -405,10 +406,11 @@ struct ObjectiveDetailView: View {
     @ViewBuilder
     private var lowerSectionsContent: some View {
         Section {
-            Text(displayedObjective.goal)
-                .font(.body)
-                .foregroundStyle(.primary)
-                .fixedSize(horizontal: false, vertical: true)
+            Button {
+                showPromptSheet = true
+            } label: {
+                Label("View prompt", systemImage: "doc.text.magnifyingglass")
+            }
             Button("Edit prompt") {
                 showEditPromptSheet = true
             }
@@ -700,10 +702,7 @@ struct ObjectiveDetailView: View {
 
         switch displayedObjective.status {
         case "active":
-            return """
-            Run now queues pending or failed tasks. Use “Reset stuck tasks & run” if work is stuck in progress. \
-            “Rerun all tasks” sets every task back to pending and dispatches the Mac agent again.
-            """
+            return "Run pending or failed tasks, reset stuck work, or rerun everything."
         default:
             return "Generates a proposed task plan for review. Work begins after you approve the plan."
         }
@@ -950,6 +949,9 @@ struct ObjectiveDetailView: View {
         .onDisappear {
             pollTask?.cancel()
             pollTask = nil
+        }
+        .sheet(isPresented: $showPromptSheet) {
+            ObjectivePromptSheet(prompt: displayedObjective.goal)
         }
         .sheet(isPresented: $showEditPromptSheet) {
             EditObjectivePromptSheet(
@@ -2034,6 +2036,31 @@ private struct ObjectiveAgentLogRow: View {
 }
 
 // MARK: - Edit prompt
+
+private struct ObjectivePromptSheet: View {
+    let prompt: String
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                Text(prompt)
+                    .font(.body)
+                    .foregroundStyle(.primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding()
+            }
+            .navigationTitle("Prompt")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+}
 
 private struct EditObjectivePromptSheet: View {
     let objective: IOSBackendObjective
