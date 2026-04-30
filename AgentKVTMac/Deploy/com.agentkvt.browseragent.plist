@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+
+<!--
+  AgentKVT Browser Agent — launchd User Agent
+  ===========================================
+  v1: vision-driven, goal-seeking browser automation worker.
+  Distinct from the deterministic site-scout.js Playwright tool — this is
+  the path for camp-signup-style forms whose DOM we don't know in advance.
+
+  Setup (one-time):
+    cd /Users/YOURUSERNAME/Development/agentkvt/AgentKVTMac/BrowserAgent
+    python3 -m venv .venv
+    .venv/bin/pip install -r requirements.txt
+
+  Install:
+    cp com.agentkvt.browseragent.plist ~/Library/LaunchAgents/
+    launchctl load -w ~/Library/LaunchAgents/com.agentkvt.browseragent.plist
+
+  Uninstall:
+    launchctl unload ~/Library/LaunchAgents/com.agentkvt.browseragent.plist
+    rm ~/Library/LaunchAgents/com.agentkvt.browseragent.plist
+
+  Smoke-test once running:
+    curl http://127.0.0.1:8766/healthz
+
+  Logs:
+    tail -f /tmp/agentkvt-browseragent.log
+    tail -f /tmp/agentkvt-browseragent.err
+
+  Replace YOURUSERNAME below with your macOS short username.
+-->
+
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.agentkvt.browseragent</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/YOURUSERNAME/Development/agentkvt/AgentKVTMac/BrowserAgent/.venv/bin/python</string>
+        <string>-m</string>
+        <string>uvicorn</string>
+        <string>main:app</string>
+        <string>--host</string>
+        <string>127.0.0.1</string>
+        <string>--port</string>
+        <string>8766</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/YOURUSERNAME/Development/agentkvt/AgentKVTMac/BrowserAgent</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>LOG_LEVEL</key>
+        <string>INFO</string>
+        <!-- <key>BROWSER_AGENT_MODEL</key><string>qwen2.5vl:32b</string> -->
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>ThrottleInterval</key>
+    <integer>15</integer>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/agentkvt-browseragent.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/agentkvt-browseragent.err</string>
+</dict>
+</plist>
