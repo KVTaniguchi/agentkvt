@@ -384,6 +384,7 @@ struct ObjectiveDetailView: View {
         } else if isIdleResumeState {
             ObjectiveIdleEmptyState(idleReason: guidanceIdleReason)
         } else {
+            let isQueuedState = displayedObjective.status == "active" && taskCounts.pending > 0
             ObjectiveActivityCard(
                 summary: activitySummary,
                 taskCounts: taskCounts,
@@ -391,7 +392,12 @@ struct ObjectiveDetailView: View {
                 snapshotCount: snapshots.count,
                 logCount: agentLogs.count,
                 lastLoadedAt: lastLoadedAt,
-                lastFinding: guidanceLastFinding
+                lastFinding: guidanceLastFinding,
+                onRunNow: isQueuedState ? {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    actionInProgress = "runNow"
+                    Task { await runObjectiveNow() }
+                } : nil
             )
         }
     }
@@ -588,7 +594,7 @@ struct ObjectiveDetailView: View {
                     .buttonStyle(.bordered)
                     .disabled(isStartingWork || isDeleting)
                 }
-            } else {
+            } else if !(displayedObjective.status == "active" && taskCounts.pending > 0) {
                 Button {
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                     actionInProgress = "runNow"
@@ -803,13 +809,14 @@ struct ObjectiveDetailView: View {
             if taskCounts.pending > 0 {
                 let agentHint: String
                 if onlineAgentRegistrationsCount == 0 {
-                    agentHint = " The API reports no online Mac agent. Keep the Mac runner up, set AGENTKVT_AGENT_WEBHOOK_PUBLIC_URL to an address your API host can reach (Tailscale/LAN/tunnel—not the server’s 127.0.0.1), and ensure Solid Queue workers are running on the server."
+                    agentHint = "No online Mac agent detected. Keep the Mac runner up and check AGENTKVT_AGENT_WEBHOOK_PUBLIC_URL."
                 } else {
                     agentHint = ""
                 }
+                let message = agentHint.isEmpty ? "\(taskCounts.pending) task(s) pending" : agentHint
                 return ObjectiveActivitySummary(
                     title: "Tasks are queued",
-                    message: "\(taskCounts.pending) task(s) are waiting for the Mac agent. Tap Run now below to enqueue dispatch on the server.\(agentHint)",
+                    message: message,
                     systemImage: "clock.fill",
                     tint: .orange
                 )
@@ -1684,6 +1691,7 @@ private struct ObjectiveActivityCard: View {
     var nextCheckIn: ObjectiveNextCheckInEstimate? = nil
     var statusPillLabel: String? = nil
     var statusPillTint: Color = .secondary
+    var onRunNow: (() -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -1760,6 +1768,16 @@ private struct ObjectiveActivityCard: View {
 
             if showsOperationalMetrics && taskCounts.hasAnyTasks {
                 TaskProgressBar(taskCounts: taskCounts, snapshotCount: snapshotCount, logCount: logCount)
+            }
+
+            if let onRunNow {
+                Button(action: onRunNow) {
+                    Label("Run now", systemImage: "play.circle.fill")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color(red: 0.0, green: 0.45, blue: 0.94))
+                .opacity(onlineAgentRegistrationsCount == 0 ? 0.55 : 1.0)
             }
 
             if let lastFinding {
